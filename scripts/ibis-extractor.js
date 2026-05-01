@@ -18,7 +18,7 @@
   // Mesmos seletores do script original (confirmado funcionando)
   function extrairLinhas() {
     const resultado = [];
-    const linhas = document.querySelectorAll("#formPesquisaPessoa\\:tbPesquisa_data tr");
+    const linhas = document.querySelectorAll("#j_idt11\\:j_idt13_data tr");
     linhas.forEach(tr => {
       const col = tr.querySelectorAll("td");
       if (!col.length) return;
