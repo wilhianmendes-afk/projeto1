@@ -55,9 +55,21 @@
       if (!r.ok) return null;
       const blob = await r.blob();
       return new Promise(resolve => {
-        const rd = new FileReader();
-        rd.onloadend = () => resolve(rd.result.split(",")[1]);
-        rd.readAsDataURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 800;
+          let w = img.width, h = img.height;
+          if (w > MAX || h > MAX) {
+            if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+            else       { w = Math.round(w * MAX / h); h = MAX; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.82).split(",")[1]);
+        };
+        img.onerror = () => resolve(null);
+        img.src = URL.createObjectURL(blob);
       });
     } catch { return null; }
   }
