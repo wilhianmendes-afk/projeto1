@@ -13,7 +13,7 @@
   // ══════════════════════════════════════════
   //  CONFIGURAÇÃO — altere aqui
   // ══════════════════════════════════════════
-  const VERCEL_URL = "https://SEU-PROJETO.vercel.app"; // ← coloque sua URL
+  const VERCEL_URL = "https://projeto1-liard-one.vercel.app";
   const BATCH_SIZE = 10;   // quantos por envio
   const DELAY_MS   = 1500; // espera entre páginas (ms)
   const LETRAS     = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
