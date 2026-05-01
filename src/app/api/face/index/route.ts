@@ -1,0 +1,87 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { embedImage } from "@/lib/face-service";
+
+export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+  const { qualificadoId } = await req.json();
+  if (!qualificadoId) return NextResponse.json({ error: "qualificadoId obrigatório" }, { status: 400 });
+
+  const service = await createServiceClient();
+
+  const { data: pessoa } = await service
+    .from("qualificados")
+    .select("id, nome, foto_url, fotos_extras")
+    .eq("id", qualificadoId)
+    .single();
+
+  if (!pessoa) return NextResponse.json({ error: "Qualificado não encontrado" }, { status: 404 });
+
+  const allUrls: string[] = [
+    pessoa.foto_url,
+    ...((pessoa.fotos_extras as string[]) ?? []),
+  ].filter(Boolean);
+
+  let embedded = 0;
+
+  for (const url of allUrls) {
+    let buffer: Buffer;
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      buffer = Buffer.from(await res.arrayBuffer());
+    } catch {
+      await service.from("face_skipped").upsert({
+        source: "qualificados",
+        source_id: qualificadoId,
+        source_label: pessoa.nome,
+        reason: "photo_404",
+      }, { onConflict: "source,source_id" });
+      continue;
+    }
+
+    let embedResponse;
+    try {
+      embedResponse = await embedImage(buffer);
+    } catch {
+      continue;
+    }
+
+    if (embedResponse.count === 0) {
+      if (allUrls.indexOf(url) === allUrls.length - 1 && embedded === 0) {
+        await service.from("face_skipped").upsert({
+          source: "qualificados",
+          source_id: qualificadoId,
+          source_label: pessoa.nome,
+          reason: "no_face_detected",
+        }, { onConflict: "source,source_id" });
+      }
+      continue;
+    }
+
+    for (const [faceIndex, face] of embedResponse.faces.entries()) {
+      await service.from("face_embeddings").insert({
+        source: "qualificados",
+        source_id: qualificadoId,
+        source_label: pessoa.nome,
+        photo_url: url,
+        embedding: JSON.stringify(face.embedding),
+        bbox: face.bbox,
+        det_score: face.det_score,
+        face_index: faceIndex,
+      });
+      embedded++;
+    }
+
+    await service
+      .from("face_skipped")
+      .delete()
+      .eq("source", "qualificados")
+      .eq("source_id", qualificadoId);
+  }
+
+  return NextResponse.json({ ok: true, embedded });
+}
