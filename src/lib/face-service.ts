@@ -17,7 +17,7 @@ export interface EmbedResponse {
 
 export async function embedImage(imageBuffer: Buffer, filename = "photo.jpg"): Promise<EmbedResponse> {
   const form = new FormData();
-  form.append("file", new Blob([imageBuffer]), filename);
+  form.append("file", new Blob([new Uint8Array(imageBuffer)]), filename);
 
   const res = await fetch(`${FACE_SERVICE_URL}/embed`, {
     method: "POST",
