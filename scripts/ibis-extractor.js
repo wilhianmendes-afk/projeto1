@@ -39,35 +39,34 @@
 
   function extrairLinhas() {
     const pessoas = [];
-    // Tenta múltiplos seletores de linha
-    const rows = [
-      ...document.querySelectorAll("tr.ui-widget-content"),
-      ...document.querySelectorAll(".ui-datagrid-column"),
-      ...document.querySelectorAll(".ui-datalist-item"),
-    ];
+    const rows = document.querySelectorAll("#formPesquisaPessoa\\:tbPesquisa_data tr");
 
-    for (const row of rows) {
-      const img  = row.querySelector("img");
-      const text = row.innerText?.trim() || "";
-      if (!text && !img) continue;
+    for (const tr of rows) {
+      const col = tr.querySelectorAll("td");
+      if (!col.length) continue;
 
-      const cells = row.querySelectorAll("td");
-      const nome  = cells[1]?.innerText?.trim()
-                 || row.querySelector("[id*='nome'],[class*='nome']")?.innerText?.trim()
-                 || text.split("\n")[0]?.trim()
-                 || "";
-
+      const nome = col[2]?.innerText.trim() || "";
       if (!nome || nome.length < 3) continue;
 
-      // Extrai ID do IBIS da URL da foto ou do elemento
-      const fotoUrl = img?.src || "";
-      const idMatch = fotoUrl.match(/[?&]id=([^&]+)/)
-                   || row.id?.match(/(\d+)$/);
+      const fotoUrl = tr.querySelector("img")?.src || "";
+      const rg_cpf  = col[1]?.innerText.trim() || "";
+
+      // Detecta se é CPF (11 dígitos) ou RG
+      const digits = rg_cpf.replace(/\D/g, "");
+      const isCpf  = digits.length === 11;
+
+      // Extrai ID do IBIS da URL da foto
+      const idMatch = fotoUrl.match(/[?&](?:id|pessoaId|codigo)=([^&]+)/i);
       const fonte_id = idMatch?.[1] || null;
 
       pessoas.push({
         nome,
-        foto_url: fotoUrl || null,
+        alcunha:    col[3]?.innerText.trim() || null,
+        genitora:   col[4]?.innerText.trim() || null,
+        nascimento: col[5]?.innerText.trim() || null,
+        rg:         isCpf ? null : (rg_cpf || null),
+        cpf:        isCpf ? rg_cpf : null,
+        foto_url:   fotoUrl || null,
         fonte_id,
       });
     }
@@ -99,7 +98,7 @@
       const linhas = extrairLinhas();
 
       if (linhas.length === 0) {
-        console.log("Nenhuma linha encontrada nesta página.");
+        console.log("Nenhuma linha encontrada nesta página — fim da pesquisa.");
         break;
       }
 
@@ -116,11 +115,12 @@
         }
       }
 
-      // Tenta ir para próxima página
-      const nextBtn = document.querySelector(
-        ".ui-paginator-next:not(.ui-state-disabled), [aria-label='Next Page']:not([aria-disabled='true'])"
-      );
-      if (!nextBtn || nextBtn.classList.contains("ui-state-disabled")) break;
+      // Vai para próxima página
+      const nextBtn =
+        document.querySelector("#formPesquisaPessoa\\:tbPesquisa_paginator_bottom .ui-paginator-next:not(.ui-state-disabled)") ||
+        document.querySelector(".ui-paginator-next:not(.ui-state-disabled)");
+
+      if (!nextBtn) break;
 
       nextBtn.click();
       await sleep(DELAY_MS);
@@ -133,19 +133,14 @@
   async function pesquisarLetra(letra) {
     console.log(`\n🔤 Pesquisando letra: ${letra}`);
 
-    const input = document.querySelector("[id='formPesquisaPessoa:j_idt100']")
-               || document.querySelector("[id$='pesquisaPessoaNome']")
-               || document.querySelectorAll("input[type='text']")[0];
-
+    const input = document.querySelector("[id='formPesquisaPessoa:j_idt100']");
     if (!input) { console.error("Campo nome não encontrado"); return; }
 
     input.value = letra;
     input.dispatchEvent(new Event("change", { bubbles: true }));
     input.dispatchEvent(new Event("input",  { bubbles: true }));
 
-    const btn = document.querySelector("[id='formPesquisaPessoa:j_idt118']")
-             || [...document.querySelectorAll("button")].find(b => b.innerText.includes("EXECUTAR") || b.innerText.includes("Pesquisar"));
-
+    const btn = document.querySelector("[id='formPesquisaPessoa:j_idt118']");
     if (!btn) { console.error("Botão pesquisar não encontrado"); return; }
 
     btn.click();
@@ -163,5 +158,6 @@
   }
 
   console.log(`\n✅ CONCLUÍDO! Total enviados: ${totalEnviados} | Erros: ${totalErros}`);
+  console.log("👉 Agora acesse /api/face/backfill para gerar os embeddings faciais.");
 
 })();
