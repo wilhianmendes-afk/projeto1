@@ -44,15 +44,8 @@ export async function POST(req: NextRequest) {
   for (const p of pessoas) {
     if (!p.nome?.trim()) { skipped++; continue; }
 
-    if (p.fonte_id) {
-      const { data: existing } = await service
-        .from("qualificados").select("id")
-        .eq("fonte", "ibis").eq("fonte_id", p.fonte_id).maybeSingle();
-      if (existing) { skipped++; continue; }
-    }
-
+    // Upload da foto primeiro (antes do check de duplicata, para poder atualizar)
     let storedPhotoUrl: string | null = null;
-    let uploadErr: string | null = null;
 
     if (p.foto_base64) {
       const photoBuffer = Buffer.from(p.foto_base64, "base64");
@@ -62,10 +55,24 @@ export async function POST(req: NextRequest) {
       if (!uploadError) {
         const { data: { publicUrl } } = service.storage.from("faces").getPublicUrl(filename);
         storedPhotoUrl = publicUrl;
-        photos_saved++;
       } else {
-        uploadErr = uploadError.message;
         photo_errors++;
+      }
+    }
+
+    // Verifica duplicata
+    if (p.fonte_id) {
+      const { data: existing } = await service
+        .from("qualificados").select("id, foto_url")
+        .eq("fonte", "ibis").eq("fonte_id", p.fonte_id).maybeSingle();
+      if (existing) {
+        // Registro já existe: atualiza foto se antes estava sem e agora temos
+        if (!existing.foto_url && storedPhotoUrl) {
+          await service.from("qualificados").update({ foto_url: storedPhotoUrl }).eq("id", existing.id);
+          photos_saved++;
+        }
+        skipped++;
+        continue;
       }
     }
 
@@ -83,6 +90,7 @@ export async function POST(req: NextRequest) {
       });
 
     if (insertError) { errors++; continue; }
+    if (storedPhotoUrl) photos_saved++;
     imported++;
   }
 
