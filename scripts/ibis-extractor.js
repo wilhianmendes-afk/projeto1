@@ -132,14 +132,20 @@
 
   async function pesquisarLetra(letra) {
     console.log(`\n🔤 Pesquisando letra: ${letra}`);
-    const input = document.querySelector("[id$='pesquisaPessoaNome']");
+
+    const input = document.querySelector("[id='formPesquisaPessoa:j_idt100']")
+               || document.querySelector("[id$='pesquisaPessoaNome']")
+               || document.querySelectorAll("input[type='text']")[0];
+
     if (!input) { console.error("Campo nome não encontrado"); return; }
 
     input.value = letra;
     input.dispatchEvent(new Event("change", { bubbles: true }));
     input.dispatchEvent(new Event("input",  { bubbles: true }));
 
-    const btn = document.querySelector("[id$='j_idt75']");
+    const btn = document.querySelector("[id='formPesquisaPessoa:j_idt118']")
+             || [...document.querySelectorAll("button")].find(b => b.innerText.includes("EXECUTAR") || b.innerText.includes("Pesquisar"));
+
     if (!btn) { console.error("Botão pesquisar não encontrado"); return; }
 
     btn.click();
