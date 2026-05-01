@@ -72,7 +72,10 @@
       const rg_cpf  = col[1]?.innerText.trim() || "";
       const digits  = rg_cpf.replace(/\D/g, "");
       const isCpf   = digits.length === 11;
-      const idMatch = fotoUrl.match(/[?&](?:id|pessoaId|codigo)=([^&]+)/i);
+      // Tenta id= na URL, senão usa o nome do arquivo (único por pessoa no IBIS)
+      const idMatch   = fotoUrl.match(/[?&](?:id|pessoaId|codigo)=([^&]+)/i);
+      const fileMatch = fotoUrl.match(/fotocrim\/([^?]+)/i);
+      const fonte_id  = idMatch?.[1] || fileMatch?.[1] || null;
       pessoas.push({
         nome,
         alcunha:    col[3]?.innerText.trim() || null,
@@ -81,7 +84,7 @@
         rg:         isCpf ? null : (rg_cpf || null),
         cpf:        isCpf ? rg_cpf : null,
         foto_url:   fotoUrl || null,
-        fonte_id:   idMatch?.[1] || null,
+        fonte_id,
       });
     }
     return pessoas;
