@@ -5,8 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { Shield, Eye, EyeOff } from "lucide-react";
 
+const EMAIL_DOMAIN = "@42bpm.intel";
+
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
@@ -19,10 +21,12 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
+    const email = usuario.trim().toLowerCase() + EMAIL_DOMAIN;
+
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setError("Credenciais inválidas. Verifique e tente novamente.");
+      setError("Usuário ou senha inválidos.");
       setLoading(false);
       return;
     }
@@ -44,15 +48,16 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} className="bg-gray-900 rounded-xl p-8 border border-gray-800 space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">E-mail institucional</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Usuário</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              value={usuario}
+              onChange={(e) => setUsuario(e.target.value)}
               required
               autoComplete="username"
+              autoCapitalize="none"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              placeholder="agente@pm.go.gov.br"
+              placeholder="nome.agente"
             />
           </div>
 
