@@ -13,16 +13,46 @@
   // ══════════════════════════════════════════
   //  CONFIGURAÇÃO — altere aqui
   // ══════════════════════════════════════════
-  const VERCEL_URL = "https://projeto1-liard-one.vercel.app";
-  const BATCH_SIZE = 10;   // quantos por envio
-  const DELAY_MS   = 1500; // espera entre páginas (ms)
-  const LETRAS     = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  const VERCEL_URL  = "https://projeto1-liard-one.vercel.app";
+  const BATCH_SIZE  = 10;    // registros por envio
+  const DELAY_MS    = 3000;  // espera entre páginas (aumentado para não sobrecarregar IBIS)
+  const RETRY_MS    = 8000;  // espera ao detectar erro 502 no IBIS
+  const LETRAS      = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   // ══════════════════════════════════════════
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   let totalEnviados = 0;
   let totalErros    = 0;
+
+  // Detecta se o servidor IBIS está com erro (502) observando falhas de rede
+  let ibisComErro = false;
+  const origXHROpen = XMLHttpRequest.prototype.open;
+  const origXHRSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(...args) {
+    this._url = args[1];
+    return origXHROpen.apply(this, args);
+  };
+  XMLHttpRequest.prototype.send = function(...args) {
+    this.addEventListener("load", () => {
+      if (this._url?.includes("ibis.app.br") && this.status === 502) {
+        ibisComErro = true;
+      } else if (this._url?.includes("ibis.app.br") && this.status === 200) {
+        ibisComErro = false;
+      }
+    });
+    return origXHRSend.apply(this, args);
+  };
+
+  async function aguardarIBIS() {
+    let tentativas = 0;
+    while (ibisComErro && tentativas < 5) {
+      console.warn(`⚠️ IBIS retornou 502 — aguardando ${RETRY_MS/1000}s antes de continuar...`);
+      await sleep(RETRY_MS);
+      tentativas++;
+    }
+    ibisComErro = false;
+  }
 
   async function fotoParaBase64(url) {
     try {
@@ -50,14 +80,9 @@
 
       const fotoUrl = tr.querySelector("img")?.src || "";
       const rg_cpf  = col[1]?.innerText.trim() || "";
-
-      // Detecta se é CPF (11 dígitos) ou RG
-      const digits = rg_cpf.replace(/\D/g, "");
-      const isCpf  = digits.length === 11;
-
-      // Extrai ID do IBIS da URL da foto
+      const digits  = rg_cpf.replace(/\D/g, "");
+      const isCpf   = digits.length === 11;
       const idMatch = fotoUrl.match(/[?&](?:id|pessoaId|codigo)=([^&]+)/i);
-      const fonte_id = idMatch?.[1] || null;
 
       pessoas.push({
         nome,
@@ -67,7 +92,7 @@
         rg:         isCpf ? null : (rg_cpf || null),
         cpf:        isCpf ? rg_cpf : null,
         foto_url:   fotoUrl || null,
-        fonte_id,
+        fonte_id:   idMatch?.[1] || null,
       });
     }
     return pessoas;
@@ -89,6 +114,11 @@
     }
   }
 
+  async function aguardarPagina(ms) {
+    await sleep(ms);
+    await aguardarIBIS();
+  }
+
   async function processarPaginas() {
     let batch = [];
     let pagina = 1;
@@ -98,7 +128,7 @@
       const linhas = extrairLinhas();
 
       if (linhas.length === 0) {
-        console.log("Nenhuma linha encontrada nesta página — fim da pesquisa.");
+        console.log("Nenhuma linha — fim desta letra.");
         break;
       }
 
@@ -111,11 +141,10 @@
         if (batch.length >= BATCH_SIZE) {
           await enviarBatch(batch);
           batch = [];
-          await sleep(500);
+          await sleep(300);
         }
       }
 
-      // Vai para próxima página
       const nextBtn =
         document.querySelector("#formPesquisaPessoa\\:tbPesquisa_paginator_bottom .ui-paginator-next:not(.ui-state-disabled)") ||
         document.querySelector(".ui-paginator-next:not(.ui-state-disabled)");
@@ -123,7 +152,7 @@
       if (!nextBtn) break;
 
       nextBtn.click();
-      await sleep(DELAY_MS);
+      await aguardarPagina(DELAY_MS);
       pagina++;
     }
 
@@ -144,7 +173,7 @@
     if (!btn) { console.error("Botão pesquisar não encontrado"); return; }
 
     btn.click();
-    await sleep(DELAY_MS);
+    await aguardarPagina(DELAY_MS);
     await processarPaginas();
   }
 
@@ -154,7 +183,7 @@
 
   for (const letra of LETRAS) {
     await pesquisarLetra(letra);
-    await sleep(1000);
+    await sleep(2000);
   }
 
   console.log(`\n✅ CONCLUÍDO! Total enviados: ${totalEnviados} | Erros: ${totalErros}`);
