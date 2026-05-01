@@ -15,30 +15,35 @@
 
   let totalEnviados = 0, totalErros = 0;
 
-  // Mesmos seletores do script original (confirmado funcionando)
+  // Estrutura desta instalação IBIS (4 colunas, tabela sem ID):
+  // [0] foto (img)  [1] nome + "Alcunha: xxx"  [2] "Mãe: xxx / Pai: xxx"  [3] vazio
   function extrairLinhas() {
     const resultado = [];
-    const linhas = document.querySelectorAll("#j_idt11\\:j_idt13_data tr");
-    linhas.forEach(tr => {
+    const tabela = document.querySelectorAll("table")[1];
+    if (!tabela) return resultado;
+    tabela.querySelectorAll("tr").forEach(tr => {
       const col = tr.querySelectorAll("td");
-      if (!col.length) return;
-      const nome = col[2]?.innerText.trim() || "";
+      if (col.length < 2) return;
+
+      const col1     = col[1]?.innerText.trim() || "";
+      const nome     = col1.split("\n")[0].trim();
       if (!nome) return;
-      const fotoUrl  = tr.querySelector("img")?.src || "";
-      const rg_cpf   = col[1]?.innerText.trim() || "";
-      const digits   = rg_cpf.replace(/\D/g, "");
-      const isCpf    = digits.length === 11;
+
+      const alcunha  = col1.match(/Alcunha:\s*(.+)/i)?.[1]?.trim() || null;
+      const col2     = col[2]?.innerText.trim() || "";
+      const genitora = col2.match(/Mãe:\s*(.+)/i)?.[1]?.trim() || null;
+      const fotoUrl  = col[0]?.querySelector("img")?.src || "";
       const fileMatch = fotoUrl.match(/fotocrim\/([^?]+)/i);
-      const idMatch   = fotoUrl.match(/[?&](?:id|pessoaId|codigo)=([^&]+)/i);
+
       resultado.push({
         nome,
-        alcunha:    col[3]?.innerText.trim() || null,
-        genitora:   col[4]?.innerText.trim() || null,
-        nascimento: col[5]?.innerText.trim() || null,
-        rg:         isCpf ? null : (rg_cpf || null),
-        cpf:        isCpf ? rg_cpf : null,
+        alcunha,
+        genitora,
+        nascimento: null,
+        rg:         null,
+        cpf:        null,
         foto_url:   fotoUrl || null,
-        fonte_id:   idMatch?.[1] || fileMatch?.[1] || null,
+        fonte_id:   fileMatch?.[1] || null,
       });
     });
     return resultado;
@@ -73,7 +78,6 @@
     }
   }
 
-  // Lê página atual, navega para as próximas, envia tudo
   let batch = [], pagina = 1;
 
   while (true) {
@@ -93,20 +97,15 @@
       }
       batch.push(p);
       if (batch.length >= BATCH_SIZE) {
-        await enviarBatch(batch);
-        batch = [];
-        await sleep(300);
+        await enviarBatch(batch); batch = []; await sleep(300);
       }
     }
 
-    // Próxima página
     const nextBtn = document.querySelector(".ui-paginator-next:not(.ui-state-disabled)");
     if (!nextBtn) break;
 
     const nomeAtual = linhas[0].nome;
     nextBtn.click();
-
-    // Aguarda a tabela mudar
     const inicio = Date.now();
     while (Date.now() - inicio < 8000) {
       await sleep(400);
