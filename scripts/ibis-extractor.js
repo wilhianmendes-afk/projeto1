@@ -14,44 +14,40 @@
   //  CONFIGURAÇÃO — altere aqui
   // ══════════════════════════════════════════
   const VERCEL_URL  = "https://projeto1-liard-one.vercel.app";
-  const BATCH_SIZE  = 10;    // registros por envio
-  const DELAY_MS    = 3000;  // espera entre páginas (aumentado para não sobrecarregar IBIS)
-  const RETRY_MS    = 8000;  // espera ao detectar erro 502 no IBIS
+  const BATCH_SIZE  = 10;
+  const TIMEOUT_MS  = 15000; // máximo de espera pelos resultados (ms)
   const LETRAS      = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   // ══════════════════════════════════════════
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  let totalEnviados = 0, totalErros = 0;
 
-  let totalEnviados = 0;
-  let totalErros    = 0;
-
-  // Detecta se o servidor IBIS está com erro (502) observando falhas de rede
-  let ibisComErro = false;
-  const origXHROpen = XMLHttpRequest.prototype.open;
-  const origXHRSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.open = function(...args) {
-    this._url = args[1];
-    return origXHROpen.apply(this, args);
-  };
-  XMLHttpRequest.prototype.send = function(...args) {
-    this.addEventListener("load", () => {
-      if (this._url?.includes("ibis.app.br") && this.status === 502) {
-        ibisComErro = true;
-      } else if (this._url?.includes("ibis.app.br") && this.status === 200) {
-        ibisComErro = false;
+  // Aguarda até a tabela ter linhas com dados (polling)
+  async function aguardarTabela() {
+    const inicio = Date.now();
+    while (Date.now() - inicio < TIMEOUT_MS) {
+      const rows = document.querySelectorAll("#formPesquisaPessoa\\:tbPesquisa_data tr");
+      for (const tr of rows) {
+        if (tr.querySelectorAll("td").length > 0) return true;
       }
-    });
-    return origXHRSend.apply(this, args);
-  };
-
-  async function aguardarIBIS() {
-    let tentativas = 0;
-    while (ibisComErro && tentativas < 5) {
-      console.warn(`⚠️ IBIS retornou 502 — aguardando ${RETRY_MS/1000}s antes de continuar...`);
-      await sleep(RETRY_MS);
-      tentativas++;
+      await sleep(400);
     }
-    ibisComErro = false;
+    return false; // não apareceu nada
+  }
+
+  // Aguarda a tabela mudar de conteúdo (para paginação)
+  async function aguardarMudancaDePagina(nomeAnterior) {
+    const inicio = Date.now();
+    while (Date.now() - inicio < TIMEOUT_MS) {
+      const rows = document.querySelectorAll("#formPesquisaPessoa\\:tbPesquisa_data tr");
+      for (const tr of rows) {
+        const col = tr.querySelectorAll("td");
+        const nome = col[2]?.innerText.trim();
+        if (nome && nome !== nomeAnterior) return true;
+      }
+      await sleep(400);
+    }
+    return false;
   }
 
   async function fotoParaBase64(url) {
@@ -70,20 +66,16 @@
   function extrairLinhas() {
     const pessoas = [];
     const rows = document.querySelectorAll("#formPesquisaPessoa\\:tbPesquisa_data tr");
-
     for (const tr of rows) {
       const col = tr.querySelectorAll("td");
       if (!col.length) continue;
-
       const nome = col[2]?.innerText.trim() || "";
       if (!nome || nome.length < 3) continue;
-
       const fotoUrl = tr.querySelector("img")?.src || "";
       const rg_cpf  = col[1]?.innerText.trim() || "";
       const digits  = rg_cpf.replace(/\D/g, "");
       const isCpf   = digits.length === 11;
       const idMatch = fotoUrl.match(/[?&](?:id|pessoaId|codigo)=([^&]+)/i);
-
       pessoas.push({
         nome,
         alcunha:    col[3]?.innerText.trim() || null,
@@ -107,30 +99,23 @@
       });
       const data = await res.json();
       totalEnviados += data.imported ?? 0;
-      console.log(`✅ Enviados: ${data.imported} | Ignorados: ${data.skipped} | Total acumulado: ${totalEnviados}`);
-    } catch (e) {
-      totalErros++;
-      console.error("❌ Erro ao enviar batch:", e);
-    }
-  }
-
-  async function aguardarPagina(ms) {
-    await sleep(ms);
-    await aguardarIBIS();
+      console.log(`✅ Enviados: ${data.imported} | Ignorados: ${data.skipped} | Total: ${totalEnviados}`);
+    } catch (e) { totalErros++; console.error("❌ Erro:", e); }
   }
 
   async function processarPaginas() {
-    let batch = [];
-    let pagina = 1;
+    let batch = [], pagina = 1;
+
+    // Aguarda a tabela carregar antes de começar
+    const carregou = await aguardarTabela();
+    if (!carregou) { console.log("⏱️ Tabela não carregou — pulando letra."); return; }
 
     while (true) {
-      console.log(`📄 Processando página ${pagina}...`);
+      console.log(`📄 Página ${pagina}...`);
       const linhas = extrairLinhas();
 
-      if (linhas.length === 0) {
-        console.log("Nenhuma linha — fim desta letra.");
-        break;
-      }
+      if (linhas.length === 0) { console.log("Fim desta letra."); break; }
+      console.log(`   ${linhas.length} registros encontrados`);
 
       for (const pessoa of linhas) {
         if (pessoa.foto_url) {
@@ -138,21 +123,19 @@
           delete pessoa.foto_url;
         }
         batch.push(pessoa);
-        if (batch.length >= BATCH_SIZE) {
-          await enviarBatch(batch);
-          batch = [];
-          await sleep(300);
-        }
+        if (batch.length >= BATCH_SIZE) { await enviarBatch(batch); batch = []; await sleep(300); }
       }
 
       const nextBtn =
         document.querySelector("#formPesquisaPessoa\\:tbPesquisa_paginator_bottom .ui-paginator-next:not(.ui-state-disabled)") ||
         document.querySelector(".ui-paginator-next:not(.ui-state-disabled)");
-
       if (!nextBtn) break;
 
+      // Guarda o primeiro nome da página atual para detectar quando mudou
+      const primeiroNomeAtual = linhas[0]?.nome || "";
       nextBtn.click();
-      await aguardarPagina(DELAY_MS);
+      const mudou = await aguardarMudancaDePagina(primeiroNomeAtual);
+      if (!mudou) { console.log("⏱️ Próxima página não carregou — parando."); break; }
       pagina++;
     }
 
@@ -160,33 +143,27 @@
   }
 
   async function pesquisarLetra(letra) {
-    console.log(`\n🔤 Pesquisando letra: ${letra}`);
-
+    console.log(`\n🔤 Letra: ${letra}`);
     const input = document.querySelector("[id='formPesquisaPessoa:j_idt100']");
     if (!input) { console.error("Campo nome não encontrado"); return; }
-
     input.value = letra;
     input.dispatchEvent(new Event("change", { bubbles: true }));
     input.dispatchEvent(new Event("input",  { bubbles: true }));
-
     const btn = document.querySelector("[id='formPesquisaPessoa:j_idt118']");
-    if (!btn) { console.error("Botão pesquisar não encontrado"); return; }
-
+    if (!btn) { console.error("Botão não encontrado"); return; }
     btn.click();
-    await aguardarPagina(DELAY_MS);
     await processarPaginas();
   }
 
-  // ── INÍCIO ──
   console.log("🚀 Iniciando extração IBIS → Intel Facial 42º BPM");
   console.log(`📡 Destino: ${VERCEL_URL}`);
 
   for (const letra of LETRAS) {
     await pesquisarLetra(letra);
-    await sleep(2000);
+    await sleep(1500);
   }
 
-  console.log(`\n✅ CONCLUÍDO! Total enviados: ${totalEnviados} | Erros: ${totalErros}`);
-  console.log("👉 Agora acesse /api/face/backfill para gerar os embeddings faciais.");
+  console.log(`\n✅ CONCLUÍDO! Total: ${totalEnviados} | Erros: ${totalErros}`);
+  console.log("👉 Acesse /api/face/backfill para gerar os embeddings.");
 
 })();
