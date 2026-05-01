@@ -100,7 +100,8 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      for (const [faceIndex, face] of embedResponse.faces.entries()) {
+      for (let faceIndex = 0; faceIndex < embedResponse.faces.length; faceIndex++) {
+        const face = embedResponse.faces[faceIndex];
         await service.from("face_embeddings").insert({
           source: "qualificados",
           source_id: qualificado.id,
