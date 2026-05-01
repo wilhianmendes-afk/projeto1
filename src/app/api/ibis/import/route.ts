@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   }
 
   const service = await createServiceClient();
-  let imported = 0, skipped = 0, errors = 0;
+  let imported = 0, skipped = 0, errors = 0, photos_saved = 0, photo_errors = 0;
 
   for (const p of pessoas) {
     if (!p.nome?.trim()) { skipped++; continue; }
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
     }
 
     let storedPhotoUrl: string | null = null;
+    let uploadErr: string | null = null;
 
     if (p.foto_base64) {
       const photoBuffer = Buffer.from(p.foto_base64, "base64");
@@ -61,6 +62,10 @@ export async function POST(req: NextRequest) {
       if (!uploadError) {
         const { data: { publicUrl } } = service.storage.from("faces").getPublicUrl(filename);
         storedPhotoUrl = publicUrl;
+        photos_saved++;
+      } else {
+        uploadErr = uploadError.message;
+        photo_errors++;
       }
     }
 
@@ -81,6 +86,8 @@ export async function POST(req: NextRequest) {
     imported++;
   }
 
-  // Embeddings são gerados depois via /api/face/backfill
-  return NextResponse.json({ ok: true, imported, skipped, errors }, { headers: CORS_HEADERS });
+  return NextResponse.json(
+    { ok: true, imported, skipped, errors, photos_saved, photo_errors },
+    { headers: CORS_HEADERS }
+  );
 }
