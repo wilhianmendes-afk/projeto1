@@ -5,7 +5,7 @@
  * 1. Faça login no IBIS e vá para pessoaConsulta.xhtml
  * 2. Abra o DevTools (F12) → aba Console
  * 3. Cole este script inteiro e pressione Enter
- * 4. Aguarde — o script vai varrer letra por letra automaticamente
+ * 4. Aguarde — o script vai varrer todas as combinações de 2 letras automaticamente
  */
 
 (async function ibisSync() {
@@ -13,41 +13,38 @@
   // ══════════════════════════════════════════
   //  CONFIGURAÇÃO — altere aqui
   // ══════════════════════════════════════════
-  const VERCEL_URL  = "https://projeto1-liard-one.vercel.app";
-  const BATCH_SIZE  = 10;
-  const TIMEOUT_MS  = 15000; // máximo de espera pelos resultados (ms)
-  const LETRAS      = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  const VERCEL_URL = "https://projeto1-liard-one.vercel.app";
+  const BATCH_SIZE = 10;
+  const TIMEOUT_MS = 12000; // máximo de espera pelos resultados (ms)
   // ══════════════════════════════════════════
+
+  // Gera todas as combinações de 2 letras: AA, AB, ..., ZZ
+  const PREFIXOS = [];
+  for (const a of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+    for (const b of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+      PREFIXOS.push(a + b);
+    }
+  }
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   let totalEnviados = 0, totalErros = 0;
 
-  // Aguarda até a tabela ter linhas com dados (polling)
-  async function aguardarTabela() {
-    const inicio = Date.now();
-    while (Date.now() - inicio < TIMEOUT_MS) {
-      const rows = document.querySelectorAll("#formPesquisaPessoa\\:tbPesquisa_data tr");
-      for (const tr of rows) {
-        if (tr.querySelectorAll("td").length > 0) return true;
-      }
-      await sleep(400);
-    }
-    return false; // não apareceu nada
-  }
-
-  // Aguarda a tabela mudar de conteúdo (para paginação)
-  async function aguardarMudancaDePagina(nomeAnterior) {
+  // Aguarda a tabela MUDAR em relação ao estado anterior
+  async function aguardarMudanca(nomeAntes) {
     const inicio = Date.now();
     while (Date.now() - inicio < TIMEOUT_MS) {
       const rows = document.querySelectorAll("#formPesquisaPessoa\\:tbPesquisa_data tr");
       for (const tr of rows) {
         const col = tr.querySelectorAll("td");
         const nome = col[2]?.innerText.trim();
-        if (nome && nome !== nomeAnterior) return true;
+        if (nome && nome !== nomeAntes) return "resultado";
       }
+      // Detecta mensagem de "sem resultados" do PrimeFaces
+      const tbody = document.querySelector("#formPesquisaPessoa\\:tbPesquisa_data");
+      if (tbody && tbody.innerText.trim() && !tbody.querySelector("td")) return "vazio";
       await sleep(400);
     }
-    return false;
+    return "timeout";
   }
 
   async function fotoParaBase64(url) {
@@ -99,23 +96,18 @@
       });
       const data = await res.json();
       totalEnviados += data.imported ?? 0;
-      console.log(`✅ Enviados: ${data.imported} | Ignorados: ${data.skipped} | Total: ${totalEnviados}`);
-    } catch (e) { totalErros++; console.error("❌ Erro:", e); }
+      console.log(`  ✅ +${data.imported} | ignorados: ${data.skipped} | total: ${totalEnviados}`);
+    } catch (e) { totalErros++; console.error("  ❌ Erro:", e); }
   }
 
-  async function processarPaginas() {
+  async function processarPaginas(primeiroNomeBusca) {
     let batch = [], pagina = 1;
 
-    // Aguarda a tabela carregar antes de começar
-    const carregou = await aguardarTabela();
-    if (!carregou) { console.log("⏱️ Tabela não carregou — pulando letra."); return; }
-
     while (true) {
-      console.log(`📄 Página ${pagina}...`);
       const linhas = extrairLinhas();
+      if (linhas.length === 0) break;
 
-      if (linhas.length === 0) { console.log("Fim desta letra."); break; }
-      console.log(`   ${linhas.length} registros encontrados`);
+      console.log(`  📄 Pág ${pagina}: ${linhas.length} registros`);
 
       for (const pessoa of linhas) {
         if (pessoa.foto_url) {
@@ -131,39 +123,51 @@
         document.querySelector(".ui-paginator-next:not(.ui-state-disabled)");
       if (!nextBtn) break;
 
-      // Guarda o primeiro nome da página atual para detectar quando mudou
-      const primeiroNomeAtual = linhas[0]?.nome || "";
+      const nomeAtual = linhas[0].nome;
       nextBtn.click();
-      const mudou = await aguardarMudancaDePagina(primeiroNomeAtual);
-      if (!mudou) { console.log("⏱️ Próxima página não carregou — parando."); break; }
+      const status = await aguardarMudanca(nomeAtual);
+      if (status !== "resultado") break;
       pagina++;
     }
 
     if (batch.length > 0) await enviarBatch(batch);
   }
 
-  async function pesquisarLetra(letra) {
-    console.log(`\n🔤 Letra: ${letra}`);
+  async function pesquisar(prefixo) {
     const input = document.querySelector("[id='formPesquisaPessoa:j_idt100']");
-    if (!input) { console.error("Campo nome não encontrado"); return; }
-    input.value = letra;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    input.dispatchEvent(new Event("input",  { bubbles: true }));
+    if (!input) { console.error("Campo nome não encontrado — abortando."); return false; }
     const btn = document.querySelector("[id='formPesquisaPessoa:j_idt118']");
-    if (!btn) { console.error("Botão não encontrado"); return; }
-    btn.click();
-    await processarPaginas();
+    if (!btn) { console.error("Botão pesquisar não encontrado — abortando."); return false; }
+
+    // Captura o primeiro nome atual para detectar mudança após a busca
+    const nomeAntes = extrairLinhas()[0]?.nome || "__vazio__";
+
+    input.value = prefixo;
+    input.dispatchEvent(new Event("input",  { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(100);
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+
+    const status = await aguardarMudanca(nomeAntes);
+    return status === "resultado";
   }
 
+  // ── INÍCIO ──
   console.log("🚀 Iniciando extração IBIS → Intel Facial 42º BPM");
   console.log(`📡 Destino: ${VERCEL_URL}`);
+  console.log(`🔢 Total de prefixos: ${PREFIXOS.length} (AA → ZZ)`);
 
-  for (const letra of LETRAS) {
-    await pesquisarLetra(letra);
-    await sleep(1500);
+  for (let i = 0; i < PREFIXOS.length; i++) {
+    const prefixo = PREFIXOS[i];
+    const temResultado = await pesquisar(prefixo);
+    if (temResultado) {
+      console.log(`🔤 ${prefixo} (${i + 1}/${PREFIXOS.length})`);
+      await processarPaginas();
+    }
+    await sleep(800);
   }
 
-  console.log(`\n✅ CONCLUÍDO! Total: ${totalEnviados} | Erros: ${totalErros}`);
+  console.log(`\n✅ CONCLUÍDO! Total enviados: ${totalEnviados} | Erros: ${totalErros}`);
   console.log("👉 Acesse /api/face/backfill para gerar os embeddings.");
 
 })();
