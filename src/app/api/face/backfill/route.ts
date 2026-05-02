@@ -70,6 +70,11 @@ async function runBackfill(limit: number) {
     ok: true, processed, embedded, skipped,
     total_pending: allPending.length,
     remaining: allPending.length - processed,
+    _debug: {
+      v: 2,
+      com_foto: (pendentes ?? []).length,
+      done_size: done.size,
+    },
   });
 }
 
