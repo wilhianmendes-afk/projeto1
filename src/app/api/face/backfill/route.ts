@@ -13,16 +13,21 @@ function getAdminClient() {
   );
 }
 
-async function runBackfill(limit: number) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+function isAuthorized(req: NextRequest): boolean {
+  // Aceita token de cron/automação
+  const token = req.headers.get("x-backfill-token") ?? req.headers.get("authorization")?.replace("Bearer ", "");
+  if (token && token === process.env.IBIS_IMPORT_TOKEN) return true;
+  // Aceita chamada interna do Vercel Cron
+  if (req.headers.get("x-vercel-cron") === "1") return true;
+  return false;
+}
 
+async function runBackfill(limit: number) {
   const service = getAdminClient();
 
-  const { data: alreadyIndexed, error: e1 } = await service
+  const { data: alreadyIndexed } = await service
     .from("face_embeddings").select("source_id").eq("source", "qualificados");
-  const { data: alreadySkipped, error: e2 } = await service
+  const { data: alreadySkipped } = await service
     .from("face_skipped").select("source_id").eq("source", "qualificados");
 
   const done = new Set([
@@ -30,7 +35,7 @@ async function runBackfill(limit: number) {
     ...(alreadySkipped ?? []).map((r: { source_id: string }) => r.source_id),
   ]);
 
-  const { data: pendentes, error: e3 } = await service
+  const { data: pendentes } = await service
     .from("qualificados").select("id, nome, foto_url, fotos_extras")
     .is("deleted_at", null).not("foto_url", "is", null);
 
@@ -79,21 +84,27 @@ async function runBackfill(limit: number) {
     ok: true, processed, embedded, skipped,
     total_pending: allPending.length,
     remaining: allPending.length - processed,
-    _debug: {
-      v: 3,
-      com_foto: (pendentes ?? []).length,
-      done_size: done.size,
-      errors: [e1?.message, e2?.message, e3?.message].filter(Boolean),
-    },
   });
 }
 
+// GET: chamada manual pelo browser logado
 export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
   const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "50");
   return runBackfill(limit);
 }
 
+// POST: chamada do cron, do script de importação ou do sistema
 export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
   const body = await req.json().catch(() => ({}));
   const limit = body.limit ?? 50;
   return runBackfill(limit);

@@ -90,6 +90,24 @@
     }
   }
 
+  async function dispararBackfill() {
+    try {
+      console.log("⚙️  Disparando backfill de embeddings...");
+      const res = await fetch(`${VERCEL_URL}/api/face/backfill`, { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        console.log(`  🧠 Backfill: processados=${data.processed} embedded=${data.embedded} skipped=${data.skipped} restantes=${data.remaining}`);
+        if (data.remaining > 0) {
+          console.log(`  ⏳ Ainda há ${data.remaining} pendentes — o cron irá processar automaticamente a cada 30min.`);
+        } else {
+          console.log("  ✅ Todos os registros estão indexados!");
+        }
+      }
+    } catch (e) {
+      console.warn("  ⚠️  Backfill não pôde ser disparado agora (será feito pelo cron):", e.message);
+    }
+  }
+
   let batch = [], pagina = 1;
 
   while (true) {
@@ -130,7 +148,10 @@
   if (batch.length > 0) await enviarBatch(batch);
 
   console.log(`\n✅ CONCLUÍDO! Total importado: ${totalEnviados} | Erros: ${totalErros}`);
-  if (totalEnviados > 0)
-    console.log("👉 Quando terminar todas as buscas, acesse /api/face/backfill para gerar os embeddings.");
+
+  if (totalEnviados > 0) {
+    await sleep(1000);
+    await dispararBackfill();
+  }
 
 })();
