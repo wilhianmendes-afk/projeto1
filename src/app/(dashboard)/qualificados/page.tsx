@@ -59,29 +59,29 @@ export default async function QualificadosPage({
           <Link
             key={p.id}
             href={`/qualificados/${p.id}`}
-            className="group block border border-gray-800 rounded-xl hover:border-blue-600 transition-colors"
+            style={{ display: 'block', borderRadius: '12px', border: '1px solid #374151', overflow: 'visible', textDecoration: 'none' }}
           >
             {/* Foto */}
-            <div className="w-full aspect-[3/4] bg-gray-800 rounded-t-xl overflow-hidden">
+            <div style={{ width: '100%', aspectRatio: '3/4', background: '#1f2937', borderRadius: '12px 12px 0 0', overflow: 'hidden' }}>
               {p.foto_url ? (
                 <img
                   src={p.foto_url}
                   alt={p.nome}
-                  className="w-full h-full object-cover object-top"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-gray-500 text-5xl font-bold">
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '2rem', fontWeight: 'bold' }}>
                   {p.nome.charAt(0)}
                 </div>
               )}
             </div>
 
-            {/* Rodapé branco com dados */}
-            <div className="bg-white rounded-b-xl px-1.5 py-1.5 text-black">
-              <p className="text-[9px] font-bold uppercase break-words leading-tight">{p.nome}</p>
-              {p.nascimento && <p className="text-[9px] leading-tight">DN: {p.nascimento}</p>}
-              {p.genitora   && <p className="text-[9px] break-words leading-tight">MÃE: {p.genitora.toUpperCase()}</p>}
-              {p.vulgo      && <p className="text-[9px] break-words leading-tight">ALC: {p.vulgo.toUpperCase()}</p>}
+            {/* Rodapé branco */}
+            <div style={{ background: 'white', borderRadius: '0 0 12px 12px', padding: '4px 6px', color: 'black', fontSize: '9px', lineHeight: '1.3', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+              <div style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{p.nome}</div>
+              {p.nascimento && <div>DN: {p.nascimento}</div>}
+              {p.genitora   && <div style={{ textTransform: 'uppercase' }}>MÃE: {p.genitora}</div>}
+              {p.vulgo      && <div style={{ textTransform: 'uppercase' }}>ALC: {p.vulgo}</div>}
             </div>
           </Link>
         ))}
