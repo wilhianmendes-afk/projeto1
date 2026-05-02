@@ -54,15 +54,15 @@ export default async function QualificadosPage({
         />
       </form>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
         {qualificados?.map((p) => (
           <Link
             key={p.id}
             href={`/qualificados/${p.id}`}
-            className="group block bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-blue-600 transition-colors"
+            className="group block border border-gray-800 rounded-xl hover:border-blue-600 transition-colors"
           >
             {/* Foto */}
-            <div className="relative w-full aspect-[3/4] bg-gray-800">
+            <div className="w-full aspect-[3/4] bg-gray-800 rounded-t-xl overflow-hidden">
               {p.foto_url ? (
                 <img
                   src={p.foto_url}
@@ -77,17 +77,11 @@ export default async function QualificadosPage({
             </div>
 
             {/* Rodapé branco com dados */}
-            <div className="bg-white px-1.5 py-1 text-black leading-snug">
-              <p className="text-[9px] font-bold uppercase leading-tight" style={{wordBreak:'break-word'}}>{p.nome}</p>
-              {p.nascimento && (
-                <p className="text-[9px] leading-tight">DN: {p.nascimento}</p>
-              )}
-              {p.genitora && (
-                <p className="text-[9px] leading-tight" style={{wordBreak:'break-word'}}>MÃE: {p.genitora.toUpperCase()}</p>
-              )}
-              {p.vulgo && (
-                <p className="text-[9px] leading-tight" style={{wordBreak:'break-word'}}>ALC: {p.vulgo.toUpperCase()}</p>
-              )}
+            <div className="bg-white rounded-b-xl px-1.5 py-1.5 text-black">
+              <p className="text-[9px] font-bold uppercase break-words leading-tight">{p.nome}</p>
+              {p.nascimento && <p className="text-[9px] leading-tight">DN: {p.nascimento}</p>}
+              {p.genitora   && <p className="text-[9px] break-words leading-tight">MÃE: {p.genitora.toUpperCase()}</p>}
+              {p.vulgo      && <p className="text-[9px] break-words leading-tight">ALC: {p.vulgo.toUpperCase()}</p>}
             </div>
           </Link>
         ))}
