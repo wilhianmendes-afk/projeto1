@@ -74,32 +74,20 @@ export default async function QualificadosPage({
                   {p.nome.charAt(0)}
                 </div>
               )}
-
-              {/* Overlay inferior na foto */}
-              <div className="absolute bottom-0 left-0 right-0 bg-black/75 px-2 py-1.5 text-white leading-tight">
-                <p className="text-xs font-bold truncate uppercase">{p.nome}</p>
-                {p.vulgo && (
-                  <p className="text-[10px] text-gray-300 truncate">
-                    ALCUNHA: {p.vulgo.toUpperCase()}
-                  </p>
-                )}
-                {p.nascimento && (
-                  <p className="text-[10px] text-gray-300">
-                    DN: {p.nascimento}
-                  </p>
-                )}
-                {p.genitora && (
-                  <p className="text-[10px] text-gray-300 truncate">
-                    MÃE: {p.genitora.toUpperCase()}
-                  </p>
-                )}
-              </div>
             </div>
 
-            {/* Rodapé do card */}
-            <div className="px-2 py-2">
-              <p className="text-xs font-semibold text-white truncate uppercase">{p.nome}</p>
-              <p className="text-[10px] text-gray-500 mt-0.5 uppercase">{p.fonte}</p>
+            {/* Rodapé branco com dados */}
+            <div className="bg-white px-2 py-2 text-black leading-tight">
+              <p className="text-xs font-bold uppercase truncate">{p.nome}</p>
+              {p.nascimento && (
+                <p className="text-[11px]">DN: {p.nascimento}</p>
+              )}
+              {p.genitora && (
+                <p className="text-[11px] truncate">MÃE: {p.genitora.toUpperCase()}</p>
+              )}
+              {p.vulgo && (
+                <p className="text-[11px] truncate">ALC: {p.vulgo.toUpperCase()}</p>
+              )}
             </div>
           </Link>
         ))}
