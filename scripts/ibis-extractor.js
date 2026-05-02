@@ -57,7 +57,7 @@
       return new Promise(resolve => {
         const img = new Image();
         img.onload = () => {
-          const MAX = 800;
+          const MAX = 1200;
           let w = img.width, h = img.height;
           if (w > MAX || h > MAX) {
             if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
@@ -66,7 +66,7 @@
           const canvas = document.createElement("canvas");
           canvas.width = w; canvas.height = h;
           canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL("image/jpeg", 0.82).split(",")[1]);
+          resolve(canvas.toDataURL("image/jpeg", 0.92).split(",")[1]);
         };
         img.onerror = () => resolve(null);
         img.src = URL.createObjectURL(blob);

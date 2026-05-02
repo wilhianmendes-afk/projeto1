@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import { UserPlus, ChevronRight } from "lucide-react";
+import { UserPlus } from "lucide-react";
 
 export default async function QualificadosPage({
   searchParams,
@@ -9,14 +9,14 @@ export default async function QualificadosPage({
 }) {
   const { q = "", page = "1" } = await searchParams;
   const pageNum = Math.max(1, parseInt(page));
-  const perPage = 30;
+  const perPage = 24;
   const from = (pageNum - 1) * perPage;
 
   const supabase = await createClient();
 
   let query = supabase
     .from("qualificados")
-    .select("id, nome, vulgo, cpf, rg, foto_url, cidade, uf, fonte, created_at", { count: "exact" })
+    .select("id, nome, vulgo, cpf, rg, nascimento, genitora, foto_url, fonte, created_at", { count: "exact" })
     .is("deleted_at", null)
     .order("nome")
     .range(from, from + perPage - 1);
@@ -44,7 +44,7 @@ export default async function QualificadosPage({
         </Link>
       </div>
 
-      <form className="mb-4">
+      <form className="mb-5">
         <input
           type="search"
           name="q"
@@ -54,41 +54,60 @@ export default async function QualificadosPage({
         />
       </form>
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {qualificados?.map((p) => (
           <Link
             key={p.id}
             href={`/qualificados/${p.id}`}
-            className="flex items-center gap-4 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-xl p-4 transition-colors"
+            className="group block bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-blue-600 transition-colors"
           >
-            {p.foto_url ? (
-              <img
-                src={p.foto_url}
-                alt={p.nome}
-                className="w-12 h-12 rounded-full object-cover border border-gray-700 flex-shrink-0"
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center text-gray-400 text-lg font-bold">
-                {p.nome.charAt(0)}
+            {/* Foto */}
+            <div className="relative w-full aspect-[3/4] bg-gray-800">
+              {p.foto_url ? (
+                <img
+                  src={p.foto_url}
+                  alt={p.nome}
+                  className="w-full h-full object-cover object-top"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-500 text-5xl font-bold">
+                  {p.nome.charAt(0)}
+                </div>
+              )}
+
+              {/* Overlay inferior na foto */}
+              <div className="absolute bottom-0 left-0 right-0 bg-black/75 px-2 py-1.5 text-white leading-tight">
+                <p className="text-xs font-bold truncate uppercase">{p.nome}</p>
+                {p.vulgo && (
+                  <p className="text-[10px] text-gray-300 truncate">
+                    ALCUNHA: {p.vulgo.toUpperCase()}
+                  </p>
+                )}
+                {p.nascimento && (
+                  <p className="text-[10px] text-gray-300">
+                    DN: {p.nascimento}
+                  </p>
+                )}
+                {p.genitora && (
+                  <p className="text-[10px] text-gray-300 truncate">
+                    MÃE: {p.genitora.toUpperCase()}
+                  </p>
+                )}
               </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-white truncate">{p.nome}</p>
-              <p className="text-gray-400 text-sm truncate">
-                {[p.vulgo && `"${p.vulgo}"`, p.cpf && `CPF: ${p.cpf}`, p.cidade && `${p.cidade}/${p.uf}`]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </p>
             </div>
-            <span className="text-xs text-gray-500 capitalize bg-gray-800 px-2 py-1 rounded">
-              {p.fonte}
-            </span>
-            <ChevronRight className="w-4 h-4 text-gray-600 flex-shrink-0" />
+
+            {/* Rodapé do card */}
+            <div className="px-2 py-2">
+              <p className="text-xs font-semibold text-white truncate uppercase">{p.nome}</p>
+              <p className="text-[10px] text-gray-500 mt-0.5 uppercase">{p.fonte}</p>
+            </div>
           </Link>
         ))}
 
         {!qualificados?.length && (
-          <p className="text-center text-gray-500 py-12">Nenhum registro encontrado.</p>
+          <p className="col-span-full text-center text-gray-500 py-12">
+            Nenhum registro encontrado.
+          </p>
         )}
       </div>
 

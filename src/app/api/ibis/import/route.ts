@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     pessoas: Array<{
       nome: string;
       alcunha?: string;
+      genitora?: string;
       rg?: string;
       cpf?: string;
       nascimento?: string;
@@ -66,11 +67,11 @@ export async function POST(req: NextRequest) {
         .from("qualificados").select("id, foto_url")
         .eq("fonte", "ibis").eq("fonte_id", p.fonte_id).maybeSingle();
       if (existing) {
-        // Registro já existe: atualiza foto se antes estava sem e agora temos
-        if (!existing.foto_url && storedPhotoUrl) {
-          await service.from("qualificados").update({ foto_url: storedPhotoUrl }).eq("id", existing.id);
-          photos_saved++;
-        }
+        // Registro já existe: atualiza foto e genitora se estavam vazios
+        const updates: Record<string, string> = {};
+        if (!existing.foto_url && storedPhotoUrl) { updates.foto_url = storedPhotoUrl; photos_saved++; }
+        if (Object.keys(updates).length > 0)
+          await service.from("qualificados").update(updates).eq("id", existing.id);
         skipped++;
         continue;
       }
@@ -79,14 +80,15 @@ export async function POST(req: NextRequest) {
     const { error: insertError } = await service
       .from("qualificados")
       .insert({
-        nome: p.nome.trim(),
-        vulgo: p.alcunha?.trim() || null,
-        rg: p.rg?.trim() || null,
-        cpf: p.cpf?.trim() || null,
-        nascimento: p.nascimento || null,
-        foto_url: storedPhotoUrl,
-        fonte: "ibis",
-        fonte_id: p.fonte_id || null,
+        nome:      p.nome.trim(),
+        vulgo:     p.alcunha?.trim()  || null,
+        genitora:  p.genitora?.trim() || null,
+        rg:        p.rg?.trim()       || null,
+        cpf:       p.cpf?.trim()      || null,
+        nascimento: p.nascimento      || null,
+        foto_url:  storedPhotoUrl,
+        fonte:     "ibis",
+        fonte_id:  p.fonte_id         || null,
       });
 
     if (insertError) { errors++; continue; }
