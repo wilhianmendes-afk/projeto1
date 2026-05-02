@@ -1,19 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
 
 export const maxDuration = 60;
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 async function runBackfill(limit: number) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const service = await createServiceClient();
+  const service = getAdminClient();
 
-  const { data: alreadyIndexed } = await service
+  const { data: alreadyIndexed, error: e1 } = await service
     .from("face_embeddings").select("source_id").eq("source", "qualificados");
-  const { data: alreadySkipped } = await service
+  const { data: alreadySkipped, error: e2 } = await service
     .from("face_skipped").select("source_id").eq("source", "qualificados");
 
   const done = new Set([
@@ -21,9 +30,9 @@ async function runBackfill(limit: number) {
     ...(alreadySkipped ?? []).map((r: { source_id: string }) => r.source_id),
   ]);
 
-  const { data: pendentes } = await service
-    .from("qualificados").select("id, nome, foto_url")
-    .not("foto_url", "is", null);
+  const { data: pendentes, error: e3 } = await service
+    .from("qualificados").select("id, nome, foto_url, fotos_extras")
+    .is("deleted_at", null).not("foto_url", "is", null);
 
   const allPending = (pendentes ?? []).filter((p: { id: string }) => !done.has(p.id));
   const queue = allPending.slice(0, limit);
@@ -31,7 +40,7 @@ async function runBackfill(limit: number) {
   let processed = 0, embedded = 0, skipped = 0;
 
   for (const pessoa of queue) {
-    const urls: string[] = [pessoa.foto_url].filter(Boolean);
+    const urls: string[] = [pessoa.foto_url, ...((pessoa.fotos_extras as string[]) ?? [])].filter(Boolean);
     let pessoaEmbedded = 0;
 
     for (const url of urls) {
@@ -71,9 +80,10 @@ async function runBackfill(limit: number) {
     total_pending: allPending.length,
     remaining: allPending.length - processed,
     _debug: {
-      v: 2,
+      v: 3,
       com_foto: (pendentes ?? []).length,
       done_size: done.size,
+      errors: [e1?.message, e2?.message, e3?.message].filter(Boolean),
     },
   });
 }
