@@ -22,8 +22,8 @@ async function runBackfill(limit: number) {
   ]);
 
   const { data: pendentes } = await service
-    .from("qualificados").select("id, nome, foto_url, fotos_extras")
-    .is("deleted_at", null).not("foto_url", "is", null);
+    .from("qualificados").select("id, nome, foto_url")
+    .not("foto_url", "is", null);
 
   const allPending = (pendentes ?? []).filter((p: { id: string }) => !done.has(p.id));
   const queue = allPending.slice(0, limit);
@@ -31,7 +31,7 @@ async function runBackfill(limit: number) {
   let processed = 0, embedded = 0, skipped = 0;
 
   for (const pessoa of queue) {
-    const urls: string[] = [pessoa.foto_url, ...((pessoa.fotos_extras as string[]) ?? [])].filter(Boolean);
+    const urls: string[] = [pessoa.foto_url].filter(Boolean);
     let pessoaEmbedded = 0;
 
     for (const url of urls) {
