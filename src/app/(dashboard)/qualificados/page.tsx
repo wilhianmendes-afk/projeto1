@@ -77,16 +77,16 @@ export default async function QualificadosPage({
             </div>
 
             {/* Rodapé branco com dados */}
-            <div className="bg-white px-2 py-2 text-black leading-tight">
-              <p className="text-xs font-bold uppercase truncate">{p.nome}</p>
+            <div className="bg-white px-1.5 py-1 text-black leading-snug">
+              <p className="text-[9px] font-bold uppercase leading-tight" style={{wordBreak:'break-word'}}>{p.nome}</p>
               {p.nascimento && (
-                <p className="text-[11px]">DN: {p.nascimento}</p>
+                <p className="text-[9px] leading-tight">DN: {p.nascimento}</p>
               )}
               {p.genitora && (
-                <p className="text-[11px] truncate">MÃE: {p.genitora.toUpperCase()}</p>
+                <p className="text-[9px] leading-tight" style={{wordBreak:'break-word'}}>MÃE: {p.genitora.toUpperCase()}</p>
               )}
               {p.vulgo && (
-                <p className="text-[11px] truncate">ALC: {p.vulgo.toUpperCase()}</p>
+                <p className="text-[9px] leading-tight" style={{wordBreak:'break-word'}}>ALC: {p.vulgo.toUpperCase()}</p>
               )}
             </div>
           </Link>
