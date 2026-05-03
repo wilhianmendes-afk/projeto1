@@ -15,9 +15,21 @@
   const BUSCAR_BTN   = "formPesquisaPessoa:j_idt221";
   const BATCH_SIZE   = 10;
   const PAUSA_BUSCA  = 4000;  // ms entre cada letra (não sobrecarregar o IBIS)
+  const STORAGE_KEY  = "ibis_extractor_progress";
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  let totalEnviados = 0, totalErros = 0;
+  // Carrega progresso salvo (permite retomar após fechar o navegador)
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  let totalEnviados = saved.totalEnviados || 0;
+  let totalErros    = saved.totalErros    || 0;
+  let startIndex    = saved.nextIndex     || 0;
+
+  function salvarProgresso(nextIndex) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ nextIndex, totalEnviados, totalErros }));
+  }
+  function limparProgresso() {
+    localStorage.removeItem(STORAGE_KEY);
+  }
 
   function extrairLinhas() {
     const resultado = [];
@@ -157,10 +169,15 @@
   const combos = [];
   for (const a of alfa) for (const b of alfa) combos.push(a + b);
 
-  console.log(`🚀 Iniciando extração automática — ${combos.length} buscas (AA → ZZ)`);
-  console.log("   Registros duplicados são ignorados automaticamente pelo servidor.\n");
+  if (startIndex > 0) {
+    console.log(`♻️  Retomando do ponto salvo: "${combos[startIndex]}" (${startIndex}/${combos.length})`);
+    console.log(`   Já importados anteriormente: ${totalEnviados}\n`);
+  } else {
+    console.log(`🚀 Iniciando extração automática — ${combos.length} buscas (AA → ZZ)`);
+    console.log("   Progresso salvo automaticamente — pode retomar se cair a conexão.\n");
+  }
 
-  for (let i = 0; i < combos.length; i++) {
+  for (let i = startIndex; i < combos.length; i++) {
     const termo = combos[i];
     console.log(`\n🔍 [${i + 1}/${combos.length}] Pesquisando: "${termo}"`);
     try {
@@ -171,12 +188,16 @@
     } catch (e) {
       console.error(`  ❌ Erro em "${termo}":`, e.message);
     }
+    // Salva o índice da PRÓXIMA combinação antes de continuar
+    salvarProgresso(i + 1);
+
     if (i < combos.length - 1) {
       console.log(`  ⏳ Aguardando ${PAUSA_BUSCA / 1000}s...`);
       await sleep(PAUSA_BUSCA);
     }
   }
 
+  limparProgresso();
   console.log(`\n✅ EXTRAÇÃO CONCLUÍDA!`);
   console.log(`   Total importados: ${totalEnviados}`);
   console.log(`   Erros de rede:    ${totalErros}`);
