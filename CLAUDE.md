@@ -31,7 +31,7 @@ IBIS_IMPORT_TOKEN=   # opcional — protege /api/ibis/import e /api/face/backfil
 | vulgo | text | alcunha |
 | rg | text | |
 | cpf | text | |
-| nascimento | text | data como string |
+| nascimento | text | data como string DD/MM/AAAA |
 | genitora | text | nome da mãe |
 | cidade | text | |
 | uf | text | |
@@ -58,11 +58,11 @@ IBIS_IMPORT_TOKEN=   # opcional — protege /api/ibis/import e /api/face/backfil
 ## Clientes Supabase
 
 ```typescript
-// SSR com anon key (respeita sessão do usuário) — usar APENAS em login/middleware
+// SSR com anon key — usar APENAS em login/middleware
 import { createClient } from "@/lib/supabase/server";
 const supabase = await createClient();
 
-// Admin direto com service role (bypassa RLS) — usar em TODAS as páginas e endpoints
+// Admin direto com service role — usar em TODAS as páginas e endpoints
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 function getAdminClient() {
   return createSupabaseClient(
@@ -73,7 +73,16 @@ function getAdminClient() {
 }
 ```
 
-> **IMPORTANTE**: Todas as páginas do dashboard usam `getAdminClient()` (sem await). O `createClient()` SSR e o `createServiceClient()` do `@supabase/ssr` **não** retornam dados mesmo com RLS desabilitado — sempre usar o admin direto.
+> **CRÍTICO**: `createClient()` SSR e `createServiceClient()` do `@supabase/ssr` **não retornam dados nem fazem INSERT** mesmo com RLS desabilitado. Usar `getAdminClient()` (sem await) em TODAS as páginas e em TODOS os endpoints de importação/backfill.
+
+## Cache Next.js / Vercel
+
+Todas as páginas do dashboard devem ter no topo:
+```typescript
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+```
+Sem isso, o Vercel Edge Cache serve dados antigos mesmo após truncate do banco.
 
 ## Endpoints principais
 | Rota | Descrição |
@@ -91,9 +100,9 @@ O backfill de embeddings é totalmente automático — nenhum script manual é n
 1. **Vercel Cron** (`vercel.json`): executa `POST /api/face/backfill` uma vez por dia às 3h (`0 3 * * *`)
    - Plano Hobby do Vercel só permite 1 execução por dia — não usar `*/30 * * * *`
 2. **Script extrator**: ao concluir importação, dispara `POST /api/face/backfill` automaticamente
+   - Pode retornar 401 se `IBIS_IMPORT_TOKEN` não configurado — o cron diário supre
 3. **Auth do backfill**: aceita:
    - Header `x-backfill-token: <IBIS_IMPORT_TOKEN>`
-   - Header `Authorization: Bearer <token>`
    - Header Vercel Cron `x-vercel-cron: 1`
    - Usuário logado (sessão SSR)
 
@@ -127,43 +136,45 @@ face-service/
 ## Integração IBIS (ibis.app.br)
 Script de console do navegador: `scripts/ibis-extractor.js`
 
-**Estrutura da tabela:**
-- Seletor: `document.querySelectorAll("table")[1]` (tabela sem ID, usa posição)
-- `col[0]` = foto (img), `col[1]` = nome + "Alcunha: xxx", `col[2]` = "Mãe: xxx / Pai: xxx"
-- Não há RG/CPF/nascimento na visão de lista do IBIS
+**Estrutura da tabela confirmada:**
+- Seletor: `document.querySelectorAll("table")[2]` (índice 2 — há tabelas de UI antes)
+- `col[0]` = foto (img), `col[1]` = nome + "ALCUNHA: xxx", `col[2]` = genitora (texto direto), `col[3]` = nascimento DD/MM/AAAA
+- Nome extraído: `col1.split(/ALCUNHA:/i)[0].trim()`
 
 **Observações:**
 - `fonte_id` = nome do arquivo da foto (ex: `AbC123--nome.jpg`) — chave de deduplicação
+- Fotos com URL `fotocrim/?pfdrid_c=true` (sem filename) retornam 404 — normal, registro importa sem foto
 - Fotos: máx 1200px, qualidade 92% JPEG via canvas (evita CORS taint)
-- Erros 404 nas fotos são normais
-- Ao final, dispara backfill automaticamente
+- Ao final, dispara backfill automaticamente (pode dar 401 — cron resolve)
 
 **Como usar:**
 1. Pesquise no IBIS (ex: "AD")
 2. Cole o script no console — navega todas as páginas automaticamente
 3. Repita para cada combinação de letras
 
+## Deploy (Vercel)
+- Branch monitorado: `claude/check-github-access-v30TG`
+- **GitHub Action** (`.github/workflows/deploy.yml`): dispara deploy automaticamente a cada push
+  - Requer secret `VERCEL_DEPLOY_HOOK` no GitHub (Settings → Secrets → Actions)
+  - Hook URL: configurada no Vercel → Settings → Git → Deploy Hooks → "manual-trigger"
+- O proxy git do Claude Code **não sincroniza de forma confiável** — sempre fazer `git pull` + `git push` no VS Code após mudanças do Claude Code
+- Deploy hook manual (PowerShell):
+  ```powershell
+  Invoke-RestMethod -Uri "<hook-url>" -Method POST
+  ```
+
 ## Comandos úteis
 ```bash
 npm run dev       # dev local
 npm run build     # checar build
 
-# Reimportar do zero (rodar no SQL Editor do Supabase):
+# Reimportar do zero (SQL Editor do Supabase):
 TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
 # Depois: limpar Storage bucket faces/ibis/ manualmente no painel do Supabase
 
 # Ver logs do face-service:
 # Railway → projeto1 → Deployments → View logs
 ```
-
-## Deploy (Vercel)
-- Vercel monitora o branch `claude/check-github-access-v30TG` no GitHub
-- O proxy git do Claude Code **não sincroniza de forma confiável** com o GitHub
-- Para garantir o deploy: sempre fazer `git pull` + `git push` pelo terminal local (VS Code) após mudanças do Claude Code
-- Deploy hook manual: Vercel → projeto1 → Settings → Git → Deploy Hooks → "manual-trigger"
-  ```powershell
-  Invoke-RestMethod -Uri "<hook-url>" -Method POST
-  ```
 
 ## Branch de desenvolvimento
 `claude/check-github-access-v30TG`
