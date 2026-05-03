@@ -1,6 +1,14 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import { UserPlus } from "lucide-react";
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 export default async function QualificadosPage({
   searchParams,
@@ -12,7 +20,7 @@ export default async function QualificadosPage({
   const perPage = 24;
   const from = (pageNum - 1) * perPage;
 
-  const supabase = await createClient();
+  const supabase = getAdminClient();
 
   let query = supabase
     .from("qualificados")

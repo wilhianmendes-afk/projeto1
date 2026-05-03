@@ -1,10 +1,18 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import BackfillButton from "@/components/BackfillButton";
 import DriveImport from "@/components/DriveImport";
 import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
 
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
+
 export default async function IndexacaoPage() {
-  const supabase = await createClient();
+  const supabase = getAdminClient();
 
   const [
     { count: totalAtivos },

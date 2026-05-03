@@ -1,8 +1,16 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Fingerprint } from "lucide-react";
 import IndexButton from "@/components/IndexButton";
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 export default async function QualificadoPage({
   params,
@@ -10,7 +18,7 @@ export default async function QualificadoPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
+  const supabase = getAdminClient();
 
   const { data: pessoa } = await supabase
     .from("qualificados")
