@@ -16,7 +16,7 @@
   let totalEnviados = 0, totalErros = 0;
 
   // Estrutura desta instalação IBIS (4 colunas, tabela sem ID):
-  // [0] foto (img)  [1] nome + "Alcunha: xxx"  [2] "Mãe: xxx / Pai: xxx"  [3] vazio
+  // [0] foto (img)  [1] nome + "ALCUNHA: xxx"  [2] genitora (texto direto)  [3] nascimento DD/MM/AAAA
   function extrairLinhas() {
     const resultado = [];
     const tabela = document.querySelectorAll("table")[1];
@@ -25,21 +25,23 @@
       const col = tr.querySelectorAll("td");
       if (col.length < 2) return;
 
-      const col1     = col[1]?.innerText.trim() || "";
-      const nome     = col1.split("\n")[0].trim();
+      const col1      = col[1]?.innerText.trim() || "";
+      const nomeRaw   = col1.split(/ALCUNHA:/i)[0].trim();
+      const nome      = nomeRaw.split("\n")[0].trim();
       if (!nome) return;
 
-      const alcunha  = col1.match(/Alcunha:\s*(.+)/i)?.[1]?.trim() || null;
-      const col2     = col[2]?.innerText.trim() || "";
-      const genitora = col2.match(/Mãe:\s*(.+)/i)?.[1]?.trim() || null;
-      const fotoUrl  = col[0]?.querySelector("img")?.src || "";
+      const alcunha   = col1.match(/ALCUNHA:\s*(.+)/i)?.[1]?.trim() || null;
+      const genitora  = col[2]?.innerText.trim() || null;
+      const nascRaw   = col[3]?.innerText.trim() || "";
+      const nascimento = nascRaw.match(/\d{2}\/\d{2}\/\d{4}/)?.[0] || null;
+      const fotoUrl   = col[0]?.querySelector("img")?.src || "";
       const fileMatch = fotoUrl.match(/fotocrim\/([^?]+)/i);
 
       resultado.push({
         nome,
-        alcunha,
-        genitora,
-        nascimento: null,
+        alcunha:    alcunha || null,
+        genitora:   genitora || null,
+        nascimento,
         rg:         null,
         cpf:        null,
         foto_url:   fotoUrl || null,
