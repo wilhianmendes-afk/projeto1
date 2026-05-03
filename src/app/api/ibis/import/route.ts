@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 export const maxDuration = 30;
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -39,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "pessoas[] obrigatório" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  const service = await createServiceClient();
+  const service = getAdminClient();
   let imported = 0, skipped = 0, errors = 0, photos_saved = 0, photo_errors = 0;
 
   for (const p of pessoas) {
