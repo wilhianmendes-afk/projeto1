@@ -19,7 +19,7 @@
   // [0] foto (img)  [1] nome + "ALCUNHA: xxx"  [2] genitora (texto direto)  [3] nascimento DD/MM/AAAA
   function extrairLinhas() {
     const resultado = [];
-    const tabela = document.querySelectorAll("table")[1];
+    const tabela = document.querySelectorAll("table")[2];
     if (!tabela) return resultado;
     tabela.querySelectorAll("tr").forEach(tr => {
       const col = tr.querySelectorAll("td");
