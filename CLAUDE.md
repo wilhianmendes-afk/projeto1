@@ -58,11 +58,11 @@ IBIS_IMPORT_TOKEN=   # opcional — protege /api/ibis/import e /api/face/backfil
 ## Clientes Supabase
 
 ```typescript
-// SSR com anon key (respeita sessão do usuário) — usar em pages/routes normais
+// SSR com anon key (respeita sessão do usuário) — usar APENAS em login/middleware
 import { createClient } from "@/lib/supabase/server";
 const supabase = await createClient();
 
-// Admin direto com service role (bypassa RLS) — usar em endpoints de importação/backfill
+// Admin direto com service role (bypassa RLS) — usar em TODAS as páginas e endpoints
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 function getAdminClient() {
   return createSupabaseClient(
@@ -73,7 +73,7 @@ function getAdminClient() {
 }
 ```
 
-> `createServiceClient` do `@supabase/ssr` **não** bypassa RLS para SELECT — usar o admin direto acima.
+> **IMPORTANTE**: Todas as páginas do dashboard usam `getAdminClient()` (sem await). O `createClient()` SSR e o `createServiceClient()` do `@supabase/ssr` **não** retornam dados mesmo com RLS desabilitado — sempre usar o admin direto.
 
 ## Endpoints principais
 | Rota | Descrição |
@@ -88,7 +88,8 @@ function getAdminClient() {
 ## Backfill automático
 O backfill de embeddings é totalmente automático — nenhum script manual é necessário:
 
-1. **Vercel Cron** (`vercel.json`): executa `POST /api/face/backfill` a cada 30 minutos
+1. **Vercel Cron** (`vercel.json`): executa `POST /api/face/backfill` uma vez por dia às 3h (`0 3 * * *`)
+   - Plano Hobby do Vercel só permite 1 execução por dia — não usar `*/30 * * * *`
 2. **Script extrator**: ao concluir importação, dispara `POST /api/face/backfill` automaticamente
 3. **Auth do backfill**: aceita:
    - Header `x-backfill-token: <IBIS_IMPORT_TOKEN>`
@@ -154,6 +155,15 @@ TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
 # Ver logs do face-service:
 # Railway → projeto1 → Deployments → View logs
 ```
+
+## Deploy (Vercel)
+- Vercel monitora o branch `claude/check-github-access-v30TG` no GitHub
+- O proxy git do Claude Code **não sincroniza de forma confiável** com o GitHub
+- Para garantir o deploy: sempre fazer `git pull` + `git push` pelo terminal local (VS Code) após mudanças do Claude Code
+- Deploy hook manual: Vercel → projeto1 → Settings → Git → Deploy Hooks → "manual-trigger"
+  ```powershell
+  Invoke-RestMethod -Uri "<hook-url>" -Method POST
+  ```
 
 ## Branch de desenvolvimento
 `claude/check-github-access-v30TG`
