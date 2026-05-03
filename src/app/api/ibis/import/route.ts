@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
 
   const service = getAdminClient();
   let imported = 0, skipped = 0, errors = 0, photos_saved = 0, photo_errors = 0;
+  const errorMessages: string[] = [];
 
   for (const p of pessoas) {
     if (!p.nome?.trim()) { skipped++; continue; }
@@ -99,13 +100,13 @@ export async function POST(req: NextRequest) {
         fonte_id:  p.fonte_id         || null,
       });
 
-    if (insertError) { errors++; continue; }
+    if (insertError) { errors++; errorMessages.push(insertError.message); continue; }
     if (storedPhotoUrl) photos_saved++;
     imported++;
   }
 
   return NextResponse.json(
-    { ok: true, imported, skipped, errors, photos_saved, photo_errors },
+    { ok: true, imported, skipped, errors, photos_saved, photo_errors, errorMessages: errorMessages.slice(0, 3) },
     { headers: CORS_HEADERS }
   );
 }
