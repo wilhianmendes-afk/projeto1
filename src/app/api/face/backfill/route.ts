@@ -5,6 +5,16 @@ import { embedImage } from "@/lib/face-service";
 
 export const maxDuration = 60;
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Backfill-Token",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 200, headers: CORS_HEADERS });
+}
+
 function getAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -84,7 +94,7 @@ async function runBackfill(limit: number) {
     ok: true, processed, embedded, skipped,
     total_pending: allPending.length,
     remaining: allPending.length - processed,
-  });
+  }, { headers: CORS_HEADERS });
 }
 
 // GET: chamada manual pelo browser logado
@@ -92,7 +102,7 @@ export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
   }
   const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "50");
   return runBackfill(limit);
@@ -103,7 +113,7 @@ export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
   }
   const body = await req.json().catch(() => ({}));
   const limit = body.limit ?? 50;
