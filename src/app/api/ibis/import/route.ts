@@ -94,7 +94,9 @@ export async function POST(req: NextRequest) {
         genitora:  p.genitora?.trim() || null,
         rg:        p.rg?.trim()       || null,
         cpf:       p.cpf?.trim()      || null,
-        nascimento: p.nascimento      || null,
+        nascimento: p.nascimento?.match(/^\d{2}\/\d{2}\/\d{4}$/)
+          ? p.nascimento.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")
+          : p.nascimento || null,
         foto_url:  storedPhotoUrl,
         fonte:     "ibis",
         fonte_id:  p.fonte_id         || null,
