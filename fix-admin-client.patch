@@ -1,0 +1,259 @@
+diff --git a/scripts/ibis-extractor.js b/scripts/ibis-extractor.js
+index d6bb0c3..14d4159 100644
+--- a/scripts/ibis-extractor.js
++++ b/scripts/ibis-extractor.js
+@@ -90,6 +90,24 @@
+     }
+   }
+ 
++  async function dispararBackfill() {
++    try {
++      console.log("⚙️  Disparando backfill de embeddings...");
++      const res = await fetch(`${VERCEL_URL}/api/face/backfill`, { method: "POST" });
++      const data = await res.json();
++      if (data.ok) {
++        console.log(`  🧠 Backfill: processados=${data.processed} embedded=${data.embedded} skipped=${data.skipped} restantes=${data.remaining}`);
++        if (data.remaining > 0) {
++          console.log(`  ⏳ Ainda há ${data.remaining} pendentes — o cron irá processar automaticamente a cada 30min.`);
++        } else {
++          console.log("  ✅ Todos os registros estão indexados!");
++        }
++      }
++    } catch (e) {
++      console.warn("  ⚠️  Backfill não pôde ser disparado agora (será feito pelo cron):", e.message);
++    }
++  }
++
+   let batch = [], pagina = 1;
+ 
+   while (true) {
+@@ -130,7 +148,10 @@
+   if (batch.length > 0) await enviarBatch(batch);
+ 
+   console.log(`\n✅ CONCLUÍDO! Total importado: ${totalEnviados} | Erros: ${totalErros}`);
+-  if (totalEnviados > 0)
+-    console.log("👉 Quando terminar todas as buscas, acesse /api/face/backfill para gerar os embeddings.");
++
++  if (totalEnviados > 0) {
++    await sleep(1000);
++    await dispararBackfill();
++  }
+ 
+ })();
+diff --git a/src/app/(dashboard)/indexacao/page.tsx b/src/app/(dashboard)/indexacao/page.tsx
+index e86475e..a20b434 100644
+--- a/src/app/(dashboard)/indexacao/page.tsx
++++ b/src/app/(dashboard)/indexacao/page.tsx
+@@ -1,10 +1,18 @@
+-import { createClient } from "@/lib/supabase/server";
++import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+ import BackfillButton from "@/components/BackfillButton";
+ import DriveImport from "@/components/DriveImport";
+ import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
+ 
++function getAdminClient() {
++  return createSupabaseClient(
++    process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    process.env.SUPABASE_SERVICE_ROLE_KEY!,
++    { auth: { autoRefreshToken: false, persistSession: false } }
++  );
++}
++
+ export default async function IndexacaoPage() {
+-  const supabase = await createClient();
++  const supabase = getAdminClient();
+ 
+   const [
+     { count: totalAtivos },
+diff --git a/src/app/(dashboard)/page.tsx b/src/app/(dashboard)/page.tsx
+index 0d3a184..2dd5f46 100644
+--- a/src/app/(dashboard)/page.tsx
++++ b/src/app/(dashboard)/page.tsx
+@@ -1,9 +1,17 @@
+-import { createClient } from "@/lib/supabase/server";
++import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+ import { Search, Users, Database, AlertTriangle } from "lucide-react";
+ import Link from "next/link";
+ 
++function getAdminClient() {
++  return createSupabaseClient(
++    process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    process.env.SUPABASE_SERVICE_ROLE_KEY!,
++    { auth: { autoRefreshToken: false, persistSession: false } }
++  );
++}
++
+ export default async function DashboardPage() {
+-  const supabase = await createClient();
++  const supabase = getAdminClient();
+ 
+   const [
+     { count: totalQualificados },
+diff --git a/src/app/(dashboard)/qualificados/[id]/page.tsx b/src/app/(dashboard)/qualificados/[id]/page.tsx
+index 6296c06..421e179 100644
+--- a/src/app/(dashboard)/qualificados/[id]/page.tsx
++++ b/src/app/(dashboard)/qualificados/[id]/page.tsx
+@@ -1,16 +1,24 @@
+-import { createClient } from "@/lib/supabase/server";
++import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+ import { notFound } from "next/navigation";
+ import Link from "next/link";
+ import { ArrowLeft, Fingerprint } from "lucide-react";
+ import IndexButton from "@/components/IndexButton";
+ 
++function getAdminClient() {
++  return createSupabaseClient(
++    process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    process.env.SUPABASE_SERVICE_ROLE_KEY!,
++    { auth: { autoRefreshToken: false, persistSession: false } }
++  );
++}
++
+ export default async function QualificadoPage({
+   params,
+ }: {
+   params: Promise<{ id: string }>;
+ }) {
+   const { id } = await params;
+-  const supabase = await createClient();
++  const supabase = getAdminClient();
+ 
+   const { data: pessoa } = await supabase
+     .from("qualificados")
+diff --git a/src/app/(dashboard)/qualificados/page.tsx b/src/app/(dashboard)/qualificados/page.tsx
+index 11f7204..f5a8a5d 100644
+--- a/src/app/(dashboard)/qualificados/page.tsx
++++ b/src/app/(dashboard)/qualificados/page.tsx
+@@ -1,7 +1,15 @@
+-import { createClient } from "@/lib/supabase/server";
++import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+ import Link from "next/link";
+ import { UserPlus } from "lucide-react";
+ 
++function getAdminClient() {
++  return createSupabaseClient(
++    process.env.NEXT_PUBLIC_SUPABASE_URL!,
++    process.env.SUPABASE_SERVICE_ROLE_KEY!,
++    { auth: { autoRefreshToken: false, persistSession: false } }
++  );
++}
++
+ export default async function QualificadosPage({
+   searchParams,
+ }: {
+@@ -12,7 +20,7 @@ export default async function QualificadosPage({
+   const perPage = 24;
+   const from = (pageNum - 1) * perPage;
+ 
+-  const supabase = await createClient();
++  const supabase = getAdminClient();
+ 
+   let query = supabase
+     .from("qualificados")
+diff --git a/src/app/api/face/backfill/route.ts b/src/app/api/face/backfill/route.ts
+index 609af84..0fe96da 100644
+--- a/src/app/api/face/backfill/route.ts
++++ b/src/app/api/face/backfill/route.ts
+@@ -5,6 +5,16 @@ import { embedImage } from "@/lib/face-service";
+ 
+ export const maxDuration = 60;
+ 
++const CORS_HEADERS = {
++  "Access-Control-Allow-Origin": "*",
++  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
++  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Backfill-Token",
++};
++
++export async function OPTIONS() {
++  return new NextResponse(null, { status: 200, headers: CORS_HEADERS });
++}
++
+ function getAdminClient() {
+   return createSupabaseClient(
+     process.env.NEXT_PUBLIC_SUPABASE_URL!,
+@@ -13,16 +23,21 @@ function getAdminClient() {
+   );
+ }
+ 
+-async function runBackfill(limit: number) {
+-  const supabase = await createClient();
+-  const { data: { user } } = await supabase.auth.getUser();
+-  if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
++function isAuthorized(req: NextRequest): boolean {
++  // Aceita token de cron/automação
++  const token = req.headers.get("x-backfill-token") ?? req.headers.get("authorization")?.replace("Bearer ", "");
++  if (token && token === process.env.IBIS_IMPORT_TOKEN) return true;
++  // Aceita chamada interna do Vercel Cron
++  if (req.headers.get("x-vercel-cron") === "1") return true;
++  return false;
++}
+ 
++async function runBackfill(limit: number) {
+   const service = getAdminClient();
+ 
+-  const { data: alreadyIndexed, error: e1 } = await service
++  const { data: alreadyIndexed } = await service
+     .from("face_embeddings").select("source_id").eq("source", "qualificados");
+-  const { data: alreadySkipped, error: e2 } = await service
++  const { data: alreadySkipped } = await service
+     .from("face_skipped").select("source_id").eq("source", "qualificados");
+ 
+   const done = new Set([
+@@ -30,7 +45,7 @@ async function runBackfill(limit: number) {
+     ...(alreadySkipped ?? []).map((r: { source_id: string }) => r.source_id),
+   ]);
+ 
+-  const { data: pendentes, error: e3 } = await service
++  const { data: pendentes } = await service
+     .from("qualificados").select("id, nome, foto_url, fotos_extras")
+     .is("deleted_at", null).not("foto_url", "is", null);
+ 
+@@ -79,21 +94,27 @@ async function runBackfill(limit: number) {
+     ok: true, processed, embedded, skipped,
+     total_pending: allPending.length,
+     remaining: allPending.length - processed,
+-    _debug: {
+-      v: 3,
+-      com_foto: (pendentes ?? []).length,
+-      done_size: done.size,
+-      errors: [e1?.message, e2?.message, e3?.message].filter(Boolean),
+-    },
+-  });
++  }, { headers: CORS_HEADERS });
+ }
+ 
++// GET: chamada manual pelo browser logado
+ export async function GET(req: NextRequest) {
++  if (!isAuthorized(req)) {
++    const supabase = await createClient();
++    const { data: { user } } = await supabase.auth.getUser();
++    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
++  }
+   const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "50");
+   return runBackfill(limit);
+ }
+ 
++// POST: chamada do cron, do script de importação ou do sistema
+ export async function POST(req: NextRequest) {
++  if (!isAuthorized(req)) {
++    const supabase = await createClient();
++    const { data: { user } } = await supabase.auth.getUser();
++    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
++  }
+   const body = await req.json().catch(() => ({}));
+   const limit = body.limit ?? 50;
+   return runBackfill(limit);
+diff --git a/vercel.json b/vercel.json
+new file mode 100644
+index 0000000..ab9ab6e
+--- /dev/null
++++ b/vercel.json
+@@ -0,0 +1,8 @@
++{
++  "crons": [
++    {
++      "path": "/api/face/backfill",
++      "schedule": "*/30 * * * *"
++    }
++  ]
++}
