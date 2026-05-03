@@ -89,7 +89,7 @@ export default async function QualificadosPage({
             {/* Rodapé branco */}
             <div style={{ background: 'white', borderRadius: '0 0 12px 12px', padding: '4px 6px', color: 'black', fontSize: '9px', lineHeight: '1.3', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
               <div style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{p.nome}</div>
-              {p.nascimento && <div>DN: {p.nascimento}</div>}
+              {p.nascimento && <div>DN: {p.nascimento.split("-").reverse().join("/")}</div>}
               {p.genitora   && <div style={{ textTransform: 'uppercase' }}>MÃE: {p.genitora}</div>}
               {p.vulgo      && <div style={{ textTransform: 'uppercase' }}>ALC: {p.vulgo}</div>}
             </div>
