@@ -2,6 +2,8 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import { UserPlus } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 function getAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

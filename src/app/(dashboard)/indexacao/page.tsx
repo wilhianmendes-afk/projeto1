@@ -3,6 +3,8 @@ import BackfillButton from "@/components/BackfillButton";
 import DriveImport from "@/components/DriveImport";
 import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 function getAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
