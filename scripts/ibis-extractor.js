@@ -152,24 +152,27 @@
     }
   }
 
-  // ── LOOP PRINCIPAL A → Z ─────────────────────────────────────────────────
-  const letras = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  console.log(`🚀 Iniciando extração automática — ${letras.length} buscas (A → Z)`);
+  // ── LOOP PRINCIPAL AA → ZZ ───────────────────────────────────────────────
+  const alfa = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const combos = [];
+  for (const a of alfa) for (const b of alfa) combos.push(a + b);
+
+  console.log(`🚀 Iniciando extração automática — ${combos.length} buscas (AA → ZZ)`);
   console.log("   Registros duplicados são ignorados automaticamente pelo servidor.\n");
 
-  for (let i = 0; i < letras.length; i++) {
-    const letra = letras[i];
-    console.log(`\n🔍 [${i + 1}/${letras.length}] Pesquisando: "${letra}"`);
+  for (let i = 0; i < combos.length; i++) {
+    const termo = combos[i];
+    console.log(`\n🔍 [${i + 1}/${combos.length}] Pesquisando: "${termo}"`);
     try {
-      await pesquisar(letra);
+      await pesquisar(termo);
       const total = await processarPaginas();
-      if (total === 0) console.log(`  ⚪ Nenhum registro encontrado para "${letra}"`);
-      else console.log(`  ✔ "${letra}" concluído — ${total} registros processados`);
+      if (total === 0) console.log(`  ⚪ Sem resultados para "${termo}"`);
+      else console.log(`  ✔ "${termo}" concluído — ${total} registros processados`);
     } catch (e) {
-      console.error(`  ❌ Erro em "${letra}":`, e.message);
+      console.error(`  ❌ Erro em "${termo}":`, e.message);
     }
-    if (i < letras.length - 1) {
-      console.log(`  ⏳ Aguardando ${PAUSA_BUSCA / 1000}s antes da próxima busca...`);
+    if (i < combos.length - 1) {
+      console.log(`  ⏳ Aguardando ${PAUSA_BUSCA / 1000}s...`);
       await sleep(PAUSA_BUSCA);
     }
   }
