@@ -83,7 +83,7 @@
       });
       const data = await res.json();
       totalEnviados += data.imported ?? 0;
-      console.log(`    ✅ +${data.imported} importados | ${data.skipped} já existiam | fotos: ${data.photos_saved} | acumulado: ${totalEnviados}`);
+      console.log(`    ✅ +${data.imported} importados | ${data.skipped} já existiam | fotos: ${data.photos_saved} | foto_erros: ${data.photo_errors ?? 0} | acumulado: ${totalEnviados}`);
       if (data.errorMessages?.length) console.warn("    ⚠️ Erros:", JSON.stringify(data.errorMessages));
     } catch (e) {
       totalErros++;
@@ -107,6 +107,13 @@
   async function processarPaginas() {
     let batch = [], pagina = 1, totalPagina = 0;
     while (true) {
+      // Aguarda todas as imagens da tabela carregarem antes de capturar
+      const imgs = Array.from(document.querySelectorAll("table")[2]?.querySelectorAll("img") || []);
+      await Promise.all(imgs.map(img => {
+        if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+        return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 4000); });
+      }));
+
       const linhas = extrairLinhas();
       if (!linhas.length) break;
       const comFoto = linhas.filter(l => l.foto_base64).length;
