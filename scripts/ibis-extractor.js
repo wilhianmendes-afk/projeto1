@@ -3,10 +3,8 @@
  *
  * MODO AUTOMÁTICO (recomendado):
  *   Cole este script no console com o IBIS aberto (qualquer página).
- *   Ele pesquisa A → Z automaticamente, navega todas as páginas e importa tudo.
- *
- * MODO MANUAL (busca já aberta):
- *   Chame apenas: await processarPaginas()
+ *   Ele pesquisa AA → ZZ automaticamente, navega todas as páginas e importa tudo.
+ *   Progresso salvo no localStorage — retoma de onde parou se fechar o navegador.
  */
 
 (async function () {
@@ -14,11 +12,10 @@
   const NOME_INPUT   = "formPesquisaPessoa:pesquisaPessoaNome";
   const BUSCAR_BTN   = "formPesquisaPessoa:j_idt221";
   const BATCH_SIZE   = 10;
-  const PAUSA_BUSCA  = 4000;  // ms entre cada letra (não sobrecarregar o IBIS)
+  const PAUSA_BUSCA  = 4000;
   const STORAGE_KEY  = "ibis_extractor_progress";
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  // Carrega progresso salvo (permite retomar após fechar o navegador)
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
   let totalEnviados = saved.totalEnviados || 0;
   let totalErros    = saved.totalErros    || 0;
@@ -27,8 +24,25 @@
   function salvarProgresso(nextIndex) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ nextIndex, totalEnviados, totalErros }));
   }
-  function limparProgresso() {
-    localStorage.removeItem(STORAGE_KEY);
+  function limparProgresso() { localStorage.removeItem(STORAGE_KEY); }
+
+  // Converte o elemento <img> já carregado na página para base64 via canvas.
+  // Evita re-fetch (URLs do PrimeFaces são dinâmicas e retornam 404 se re-requisitadas).
+  function imgParaBase64(imgEl) {
+    try {
+      const w0 = imgEl.naturalWidth, h0 = imgEl.naturalHeight;
+      if (!w0 || !h0) return null;
+      const MAX = 1200;
+      let w = w0, h = h0;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(imgEl, 0, 0, w, h);
+      return canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
+    } catch { return null; }
   }
 
   function extrairLinhas() {
@@ -42,42 +56,23 @@
       const nomeRaw   = col1.split(/ALCUNHA:/i)[0].trim();
       const nome      = nomeRaw.split("\n")[0].trim();
       if (!nome) return;
-      const alcunha   = col1.match(/ALCUNHA:\s*(.+)/i)?.[1]?.trim() || null;
-      const genitora  = col[2]?.innerText.trim() || null;
-      const nascRaw   = col[3]?.innerText.trim() || "";
+      const alcunha    = col1.match(/ALCUNHA:\s*(.+)/i)?.[1]?.trim() || null;
+      const genitora   = col[2]?.innerText.trim() || null;
+      const nascRaw    = col[3]?.innerText.trim() || "";
       const nascimento = nascRaw.match(/\d{2}\/\d{2}\/\d{4}/)?.[0] || null;
-      const fotoUrl   = col[0]?.querySelector("img")?.src || "";
-      const fileMatch = fotoUrl.match(/fotocrim\/([^?]+)/i);
+      const imgEl      = col[0]?.querySelector("img");
+      const fotoUrl    = imgEl?.src || "";
+      const fileMatch  = fotoUrl.match(/fotocrim\/([^?]+)/i);
+      // Captura a foto agora, enquanto o <img> ainda está no DOM
+      const foto_base64 = imgEl ? imgParaBase64(imgEl) : null;
       resultado.push({
         nome, alcunha: alcunha || null, genitora: genitora || null, nascimento,
-        rg: null, cpf: null, foto_url: fotoUrl || null, fonte_id: fileMatch?.[1] || null,
+        rg: null, cpf: null,
+        foto_base64,
+        fonte_id: fileMatch?.[1] || null,
       });
     });
     return resultado;
-  }
-
-  async function fotoParaBase64(url) {
-    try {
-      const r = await fetch(url, { credentials: "include" });
-      if (!r.ok) return null;
-      const blob = await r.blob();
-      return new Promise(resolve => {
-        const img = new Image();
-        img.onload = () => {
-          const MAX = 1200; let w = img.width, h = img.height;
-          if (w > MAX || h > MAX) {
-            if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-            else       { w = Math.round(w * MAX / h); h = MAX; }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = w; canvas.height = h;
-          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL("image/jpeg", 0.92).split(",")[1]);
-        };
-        img.onerror = () => resolve(null);
-        img.src = URL.createObjectURL(blob);
-      });
-    } catch { return null; }
   }
 
   async function enviarBatch(batch) {
@@ -103,22 +98,21 @@
       const data = await res.json();
       if (data.ok) {
         console.log(`  🧠 processados=${data.processed} embedded=${data.embedded} skipped=${data.skipped} restantes=${data.remaining}`);
-        if (data.remaining > 0) console.log(`  ⏳ ${data.remaining} pendentes — cron processa automaticamente às 3h.`);
+        if (data.remaining > 0) console.log(`  ⏳ ${data.remaining} pendentes — cron processa às 3h.`);
         else console.log("  ✅ Todos os registros estão indexados!");
       }
     } catch (e) { console.warn("  ⚠️  Backfill não disparado:", e.message); }
   }
 
-  // Processa todas as páginas da busca atual
   async function processarPaginas() {
     let batch = [], pagina = 1, totalPagina = 0;
     while (true) {
       const linhas = extrairLinhas();
       if (!linhas.length) break;
-      console.log(`  📄 Pág ${pagina}: ${linhas.length} registros`);
+      const comFoto = linhas.filter(l => l.foto_base64).length;
+      console.log(`  📄 Pág ${pagina}: ${linhas.length} registros (${comFoto} com foto)`);
       totalPagina += linhas.length;
       for (const p of linhas) {
-        if (p.foto_url) { p.foto_base64 = await fotoParaBase64(p.foto_url); delete p.foto_url; }
         batch.push(p);
         if (batch.length >= BATCH_SIZE) { await enviarBatch(batch); batch = []; await sleep(300); }
       }
@@ -134,47 +128,32 @@
       }
       pagina++;
     }
-    if (batch.length > 0) { await enviarBatch(batch); }
+    if (batch.length > 0) await enviarBatch(batch);
     return totalPagina;
   }
 
-  // Pesquisa um termo no campo de nome e aguarda resultados
   async function pesquisar(termo) {
     const input = document.getElementById(NOME_INPUT);
     const btn   = document.getElementById(BUSCAR_BTN);
-    if (!input || !btn) throw new Error("Campos de pesquisa não encontrados. Verifique se está na tela correta do IBIS.");
-
-    // Limpar outros campos que possam filtrar
+    if (!input || !btn) throw new Error("Campos não encontrados");
     input.value = termo;
     input.dispatchEvent(new Event("input",  { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
-
-    // PrimeFaces usa jQuery internamente — aciona também se disponível
-    if (window.jQuery) { jQuery(input).val(termo).trigger("change"); }
-
+    if (window.jQuery) jQuery(input).val(termo).trigger("change");
     btn.click();
-
-    // Aguardar tabela carregar (até 12s)
     await sleep(2000);
     const ini = Date.now();
-    while (Date.now() - ini < 10000) {
-      if (extrairLinhas().length > 0) break;
-      // Sem resultados também é válido — aguarda um pouco e segue
-      await sleep(500);
-    }
+    while (Date.now() - ini < 10000) { if (extrairLinhas().length > 0) break; await sleep(500); }
   }
 
-  // ── LOOP PRINCIPAL AA → ZZ ───────────────────────────────────────────────
   const alfa = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const combos = [];
   for (const a of alfa) for (const b of alfa) combos.push(a + b);
 
   if (startIndex > 0) {
-    console.log(`♻️  Retomando do ponto salvo: "${combos[startIndex]}" (${startIndex}/${combos.length})`);
-    console.log(`   Já importados anteriormente: ${totalEnviados}\n`);
+    console.log(`♻️  Retomando: "${combos[startIndex]}" [${startIndex}/${combos.length}] — já importados: ${totalEnviados}\n`);
   } else {
-    console.log(`🚀 Iniciando extração automática — ${combos.length} buscas (AA → ZZ)`);
-    console.log("   Progresso salvo automaticamente — pode retomar se cair a conexão.\n");
+    console.log(`🚀 Iniciando extração AA → ZZ (${combos.length} buscas) — progresso salvo automaticamente.\n`);
   }
 
   for (let i = startIndex; i < combos.length; i++) {
@@ -183,24 +162,15 @@
     try {
       await pesquisar(termo);
       const total = await processarPaginas();
-      if (total === 0) console.log(`  ⚪ Sem resultados para "${termo}"`);
-      else console.log(`  ✔ "${termo}" concluído — ${total} registros processados`);
-    } catch (e) {
-      console.error(`  ❌ Erro em "${termo}":`, e.message);
-    }
-    // Salva o índice da PRÓXIMA combinação antes de continuar
+      console.log(total ? `  ✔ "${termo}" — ${total} registros` : `  ⚪ Sem resultados`);
+    } catch (e) { console.error(`  ❌ Erro em "${termo}":`, e.message); }
     salvarProgresso(i + 1);
-
-    if (i < combos.length - 1) {
-      console.log(`  ⏳ Aguardando ${PAUSA_BUSCA / 1000}s...`);
-      await sleep(PAUSA_BUSCA);
-    }
+    if (i < combos.length - 1) { console.log(`  ⏳ Aguardando ${PAUSA_BUSCA / 1000}s...`); await sleep(PAUSA_BUSCA); }
   }
 
   limparProgresso();
   console.log(`\n✅ EXTRAÇÃO CONCLUÍDA!`);
   console.log(`   Total importados: ${totalEnviados}`);
   console.log(`   Erros de rede:    ${totalErros}`);
-
   if (totalEnviados > 0) { await sleep(1000); await dispararBackfill(); }
 })();
