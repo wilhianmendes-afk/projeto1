@@ -18,7 +18,8 @@ const JSON_FILE =
   "C:\\Users\\PCZINHO\\Downloads\\ibis-qualificados-2026-05-03.json";
 
 const VERCEL_URL    = "https://projeto1-liard-one.vercel.app";
-const BATCH_SIZE    = 8;   // 8 fotos por lote (seguro para o limite de payload do Vercel)
+const BATCH_SIZE    = 4;            // lotes menores para não exceder 4.5MB do Vercel (HTTP 413)
+const MAX_FOTO_KB   = 350 * 1024;   // ignora fotos acima de 350KB (muito grandes para o lote)
 const DELAY_MS      = 300;
 const PROGRESS_FILE = path.join(__dirname, "ibis-progress.json");
 
@@ -60,7 +61,8 @@ async function downloadPhoto(url) {
     clearTimeout(timeout);
     if (!res.ok) return null;
     const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length < 500) return null; // placeholder vazio
+    if (buffer.length < 500) return null;        // placeholder vazio
+    if (buffer.length > MAX_FOTO_KB) return null; // muito grande — evita HTTP 413
     return buffer.toString("base64");
   } catch { return null; }
 }
