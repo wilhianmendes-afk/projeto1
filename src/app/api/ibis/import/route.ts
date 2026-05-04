@@ -73,12 +73,19 @@ export async function POST(req: NextRequest) {
     // Verifica duplicata
     if (p.fonte_id) {
       const { data: existing } = await service
-        .from("qualificados").select("id, foto_url")
+        .from("qualificados").select("id, foto_url, vulgo, genitora, nascimento")
         .eq("fonte", "ibis").eq("fonte_id", p.fonte_id).maybeSingle();
       if (existing) {
-        // Registro já existe: atualiza foto e genitora se estavam vazios
+        // Preenche campos vazios sem sobrescrever dados existentes
         const updates: Record<string, string> = {};
-        if (!existing.foto_url && storedPhotoUrl) { updates.foto_url = storedPhotoUrl; photos_saved++; }
+        if (!existing.foto_url   && storedPhotoUrl)      { updates.foto_url   = storedPhotoUrl; photos_saved++; }
+        if (!existing.vulgo      && p.alcunha?.trim())   { updates.vulgo      = p.alcunha.trim(); }
+        if (!existing.genitora   && p.genitora?.trim())  { updates.genitora   = p.genitora.trim(); }
+        if (!existing.nascimento && p.nascimento?.trim()) {
+          updates.nascimento = p.nascimento.match(/^\d{2}\/\d{2}\/\d{4}$/)
+            ? p.nascimento.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")
+            : p.nascimento.trim();
+        }
         if (Object.keys(updates).length > 0)
           await service.from("qualificados").update(updates).eq("id", existing.id);
         skipped++;
