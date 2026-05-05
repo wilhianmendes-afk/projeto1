@@ -167,11 +167,29 @@ Scripts disponíveis:
 - Também preenche `vulgo`, `genitora`, `nascimento` se estiverem vazios
 - Filename no Storage: `ibis/<fonte_id>.jpg` ou `ibis/<timestamp>_<uuid>.jpg` (sem fonte_id)
 
+**Filtro de importação — regras estritas (sem exceções):**
+- `naturalWidth=0` → sem foto no IBIS → não importa, sem aviso
+- Erro de canvas (CORS taint, arquivo corrompido, etc.) → não importa, loga `⚠️ Canvas falhou — NOME: motivo`
+- Somente registros onde canvas capturou `base64` com sucesso são importados
+- API também rejeita qualquer payload sem `foto_base64` como segunda barreira
+
 **Como usar (modo manual — arquivo `ibis-extractor-manual.js`):**
 1. Abra o IBIS logado e pesquise qualquer termo
-2. Quando os resultados aparecerem, abra o console (`F12`) e cole o script
+2. Quando os resultados aparecerem, abra o console (`F12`) e cole o conteúdo do arquivo (nunca do chat — pode corromper sintaxe)
 3. Ele processa a página atual e navega automaticamente por todas as páginas seguintes
-4. Registros sem foto são ignorados automaticamente
+
+**Saída esperada no console:**
+```
+📄 Pág 1: 8 registros | 6 com foto | 1 sem foto no IBIS | 1 erro canvas
+  ⚠️ Canvas falhou — ISAAC SAMUEL FERREIRA DA SILVA: The operation is insecure.
+  ✅ +6 importados | 0 já existiam | fotos: 6 | acumulado: 6
+```
+
+**Registros com erro de canvas (CORS taint):**
+- Foto existe no IBIS mas o servidor bloqueou leitura via canvas
+- Não é possível importar pelo navegador — não há solução automática
+- Se o registro já estiver no sistema sem foto: use o botão **Excluir** na página dele
+- Ele nunca será re-importado sem foto (filtro garante isso)
 
 **Limpar pasta ibis/ do Storage:**
 ```bash
@@ -212,105 +230,8 @@ Depois rodar `node scripts/clear-ibis-storage.js` para limpar o Storage.
 })();
 ```
 
-**Script de extração manual (versão atual):**
-```javascript
-(async function () {
-  const VERCEL_URL  = "https://projeto1-liard-one.vercel.app";
-  const BATCH_SIZE  = 10;
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-  let totalEnviados = 0, totalErros = 0;
-
-  function imgParaBase64(imgEl) {
-    try {
-      const w0 = imgEl.naturalWidth, h0 = imgEl.naturalHeight;
-      if (!w0 || !h0) return null;
-      const MAX = 1200; let w = w0, h = h0;
-      if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX; } else { w = Math.round(w * MAX / h); h = MAX; } }
-      const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
-      canvas.getContext("2d").drawImage(imgEl, 0, 0, w, h);
-      return canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
-    } catch { return null; }
-  }
-
-  function extrairLinhas() {
-    const resultado = [];
-    const tabela = document.querySelectorAll("table")[2];
-    if (!tabela) return resultado;
-    tabela.querySelectorAll("tr").forEach(tr => {
-      const col = tr.querySelectorAll("td");
-      if (col.length < 2) return;
-      const col1 = col[1]?.innerText.trim() || "";
-      const nomeRaw = col1.split(/ALCUNHA:/i)[0].trim();
-      const nome = nomeRaw.split("\n")[0].trim();
-      if (!nome) return;
-      const alcunha    = col1.match(/ALCUNHA:\s*(.+)/i)?.[1]?.trim() || null;
-      const genitora   = col[2]?.innerText.trim() || null;
-      const nascRaw    = col[3]?.innerText.trim() || "";
-      const nascimento = nascRaw.match(/\d{2}\/\d{2}\/\d{4}/)?.[0] || null;
-      const imgEl = col[0]?.querySelector("img");
-      const fotoUrl = imgEl?.src || "";
-      const fileMatch = fotoUrl.match(/fotocrim\/([^?]+)/i);
-      resultado.push({ nome, alcunha: alcunha || null, genitora: genitora || null,
-        nascimento: nascimento || null, rg: null, cpf: null,
-        foto_base64: imgEl ? imgParaBase64(imgEl) : null, fonte_id: fileMatch?.[1] || null });
-    });
-    return resultado;
-  }
-
-  async function enviarBatch(batch) {
-    try {
-      const res = await fetch(`${VERCEL_URL}/api/ibis/import`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pessoas: batch }),
-      });
-      const data = await res.json();
-      totalEnviados += data.imported ?? 0;
-      console.log(`  ✅ +${data.imported} importados | ${data.skipped} já existiam | fotos: ${data.photos_saved} | foto_erros: ${data.photo_errors ?? 0} | acumulado: ${totalEnviados}`);
-      if (data.errorMessages?.length) console.warn("  ⚠️ Erros:", JSON.stringify(data.errorMessages));
-    } catch (e) { totalErros++; console.error("  ❌ Erro:", e.message); }
-  }
-
-  async function dispararBackfill() {
-    try {
-      const res = await fetch(`${VERCEL_URL}/api/face/backfill`, { method: "POST" });
-      const data = await res.json();
-      if (data.ok) console.log(`  🧠 processados=${data.processed} embedded=${data.embedded} restantes=${data.remaining}`);
-    } catch (e) { console.warn("  ⚠️  Backfill não disparado:", e.message); }
-  }
-
-  const linhasIniciais = extrairLinhas();
-  if (!linhasIniciais.length) { console.log("⚪ Faça a pesquisa no IBIS primeiro."); return; }
-  console.log("🚀 Iniciando extração da pesquisa atual...\n");
-
-  let batch = [], pagina = 1, totalGeral = 0;
-  while (true) {
-    const imgs = Array.from(document.querySelectorAll("table")[2]?.querySelectorAll("img") || []);
-    await Promise.all(imgs.map(img => {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 4000); });
-    }));
-    const linhas = extrairLinhas();
-    if (!linhas.length) break;
-    const comFoto = linhas.filter(l => l.foto_base64);
-    console.log(`📄 Pág ${pagina}: ${linhas.length} registros | ${comFoto.length} com foto (sem foto ignorados)`);
-    totalGeral += comFoto.length;
-    for (const p of comFoto) {
-      batch.push(p);
-      if (batch.length >= BATCH_SIZE) { await enviarBatch(batch); batch = []; await sleep(300); }
-    }
-    const nextBtn = document.querySelector(".ui-paginator-next:not(.ui-state-disabled)");
-    if (!nextBtn) break;
-    const nomeAtual = linhas[0].nome;
-    nextBtn.click();
-    const ini = Date.now();
-    while (Date.now() - ini < 8000) { await sleep(400); const novas = extrairLinhas(); if (novas.length && novas[0].nome !== nomeAtual) break; }
-    pagina++;
-  }
-  if (batch.length > 0) await enviarBatch(batch);
-  console.log(`\n✅ CONCLUÍDO! Importados: ${totalEnviados} | Erros: ${totalErros}`);
-  if (totalEnviados > 0) { await sleep(1000); await dispararBackfill(); }
-})();
-```
+**Script de extração manual — ver arquivo `scripts/ibis-extractor-manual.js`**
+Sempre copiar do VS Code, nunca do chat (markdown pode corromper a sintaxe).
 
 ## Deploy (Vercel)
 - Branch monitorado: `claude/check-github-access-v30TG`
