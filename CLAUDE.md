@@ -88,6 +88,7 @@ Sem isso, o Vercel Edge Cache serve dados antigos mesmo após truncate do banco.
 | Rota | Descrição |
 |------|-----------|
 | `POST /api/ibis/import` | Recebe pessoas do script extrator do IBIS (CORS aberto) |
+| `DELETE /api/qualificados/[id]` | Remove qualificado + embeddings + foto do Storage |
 | `POST /api/face/search` | Busca facial por imagem enviada (multipart `image`) |
 | `GET  /api/face/backfill` | Gera embeddings dos registros pendentes (50 por chamada) |
 | `POST /api/face/backfill` | Mesmo — usado pelo cron e pelo script extrator |
@@ -134,7 +135,11 @@ face-service/
 - `POST /embed` recebe imagem, retorna `{ faces: [{ embedding: float[512], bbox, det_score }] }`
 
 ## Integração IBIS (ibis.app.br)
-Script de console do navegador: `scripts/ibis-extractor.js`
+
+Scripts disponíveis:
+- `scripts/ibis-extractor-manual.js` — **uso principal**: cole no console após pesquisar manualmente
+- `scripts/ibis-extractor.js` — versão automática AA→ZZ com localStorage (uso avançado)
+- `scripts/clear-ibis-storage.js` — limpa toda a pasta `ibis/` do Supabase Storage em lote
 
 **Estrutura da tabela confirmada:**
 - Seletor: `document.querySelectorAll("table")[2]` (índice 2 — há tabelas de UI antes)
@@ -146,63 +151,74 @@ Script de console do navegador: `scripts/ibis-extractor.js`
 - Botão pesquisar: `formPesquisaPessoa:j_idt221`
 
 **Observações:**
-- `fonte_id` = nome do arquivo da foto (ex: `AbC123--nome.jpg`) — chave de deduplicação
-- Fotos com URL `fotocrim/?pfdrid_c=true` (sem filename) → `naturalWidth=0` → importa sem foto (normal)
+- `fonte_id` = nome do arquivo da foto (ex: `3b429bce-....jpg`) — chave de deduplicação
+- URL `fotocrim/?pfdrid_c=true` (sem filename) = **sem foto no IBIS** → `naturalWidth=0` → ignorado pelo script (normal)
 - **URLs do PrimeFaces expiram** — NÃO re-fazer fetch. Capturar via `canvas.drawImage(imgEl)` enquanto o `<img>` está no DOM
-- Aguardar imagens carregarem antes de capturar: `Promise.all(imgs.map(img => new Promise(r => { img.onload=r; img.onerror=r; setTimeout(r,4000); })))`
+- Aguardar imagens carregarem: `Promise.all(imgs.map(img => new Promise(r => { img.onload=r; img.onerror=r; setTimeout(r,4000); })))`
 - Ao final, dispara backfill automaticamente (pode dar 401 — cron resolve)
 - **nascimento**: endpoint converte automaticamente de `DD/MM/AAAA` para `AAAA-MM-DD`
 - Busca requer mínimo 2 letras (ex: "AA", "AB"...)
+- **Somente registros com foto são importados** — script filtra `comFoto` antes de enviar, API também rejeita
 
-**Lógica de update (registros já existentes):**
-Quando `fonte_id` já existe no banco, o endpoint preenche campos vazios sem sobrescrever:
-- `foto_url` — se vazia, salva a nova foto
-- `vulgo` (alcunha) — se vazio, preenche
-- `genitora` — se vazia, preenche
-- `nascimento` — se vazio, preenche
+**Lógica de deduplicação e update (`/api/ibis/import`):**
+- Com `fonte_id` → checa por `fonte_id` no banco
+- Sem `fonte_id` → checa por `nome` (ilike) + `nascimento`
+- Registro já existente → **sempre atualiza `foto_url`** quando nova foto chega (não apenas se vazio)
+- Também preenche `vulgo`, `genitora`, `nascimento` se estiverem vazios
+- Filename no Storage: `ibis/<fonte_id>.jpg` ou `ibis/<timestamp>_<uuid>.jpg` (sem fonte_id)
 
-**Progresso salvo no localStorage:**
-- Chave: `ibis_extractor_progress` — salva `{ nextIndex, totalEnviados, totalErros }`
-- Para reiniciar do zero: `localStorage.removeItem("ibis_extractor_progress")`
-- Para retomar: basta colar o script de novo — detecta automaticamente
+**Como usar (modo manual — arquivo `ibis-extractor-manual.js`):**
+1. Abra o IBIS logado e pesquise qualquer termo
+2. Quando os resultados aparecerem, abra o console (`F12`) e cole o script
+3. Ele processa a página atual e navega automaticamente por todas as páginas seguintes
+4. Registros sem foto são ignorados automaticamente
 
-**Como usar (modo automático):**
-1. Abra o IBIS logado
-2. Cole o script no console — pesquisa AA→ZZ automaticamente
-3. Se cair a conexão, cole o script de novo — retoma de onde parou
+**Limpar pasta ibis/ do Storage:**
+```bash
+node scripts/clear-ibis-storage.js
+```
+Lê credenciais do `.env.local`, deleta em lotes de 100, exibe progresso.
+
+**Reiniciar banco do zero (SQL Editor do Supabase):**
+```sql
+TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
+```
+Depois rodar `node scripts/clear-ibis-storage.js` para limpar o Storage.
 
 **Diagnóstico de canvas (se fotos não baixarem):**
 ```javascript
-const tabela = document.querySelectorAll("table")[2];
-const img = tabela?.querySelector("img");
-console.log("naturalWidth:", img?.naturalWidth, "complete:", img?.complete);
-if (img?.naturalWidth > 0) {
-  const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
-  try { c.getContext("2d").drawImage(img,0,0); console.log("✅ Canvas OK, length:", c.toDataURL("image/jpeg").length); }
-  catch(e) { console.error("❌ Canvas erro:", e.message); }
-}
+(function() {
+  const tabela = document.querySelectorAll("table")[2];
+  if (!tabela) { console.log("❌ Tabela não encontrada"); return; }
+  tabela.querySelectorAll("tr").forEach(tr => {
+    const col = tr.querySelectorAll("td");
+    if (col.length < 2) return;
+    const nome = col[1]?.innerText.split(/ALCUNHA:/i)[0].split("\n")[0].trim();
+    if (!nome) return;
+    const img = col[0]?.querySelector("img");
+    if (!img) { console.log(`${nome} — SEM <img>`); return; }
+    console.log(`${nome}`);
+    console.log(`  src: ${img.src}`);
+    console.log(`  complete: ${img.complete} | naturalWidth: ${img.naturalWidth}`);
+    if (img.naturalWidth > 0) {
+      try {
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext("2d").drawImage(img, 0, 0);
+        console.log(`  ✅ Canvas OK — base64: ${c.toDataURL("image/jpeg").length} chars`);
+      } catch(e) { console.log(`  ❌ Canvas ERRO: ${e.message}`); }
+    } else { console.log(`  ⚠️ naturalWidth=0 — sem foto no IBIS`); }
+  });
+})();
 ```
 
-**Script completo (versão atual — busca automática AA→ZZ + canvas + localStorage):**
+**Script de extração manual (versão atual):**
 ```javascript
 (async function () {
-  const VERCEL_URL   = "https://projeto1-liard-one.vercel.app";
-  const NOME_INPUT   = "formPesquisaPessoa:pesquisaPessoaNome";
-  const BUSCAR_BTN   = "formPesquisaPessoa:j_idt221";
-  const BATCH_SIZE   = 10;
-  const PAUSA_BUSCA  = 4000;
-  const STORAGE_KEY  = "ibis_extractor_progress";
+  const VERCEL_URL  = "https://projeto1-liard-one.vercel.app";
+  const BATCH_SIZE  = 10;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-  let totalEnviados = saved.totalEnviados || 0;
-  let totalErros    = saved.totalErros    || 0;
-  let startIndex    = saved.nextIndex     || 0;
-
-  function salvarProgresso(nextIndex) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ nextIndex, totalEnviados, totalErros }));
-  }
-  function limparProgresso() { localStorage.removeItem(STORAGE_KEY); }
+  let totalEnviados = 0, totalErros = 0;
 
   function imgParaBase64(imgEl) {
     try {
@@ -231,11 +247,12 @@ if (img?.naturalWidth > 0) {
       const genitora   = col[2]?.innerText.trim() || null;
       const nascRaw    = col[3]?.innerText.trim() || "";
       const nascimento = nascRaw.match(/\d{2}\/\d{2}\/\d{4}/)?.[0] || null;
-      const imgEl      = col[0]?.querySelector("img");
-      const fotoUrl    = imgEl?.src || "";
-      const fileMatch  = fotoUrl.match(/fotocrim\/([^?]+)/i);
-      const foto_base64 = imgEl ? imgParaBase64(imgEl) : null;
-      resultado.push({ nome, alcunha: alcunha || null, genitora: genitora || null, nascimento, rg: null, cpf: null, foto_base64, fonte_id: fileMatch?.[1] || null });
+      const imgEl = col[0]?.querySelector("img");
+      const fotoUrl = imgEl?.src || "";
+      const fileMatch = fotoUrl.match(/fotocrim\/([^?]+)/i);
+      resultado.push({ nome, alcunha: alcunha || null, genitora: genitora || null,
+        nascimento: nascimento || null, rg: null, cpf: null,
+        foto_base64: imgEl ? imgParaBase64(imgEl) : null, fonte_id: fileMatch?.[1] || null });
     });
     return resultado;
   }
@@ -248,106 +265,52 @@ if (img?.naturalWidth > 0) {
       });
       const data = await res.json();
       totalEnviados += data.imported ?? 0;
-      console.log(`    ✅ +${data.imported} importados | ${data.skipped} já existiam | fotos: ${data.photos_saved} | foto_erros: ${data.photo_errors ?? 0} | acumulado: ${totalEnviados}`);
-      if (data.errorMessages?.length) console.warn("    ⚠️ Erros:", JSON.stringify(data.errorMessages));
-    } catch (e) { totalErros++; console.error("    ❌ Erro:", e.message); }
+      console.log(`  ✅ +${data.imported} importados | ${data.skipped} já existiam | fotos: ${data.photos_saved} | foto_erros: ${data.photo_errors ?? 0} | acumulado: ${totalEnviados}`);
+      if (data.errorMessages?.length) console.warn("  ⚠️ Erros:", JSON.stringify(data.errorMessages));
+    } catch (e) { totalErros++; console.error("  ❌ Erro:", e.message); }
   }
 
   async function dispararBackfill() {
     try {
-      console.log("⚙️  Disparando backfill...");
       const res = await fetch(`${VERCEL_URL}/api/face/backfill`, { method: "POST" });
       const data = await res.json();
-      if (data.ok) {
-        console.log(`  🧠 processados=${data.processed} embedded=${data.embedded} skipped=${data.skipped} restantes=${data.remaining}`);
-        if (data.remaining > 0) console.log(`  ⏳ ${data.remaining} pendentes — cron processa às 3h.`);
-        else console.log("  ✅ Todos os registros estão indexados!");
-      }
+      if (data.ok) console.log(`  🧠 processados=${data.processed} embedded=${data.embedded} restantes=${data.remaining}`);
     } catch (e) { console.warn("  ⚠️  Backfill não disparado:", e.message); }
   }
 
-  async function processarPaginas() {
-    let batch = [], pagina = 1, totalPagina = 0;
-    while (true) {
-      const imgs = Array.from(document.querySelectorAll("table")[2]?.querySelectorAll("img") || []);
-      await Promise.all(imgs.map(img => {
-        if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-        return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 4000); });
-      }));
-      const linhas = extrairLinhas();
-      if (!linhas.length) break;
-      const comFoto = linhas.filter(l => l.foto_base64).length;
-      console.log(`  📄 Pág ${pagina}: ${linhas.length} registros (${comFoto} com foto)`);
-      totalPagina += linhas.length;
-      for (const p of linhas) {
-        batch.push(p);
-        if (batch.length >= BATCH_SIZE) { await enviarBatch(batch); batch = []; await sleep(300); }
-      }
-      const nextBtn = document.querySelector(".ui-paginator-next:not(.ui-state-disabled)");
-      if (!nextBtn) break;
-      const nomeAtual = linhas[0].nome;
-      nextBtn.click();
-      const ini = Date.now();
-      while (Date.now() - ini < 8000) { await sleep(400); const novas = extrairLinhas(); if (novas.length && novas[0].nome !== nomeAtual) break; }
-      pagina++;
+  const linhasIniciais = extrairLinhas();
+  if (!linhasIniciais.length) { console.log("⚪ Faça a pesquisa no IBIS primeiro."); return; }
+  console.log("🚀 Iniciando extração da pesquisa atual...\n");
+
+  let batch = [], pagina = 1, totalGeral = 0;
+  while (true) {
+    const imgs = Array.from(document.querySelectorAll("table")[2]?.querySelectorAll("img") || []);
+    await Promise.all(imgs.map(img => {
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+      return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 4000); });
+    }));
+    const linhas = extrairLinhas();
+    if (!linhas.length) break;
+    const comFoto = linhas.filter(l => l.foto_base64);
+    console.log(`📄 Pág ${pagina}: ${linhas.length} registros | ${comFoto.length} com foto (sem foto ignorados)`);
+    totalGeral += comFoto.length;
+    for (const p of comFoto) {
+      batch.push(p);
+      if (batch.length >= BATCH_SIZE) { await enviarBatch(batch); batch = []; await sleep(300); }
     }
-    if (batch.length > 0) await enviarBatch(batch);
-    return totalPagina;
-  }
-
-  async function pesquisar(termo) {
-    const input = document.getElementById(NOME_INPUT);
-    const btn   = document.getElementById(BUSCAR_BTN);
-    if (!input || !btn) throw new Error("Campos não encontrados");
-    input.value = termo;
-    input.dispatchEvent(new Event("input",  { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    if (window.jQuery) jQuery(input).val(termo).trigger("change");
-    btn.click();
-    await sleep(2000);
+    const nextBtn = document.querySelector(".ui-paginator-next:not(.ui-state-disabled)");
+    if (!nextBtn) break;
+    const nomeAtual = linhas[0].nome;
+    nextBtn.click();
     const ini = Date.now();
-    while (Date.now() - ini < 10000) { if (extrairLinhas().length > 0) break; await sleep(500); }
+    while (Date.now() - ini < 8000) { await sleep(400); const novas = extrairLinhas(); if (novas.length && novas[0].nome !== nomeAtual) break; }
+    pagina++;
   }
-
-  const alfa = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const combos = [];
-  for (const a of alfa) for (const b of alfa) combos.push(a + b);
-
-  if (startIndex > 0) {
-    console.log(`♻️  Retomando: "${combos[startIndex]}" [${startIndex}/${combos.length}] — já importados: ${totalEnviados}\n`);
-  } else {
-    console.log(`🚀 Iniciando extração AA → ZZ (${combos.length} buscas) — progresso salvo automaticamente.\n`);
-  }
-
-  for (let i = startIndex; i < combos.length; i++) {
-    const termo = combos[i];
-    console.log(`\n🔍 [${i + 1}/${combos.length}] Pesquisando: "${termo}"`);
-    try {
-      await pesquisar(termo);
-      const total = await processarPaginas();
-      console.log(total ? `  ✔ "${termo}" — ${total} registros` : `  ⚪ Sem resultados`);
-    } catch (e) { console.error(`  ❌ Erro em "${termo}":`, e.message); }
-    salvarProgresso(i + 1);
-    if (i < combos.length - 1) { console.log(`  ⏳ Aguardando ${PAUSA_BUSCA/1000}s...`); await sleep(PAUSA_BUSCA); }
-  }
-
-  limparProgresso();
+  if (batch.length > 0) await enviarBatch(batch);
   console.log(`\n✅ CONCLUÍDO! Importados: ${totalEnviados} | Erros: ${totalErros}`);
   if (totalEnviados > 0) { await sleep(1000); await dispararBackfill(); }
 })();
 ```
-
-## Script Node.js — Importar JSON do IBIS (`scripts/ibis-import-json.js`)
-Para importar arquivo JSON exportado pelo colega (sem fotos — fotos vêm depois pelo extractor do navegador).
-
-**Uso:**
-```bash
-node scripts/ibis-import-json.js "C:\Users\...\ibis-qualificados-2026-05-03.json"
-```
-- Requer Node.js 18+
-- Importa dados (nome, alcunha, genitora, nascimento, rg/cpf, fonte_id) sem foto
-- Ao final dispara backfill automaticamente
-- Fotos são adicionadas depois rodando o `ibis-extractor.js` no navegador — registros existentes recebem foto sem criar duplicata
 
 ## Deploy (Vercel)
 - Branch monitorado: `claude/check-github-access-v30TG`
@@ -360,14 +323,24 @@ node scripts/ibis-import-json.js "C:\Users\...\ibis-qualificados-2026-05-03.json
   Invoke-RestMethod -Uri "<hook-url>" -Method POST
   ```
 
+## Páginas — funcionalidades
+| Rota | Funcionalidade extra |
+|------|---------------------|
+| `/qualificados/[id]` | Botão **Excluir** (DeleteButton) — remove registro + embeddings + foto do Storage |
+
+`src/components/DeleteButton.tsx` — client component com confirmação em dois cliques.
+
 ## Comandos úteis
 ```bash
 npm run dev       # dev local
 npm run build     # checar build
 
+# Limpar pasta ibis/ do Storage:
+node scripts/clear-ibis-storage.js   # lê .env.local automaticamente
+
 # Reimportar do zero (SQL Editor do Supabase):
 TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
-# Depois: limpar Storage bucket faces/ibis/ manualmente no painel do Supabase
+# Depois: node scripts/clear-ibis-storage.js
 
 # Ver logs do face-service:
 # Railway → projeto1 → Deployments → View logs
