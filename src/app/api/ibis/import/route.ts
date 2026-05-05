@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   const errorMessages: string[] = [];
 
   for (const p of pessoas) {
-    if (!p.nome?.trim()) { skipped++; continue; }
+    if (!p.nome?.trim() || !p.foto_base64) { skipped++; continue; }
 
     // Upload da foto primeiro (antes do check de duplicata, para poder atualizar)
     let storedPhotoUrl: string | null = null;

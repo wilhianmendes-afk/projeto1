@@ -114,10 +114,10 @@
 
       const linhas = extrairLinhas();
       if (!linhas.length) break;
-      const comFoto = linhas.filter(l => l.foto_base64).length;
-      console.log(`  📄 Pág ${pagina}: ${linhas.length} registros (${comFoto} com foto)`);
-      totalPagina += linhas.length;
-      for (const p of linhas) {
+      const comFoto = linhas.filter(l => l.foto_base64);
+      console.log(`  📄 Pág ${pagina}: ${linhas.length} registros | ${comFoto.length} com foto (sem foto ignorados)`);
+      totalPagina += comFoto.length;
+      for (const p of comFoto) {
         batch.push(p);
         if (batch.length >= BATCH_SIZE) { await enviarBatch(batch); batch = []; await sleep(300); }
       }
