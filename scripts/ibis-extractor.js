@@ -1,10 +1,12 @@
 /**
  * IBIS Extractor — Intel Facial 42º BPM
  *
- * MODO AUTOMÁTICO (recomendado):
- *   Cole este script no console com o IBIS aberto (qualquer página).
- *   Ele pesquisa AA → ZZ automaticamente, navega todas as páginas e importa tudo.
- *   Progresso salvo no localStorage — retoma de onde parou se fechar o navegador.
+ * Cole no console do navegador com o IBIS aberto (qualquer página).
+ * Pesquisa AA → ZZ automaticamente, navega todas as páginas e importa tudo.
+ * Progresso salvo no localStorage — retoma de onde parou se fechar o navegador.
+ *
+ * Para reiniciar do zero:
+ *   localStorage.removeItem("ibis_extractor_progress")
  */
 
 (async function () {
@@ -26,8 +28,7 @@
   }
   function limparProgresso() { localStorage.removeItem(STORAGE_KEY); }
 
-  // Converte o elemento <img> já carregado na página para base64 via canvas.
-  // Evita re-fetch (URLs do PrimeFaces são dinâmicas e retornam 404 se re-requisitadas).
+  // Captura foto direto do <img> já carregado — sem re-fetch (URLs do IBIS expiram e retornam 404)
   function imgParaBase64(imgEl) {
     try {
       const w0 = imgEl.naturalWidth, h0 = imgEl.naturalHeight;
@@ -63,13 +64,10 @@
       const imgEl      = col[0]?.querySelector("img");
       const fotoUrl    = imgEl?.src || "";
       const fileMatch  = fotoUrl.match(/fotocrim\/([^?]+)/i);
-      // Captura a foto agora, enquanto o <img> ainda está no DOM
       const foto_base64 = imgEl ? imgParaBase64(imgEl) : null;
       resultado.push({
         nome, alcunha: alcunha || null, genitora: genitora || null, nascimento,
-        rg: null, cpf: null,
-        foto_base64,
-        fonte_id: fileMatch?.[1] || null,
+        rg: null, cpf: null, foto_base64, fonte_id: fileMatch?.[1] || null,
       });
     });
     return resultado;
@@ -83,11 +81,11 @@
       });
       const data = await res.json();
       totalEnviados += data.imported ?? 0;
-      console.log(`    ✅ +${data.imported} importados | ${data.skipped} já existiam | fotos: ${data.photos_saved} | foto_erros: ${data.photo_errors ?? 0} | acumulado: ${totalEnviados}`);
-      if (data.errorMessages?.length) console.warn("    ⚠️ Erros:", JSON.stringify(data.errorMessages));
+      console.log(`  ✅ +${data.imported} importados | ${data.skipped} já existiam | fotos: ${data.photos_saved} | foto_erros: ${data.photo_errors ?? 0} | acumulado: ${totalEnviados}`);
+      if (data.errorMessages?.length) console.warn("  ⚠️ Erros:", JSON.stringify(data.errorMessages));
     } catch (e) {
       totalErros++;
-      console.error("    ❌ Erro ao enviar:", e.message);
+      console.error("  ❌ Erro ao enviar:", e.message);
     }
   }
 
@@ -107,7 +105,7 @@
   async function processarPaginas() {
     let batch = [], pagina = 1, totalPagina = 0;
     while (true) {
-      // Aguarda todas as imagens da tabela carregarem antes de capturar
+      // Aguarda todas as imagens carregarem antes de capturar via canvas
       const imgs = Array.from(document.querySelectorAll("table")[2]?.querySelectorAll("img") || []);
       await Promise.all(imgs.map(img => {
         if (img.complete && img.naturalWidth > 0) return Promise.resolve();
@@ -128,11 +126,7 @@
       const nomeAtual = linhas[0].nome;
       nextBtn.click();
       const ini = Date.now();
-      while (Date.now() - ini < 8000) {
-        await sleep(400);
-        const novas = extrairLinhas();
-        if (novas.length && novas[0].nome !== nomeAtual) break;
-      }
+      while (Date.now() - ini < 8000) { await sleep(400); const novas = extrairLinhas(); if (novas.length && novas[0].nome !== nomeAtual) break; }
       pagina++;
     }
     if (batch.length > 0) await enviarBatch(batch);
