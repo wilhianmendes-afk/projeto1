@@ -70,17 +70,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Verifica duplicata
-    if (p.fonte_id) {
-      const { data: existing } = await service
-        .from("qualificados").select("id, foto_url, vulgo, genitora, nascimento")
-        .eq("fonte", "ibis").eq("fonte_id", p.fonte_id).maybeSingle();
+    // Verifica duplicata — por fonte_id (com foto) ou nome+nascimento (sem foto)
+    {
+      type ExistingRow = { id: string; foto_url: string | null; vulgo: string | null; genitora: string | null; nascimento: string | null };
+      let existing: ExistingRow | null = null;
+
+      if (p.fonte_id) {
+        const { data } = await service
+          .from("qualificados").select("id, foto_url, vulgo, genitora, nascimento")
+          .eq("fonte", "ibis").eq("fonte_id", p.fonte_id).maybeSingle();
+        existing = data as ExistingRow | null;
+      } else {
+        // Sem fonte_id: deduplica por nome (case-insensitive) + nascimento quando disponível
+        const nascNorm = p.nascimento?.match(/^\d{2}\/\d{2}\/\d{4}$/)
+          ? p.nascimento.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")
+          : p.nascimento?.trim() || null;
+        let q = service.from("qualificados")
+          .select("id, foto_url, vulgo, genitora, nascimento")
+          .eq("fonte", "ibis").ilike("nome", p.nome.trim());
+        if (nascNorm) q = (q as typeof q).eq("nascimento", nascNorm);
+        const { data } = await q.maybeSingle();
+        existing = data as ExistingRow | null;
+      }
+
       if (existing) {
         // Preenche campos vazios sem sobrescrever dados existentes
         const updates: Record<string, string> = {};
-        if (!existing.foto_url   && storedPhotoUrl)      { updates.foto_url   = storedPhotoUrl; photos_saved++; }
-        if (!existing.vulgo      && p.alcunha?.trim())   { updates.vulgo      = p.alcunha.trim(); }
-        if (!existing.genitora   && p.genitora?.trim())  { updates.genitora   = p.genitora.trim(); }
+        if (!existing.foto_url   && storedPhotoUrl)       { updates.foto_url   = storedPhotoUrl; photos_saved++; }
+        if (!existing.vulgo      && p.alcunha?.trim())    { updates.vulgo      = p.alcunha.trim(); }
+        if (!existing.genitora   && p.genitora?.trim())   { updates.genitora   = p.genitora.trim(); }
         if (!existing.nascimento && p.nascimento?.trim()) {
           updates.nascimento = p.nascimento.match(/^\d{2}\/\d{2}\/\d{4}$/)
             ? p.nascimento.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$2-$1")

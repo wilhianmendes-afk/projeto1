@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Fingerprint } from "lucide-react";
 import IndexButton from "@/components/IndexButton";
+import DeleteButton from "@/components/DeleteButton";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -57,13 +58,16 @@ export default async function QualificadoPage({
 
   return (
     <div className="max-w-3xl">
-      <Link
-        href="/qualificados"
-        className="flex items-center gap-2 text-gray-400 hover:text-white text-sm mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Voltar
-      </Link>
+      <div className="flex items-center justify-between mb-6">
+        <Link
+          href="/qualificados"
+          className="flex items-center gap-2 text-gray-400 hover:text-white text-sm transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Voltar
+        </Link>
+        <DeleteButton id={id} nome={pessoa.nome} />
+      </div>
 
       <div className="flex items-start gap-6 mb-8">
         {pessoa.foto_url ? (
