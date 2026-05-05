@@ -61,10 +61,7 @@ export default async function IndexacaoPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h2 className="font-semibold text-white mb-3">Backfill manual</h2>
-          <p className="text-gray-400 text-sm mb-4">
-            Processa todos os qualificados sem embedding. Pode levar vários minutos dependendo do volume.
-          </p>
+          <h2 className="font-semibold text-white mb-4">Indexação de embeddings</h2>
           <BackfillButton />
         </div>
 

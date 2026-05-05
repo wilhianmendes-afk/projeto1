@@ -1,49 +1,146 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle, Loader2, RefreshCw, XCircle } from "lucide-react";
 
-export default function BackfillButton() {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ processed: number; embedded: number; skipped: number } | null>(null);
-  const [error, setError] = useState("");
+type Stats = {
+  rodada: number;
+  processed: number;
+  embedded: number;
+  skipped: number;
+  remaining: number;
+};
+
+export default function AutoBackfill() {
+  const [stats, setStats]     = useState<Stats>({ rodada: 0, processed: 0, embedded: 0, skipped: 0, remaining: -1 });
+  const [status, setStatus]   = useState<"running" | "done" | "error" | "stopped">("running");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [retryIn, setRetryIn]  = useState(0);
+  const stopped = useRef(false);
+
+  useEffect(() => {
+    stopped.current = false;
+    run();
+    return () => { stopped.current = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function run() {
-    if (!confirm("Iniciar backfill de todos os qualificados pendentes?")) return;
-    setLoading(true);
-    setResult(null);
-    setError("");
+    setStatus("running");
+    setErrorMsg("");
+    let rodada = 0, totalProcessed = 0, totalEmbedded = 0, totalSkipped = 0;
 
-    try {
-      const res = await fetch("/api/face/backfill", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Erro");
-      setResult(data);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
+    while (!stopped.current) {
+      try {
+        const res  = await fetch("/api/face/backfill", { method: "POST" });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+
+        rodada++;
+        totalProcessed += data.processed ?? 0;
+        totalEmbedded  += data.embedded  ?? 0;
+        totalSkipped   += data.skipped   ?? 0;
+
+        setStats({ rodada, processed: totalProcessed, embedded: totalEmbedded, skipped: totalSkipped, remaining: data.remaining ?? 0 });
+
+        if ((data.remaining ?? 0) === 0) {
+          setStatus("done");
+          return;
+        }
+
+        // pequena pausa entre rodadas para não sobrecarregar
+        await sleep(1500);
+      } catch (e) {
+        if (stopped.current) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        setErrorMsg(msg);
+        setStatus("error");
+
+        // retry automático com contagem regressiva
+        for (let i = 8; i > 0 && !stopped.current; i--) {
+          setRetryIn(i);
+          await sleep(1000);
+        }
+        if (stopped.current) return;
+        setRetryIn(0);
+        setStatus("running");
+      }
     }
+    setStatus("stopped");
+  }
+
+  function stop() {
+    stopped.current = true;
+    setStatus("stopped");
+  }
+
+  function restart() {
+    stopped.current = false;
+    setStats({ rodada: 0, processed: 0, embedded: 0, skipped: 0, remaining: -1 });
+    setErrorMsg("");
+    setRetryIn(0);
+    run();
   }
 
   return (
-    <div>
-      <button
-        onClick={run}
-        disabled={loading}
-        className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-      >
-        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-        {loading ? "Processando..." : "Iniciar Backfill"}
-      </button>
+    <div className="space-y-4">
+      {/* Status */}
+      <div className="flex items-center gap-2">
+        {status === "running" && <Loader2 className="w-4 h-4 animate-spin text-blue-400" />}
+        {status === "done"    && <CheckCircle className="w-4 h-4 text-green-400" />}
+        {status === "error"   && <XCircle className="w-4 h-4 text-red-400" />}
+        {status === "stopped" && <RefreshCw className="w-4 h-4 text-gray-400" />}
 
-      {result && (
-        <p className="text-green-400 text-sm mt-3">
-          Concluído: {result.processed} processados, {result.embedded} embeddings gerados,{" "}
-          {result.skipped} ignorados.
+        <span className="text-sm font-medium text-white">
+          {status === "running" && (stats.remaining === -1 ? "Iniciando..." : `Processando... ${stats.remaining} pendentes`)}
+          {status === "done"    && "Todos os embeddings gerados!"}
+          {status === "error"   && `Erro — tentando novamente em ${retryIn}s`}
+          {status === "stopped" && "Pausado"}
+        </span>
+      </div>
+
+      {/* Progresso */}
+      {stats.rodada > 0 && (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="bg-gray-800 rounded-lg p-2">
+            <p className="text-white font-bold text-lg">{stats.processed}</p>
+            <p className="text-gray-400 text-xs">Processados</p>
+          </div>
+          <div className="bg-gray-800 rounded-lg p-2">
+            <p className="text-green-400 font-bold text-lg">{stats.embedded}</p>
+            <p className="text-gray-400 text-xs">Embeddings</p>
+          </div>
+          <div className="bg-gray-800 rounded-lg p-2">
+            <p className="text-yellow-400 font-bold text-lg">{stats.skipped}</p>
+            <p className="text-gray-400 text-xs">Sem rosto</p>
+          </div>
+        </div>
+      )}
+
+      {/* Erro detalhado */}
+      {errorMsg && (
+        <p className="text-red-400 text-xs bg-red-950 border border-red-900 rounded-lg px-3 py-2">
+          {errorMsg}
         </p>
       )}
-      {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+
+      {/* Controles */}
+      <div className="flex gap-2">
+        {(status === "running" || status === "error") && (
+          <button onClick={stop} className="text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-colors">
+            Pausar
+          </button>
+        )}
+        {(status === "stopped" || status === "done") && (
+          <button onClick={restart} className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-white border border-blue-800 hover:border-blue-600 px-3 py-1.5 rounded-lg transition-colors">
+            <RefreshCw className="w-3 h-3" />
+            Reiniciar
+          </button>
+        )}
+      </div>
     </div>
   );
 }
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
