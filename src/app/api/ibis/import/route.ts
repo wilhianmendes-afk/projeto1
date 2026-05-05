@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     if (p.foto_base64) {
       const photoBuffer = Buffer.from(p.foto_base64, "base64");
-      const filename = `ibis/${p.fonte_id ?? Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const filename = `ibis/${p.fonte_id ?? `${Date.now()}_${crypto.randomUUID()}`}.jpg`;
       const { error: uploadError } = await service.storage
         .from("faces").upload(filename, photoBuffer, { contentType: "image/jpeg", upsert: true });
       if (!uploadError) {
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       if (existing) {
         // Preenche campos vazios sem sobrescrever dados existentes
         const updates: Record<string, string> = {};
-        if (!existing.foto_url   && storedPhotoUrl)       { updates.foto_url   = storedPhotoUrl; photos_saved++; }
+        if (storedPhotoUrl)       { updates.foto_url   = storedPhotoUrl; photos_saved++; }
         if (!existing.vulgo      && p.alcunha?.trim())    { updates.vulgo      = p.alcunha.trim(); }
         if (!existing.genitora   && p.genitora?.trim())   { updates.genitora   = p.genitora.trim(); }
         if (!existing.nascimento && p.nascimento?.trim()) {
