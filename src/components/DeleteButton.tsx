@@ -13,8 +13,7 @@ export default function DeleteButton({ id, nome }: { id: string; nome: string })
     setLoading(true);
     const res = await fetch(`/api/qualificados/${id}`, { method: "DELETE" });
     if (res.ok) {
-      router.push("/qualificados");
-      router.refresh();
+      router.back();
     } else {
       alert("Erro ao excluir. Tente novamente.");
       setLoading(false);

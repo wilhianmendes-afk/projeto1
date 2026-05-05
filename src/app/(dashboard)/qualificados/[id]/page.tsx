@@ -1,9 +1,9 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, Fingerprint } from "lucide-react";
+import { Fingerprint } from "lucide-react";
 import IndexButton from "@/components/IndexButton";
 import DeleteButton from "@/components/DeleteButton";
+import BackButton from "@/components/BackButton";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -59,13 +59,7 @@ export default async function QualificadoPage({
   return (
     <div className="max-w-3xl">
       <div className="flex items-center justify-between mb-6">
-        <Link
-          href="/qualificados"
-          className="flex items-center gap-2 text-gray-400 hover:text-white text-sm transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Voltar
-        </Link>
+        <BackButton />
         <DeleteButton id={id} nome={pessoa.nome} />
       </div>
 
