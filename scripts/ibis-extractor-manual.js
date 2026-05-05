@@ -16,10 +16,11 @@
   let totalEnviados = 0, totalErros = 0;
 
   // Captura foto via canvas — URLs do IBIS expiram, não re-fetchar
+  // Retorna: { base64: string } | { erro: string } | null (sem foto no IBIS)
   function imgParaBase64(imgEl) {
+    const w0 = imgEl.naturalWidth, h0 = imgEl.naturalHeight;
+    if (!w0 || !h0) return null; // sem foto no IBIS (fotocrim/?pfdrid_c=true)
     try {
-      const w0 = imgEl.naturalWidth, h0 = imgEl.naturalHeight;
-      if (!w0 || !h0) return null;
       const MAX = 1200;
       let w = w0, h = h0;
       if (w > MAX || h > MAX) {
@@ -29,8 +30,12 @@
       const canvas = document.createElement("canvas");
       canvas.width = w; canvas.height = h;
       canvas.getContext("2d").drawImage(imgEl, 0, 0, w, h);
-      return canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
-    } catch { return null; }
+      const b64 = canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
+      if (!b64 || b64.length < 100) return { erro: "base64 vazio após canvas" };
+      return { base64: b64 };
+    } catch (e) {
+      return { erro: e.message || String(e) };
+    }
   }
 
   function extrairLinhas() {
@@ -41,29 +46,32 @@
       const col = tr.querySelectorAll("td");
       if (col.length < 2) return;
 
-      // col[1] = nome + "ALCUNHA: xxx"
       const col1    = col[1]?.innerText.trim() || "";
       const nomeRaw = col1.split(/ALCUNHA:/i)[0].trim();
       const nome    = nomeRaw.split("\n")[0].trim();
       if (!nome) return;
 
       const alcunha    = col1.match(/ALCUNHA:\s*(.+)/i)?.[1]?.trim() || null;
-      const genitora   = col[2]?.innerText.trim() || null;           // col[2] = mãe
-      const nascRaw    = col[3]?.innerText.trim() || "";             // col[3] = nascimento
+      const genitora   = col[2]?.innerText.trim() || null;
+      const nascRaw    = col[3]?.innerText.trim() || "";
       const nascimento = nascRaw.match(/\d{2}\/\d{2}\/\d{4}/)?.[0] || null;
 
       const imgEl     = col[0]?.querySelector("img");
       const fotoUrl   = imgEl?.src || "";
       const fileMatch = fotoUrl.match(/fotocrim\/([^?]+)/i);
-      const foto_base64 = imgEl ? imgParaBase64(imgEl) : null;
+      const captura   = imgEl ? imgParaBase64(imgEl) : null;
 
+      // captura === null  → sem foto no IBIS (naturalWidth=0)
+      // captura.erro      → foto existe mas canvas falhou (CORS, arquivo corrompido, etc.)
+      // captura.base64    → foto capturada com sucesso
       resultado.push({
         nome,
         alcunha:    alcunha    || null,
         genitora:   genitora   || null,
         nascimento: nascimento || null,
         rg: null, cpf: null,
-        foto_base64,
+        foto_base64:  captura?.base64  || null,
+        canvas_erro:  captura?.erro    || null,
         fonte_id: fileMatch?.[1] || null,
       });
     });
@@ -126,8 +134,14 @@
     const linhas = extrairLinhas();
     if (!linhas.length) break;
 
-    const comFoto = linhas.filter(l => l.foto_base64);
-    console.log(`📄 Pág ${pagina}: ${linhas.length} registros | ${comFoto.length} com foto (sem foto ignorados)`);
+    const comFoto      = linhas.filter(l => l.foto_base64);
+    const semFotoIbis  = linhas.filter(l => !l.foto_base64 && !l.canvas_erro);
+    const erroCanvas   = linhas.filter(l => l.canvas_erro);
+
+    console.log(`📄 Pág ${pagina}: ${linhas.length} registros | ${comFoto.length} com foto | ${semFotoIbis.length} sem foto no IBIS | ${erroCanvas.length} erro canvas`);
+    if (erroCanvas.length) {
+      erroCanvas.forEach(p => console.warn(`  ⚠️ Canvas falhou — ${p.nome}: ${p.canvas_erro}`));
+    }
     totalGeral += comFoto.length;
 
     for (const p of comFoto) {
