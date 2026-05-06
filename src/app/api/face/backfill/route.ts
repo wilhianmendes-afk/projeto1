@@ -22,10 +22,14 @@ export async function DELETE(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
 
   const service = getAdminClient();
-  const { count } = await service
-    .from("face_skipped").delete({ count: "exact" }).eq("source", "qualificados");
+  const { error } = await service
+    .from("face_skipped")
+    .delete()
+    .eq("source", "qualificados");
 
-  return NextResponse.json({ ok: true, deleted: count ?? 0 }, { headers: CORS_HEADERS });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: CORS_HEADERS });
+
+  return NextResponse.json({ ok: true }, { headers: CORS_HEADERS });
 }
 
 function getAdminClient() {
