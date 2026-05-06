@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+import { clearSkippedAction } from "@/app/(dashboard)/indexacao/actions";
 
 export default function ClearSkippedButton({ total }: { total: number }) {
   const router = useRouter();
@@ -14,12 +15,7 @@ export default function ClearSkippedButton({ total }: { total: number }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/face/backfill", { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? `Erro HTTP ${res.status}`);
-        return;
-      }
+      await clearSkippedAction();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro desconhecido");
