@@ -7,12 +7,25 @@ export const maxDuration = 60;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Backfill-Token",
 };
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 200, headers: CORS_HEADERS });
+}
+
+// DELETE: limpa todos os face_skipped para reprocessar
+export async function DELETE(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
+
+  const service = getAdminClient();
+  const { count } = await service
+    .from("face_skipped").delete({ count: "exact" }).eq("source", "qualificados");
+
+  return NextResponse.json({ ok: true, deleted: count ?? 0 }, { headers: CORS_HEADERS });
 }
 
 function getAdminClient() {
@@ -57,6 +70,7 @@ async function runBackfill(limit: number) {
   for (const pessoa of queue) {
     const urls: string[] = [pessoa.foto_url, ...((pessoa.fotos_extras as string[]) ?? [])].filter(Boolean);
     let pessoaEmbedded = 0;
+    let serviceError = false;
 
     for (const url of urls) {
       let buffer: Buffer;
@@ -67,7 +81,12 @@ async function runBackfill(limit: number) {
       } catch { continue; }
 
       let embedResponse;
-      try { embedResponse = await embedImage(buffer); } catch { continue; }
+      try {
+        embedResponse = await embedImage(buffer);
+      } catch {
+        serviceError = true; // face service indisponível — não marcar como sem rosto
+        continue;
+      }
 
       for (let faceIndex = 0; faceIndex < embedResponse.faces.length; faceIndex++) {
         const face = embedResponse.faces[faceIndex];
@@ -80,13 +99,17 @@ async function runBackfill(limit: number) {
       }
     }
 
-    if (pessoaEmbedded === 0) {
+    if (pessoaEmbedded === 0 && !serviceError) {
+      // Foto processada com sucesso mas sem rosto detectado
       await service.from("face_skipped").upsert({
         source: "qualificados", source_id: pessoa.id,
         source_label: pessoa.nome, reason: "no_face_detected",
       }, { onConflict: "source,source_id" });
       skipped++;
-    } else { embedded += pessoaEmbedded; }
+    } else if (pessoaEmbedded > 0) {
+      embedded += pessoaEmbedded;
+    }
+    // serviceError && pessoaEmbedded === 0 → permanece pendente, será reprocessado
     processed++;
   }
 

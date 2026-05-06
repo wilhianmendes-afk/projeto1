@@ -1,5 +1,6 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import BackfillButton from "@/components/BackfillButton";
+import ClearSkippedButton from "@/components/ClearSkippedButton";
 import DriveImport from "@/components/DriveImport";
 import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
 
@@ -73,7 +74,10 @@ export default async function IndexacaoPage() {
 
       {recentSkipped && recentSkipped.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h2 className="font-semibold text-white mb-3">Últimos ignorados</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-white">Sem rosto detectado</h2>
+            <ClearSkippedButton total={totalSkipped ?? 0} />
+          </div>
           <div className="space-y-2">
             {recentSkipped.map((s, i) => (
               <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-gray-800 last:border-0">
