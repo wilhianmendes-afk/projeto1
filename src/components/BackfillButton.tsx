@@ -35,7 +35,12 @@ export default function AutoBackfill() {
         const res  = await fetch("/api/face/backfill", { method: "POST" });
         const data = await res.json();
 
-        if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+        if (!res.ok) {
+          const msg = data.error ?? `HTTP ${res.status}`;
+          // 503 = face service offline — espera mais antes de tentar
+          if (res.status === 503) throw new Error(`⚠️ ${msg}`);
+          throw new Error(msg);
+        }
 
         rodada++;
         totalProcessed += data.processed ?? 0;

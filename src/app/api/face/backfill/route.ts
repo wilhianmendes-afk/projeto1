@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { embedImage } from "@/lib/face-service";
+import { embedImage, healthCheck } from "@/lib/face-service";
 
 export const maxDuration = 60;
 
@@ -50,6 +50,15 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 async function runBackfill(limit: number) {
+  // Verifica se o face service está online antes de processar
+  const serviceOnline = await healthCheck();
+  if (!serviceOnline) {
+    return NextResponse.json(
+      { ok: false, error: "Face service offline. Verifique o Railway.", processed: 0, embedded: 0, skipped: 0, remaining: -1 },
+      { status: 503, headers: CORS_HEADERS }
+    );
+  }
+
   const service = getAdminClient();
 
   const { data: alreadyIndexed } = await service
