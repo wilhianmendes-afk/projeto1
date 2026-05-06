@@ -17,9 +17,11 @@ export async function OPTIONS() {
 
 // DELETE: limpa todos os face_skipped para reprocessar
 export async function DELETE(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
+  if (!isAuthorized(req)) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
+  }
 
   const service = getAdminClient();
   const { error } = await service

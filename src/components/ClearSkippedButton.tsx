@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 
 export default function ClearSkippedButton({ total }: { total: number }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -18,7 +20,7 @@ export default function ClearSkippedButton({ total }: { total: number }) {
         setError(data.error ?? `Erro HTTP ${res.status}`);
         return;
       }
-      window.location.reload();
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro desconhecido");
     } finally {

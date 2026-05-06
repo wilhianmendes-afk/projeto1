@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle, Loader2, RefreshCw, XCircle } from "lucide-react";
 
 type Stats = {
@@ -12,6 +13,7 @@ type Stats = {
 };
 
 export default function AutoBackfill() {
+  const router = useRouter();
   const [stats, setStats]     = useState<Stats>({ rodada: 0, processed: 0, embedded: 0, skipped: 0, remaining: -1 });
   const [status, setStatus]   = useState<"running" | "done" | "error" | "stopped">("running");
   const [errorMsg, setErrorMsg] = useState("");
@@ -51,6 +53,7 @@ export default function AutoBackfill() {
 
         if ((data.remaining ?? 0) === 0) {
           setStatus("done");
+          router.refresh();
           return;
         }
 
