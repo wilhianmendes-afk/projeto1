@@ -103,12 +103,12 @@ async function runBackfill(limit: number) {
 
       for (let faceIndex = 0; faceIndex < embedResponse.faces.length; faceIndex++) {
         const face = embedResponse.faces[faceIndex];
-        await service.from("face_embeddings").insert({
+        const { error: upsertErr } = await service.from("face_embeddings").upsert({
           source: "qualificados", source_id: pessoa.id, source_label: pessoa.nome,
           photo_url: url, embedding: JSON.stringify(face.embedding),
           bbox: face.bbox, det_score: face.det_score, face_index: faceIndex,
-        });
-        pessoaEmbedded++;
+        }, { onConflict: "source,source_id,photo_url,face_index", ignoreDuplicates: true });
+        if (!upsertErr) pessoaEmbedded++;
       }
     }
 
