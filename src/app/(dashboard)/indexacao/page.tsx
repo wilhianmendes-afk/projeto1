@@ -18,7 +18,7 @@ export default async function IndexacaoPage() {
 
   const [
     { count: totalAtivos },
-    { count: totalIndexados },
+    { data: embeddingIds },
     { count: totalSkipped },
     { data: recentSkipped },
   ] = await Promise.all([
@@ -28,7 +28,7 @@ export default async function IndexacaoPage() {
       .is("deleted_at", null),
     supabase
       .from("face_embeddings")
-      .select("source_id", { count: "exact", head: true })
+      .select("source_id")
       .eq("source", "qualificados"),
     supabase
       .from("face_skipped")
@@ -42,10 +42,13 @@ export default async function IndexacaoPage() {
       .limit(10),
   ]);
 
-  const pendentes = (totalAtivos ?? 0) - (totalIndexados ?? 0) - (totalSkipped ?? 0);
+  // Conta qualificados DISTINTOS com pelo menos 1 embedding (1 pessoa pode ter N linhas)
+  const totalIndexados = new Set((embeddingIds ?? []).map((r: { source_id: string }) => r.source_id)).size;
+
+  const pendentes = Math.max(0, (totalAtivos ?? 0) - totalIndexados - (totalSkipped ?? 0));
   const cobertura =
     totalAtivos && totalAtivos > 0
-      ? Math.round(((totalIndexados ?? 0) / totalAtivos) * 100)
+      ? Math.round((totalIndexados / totalAtivos) * 100)
       : 0;
 
   return (

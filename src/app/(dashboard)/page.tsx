@@ -22,8 +22,8 @@ export default async function DashboardPage() {
     { count: totalSkipped },
   ] = await Promise.all([
     supabase.from("qualificados").select("*", { count: "exact", head: true }).is("deleted_at", null),
-    supabase.from("face_embeddings").select("*", { count: "exact", head: true }),
-    supabase.from("face_skipped").select("*", { count: "exact", head: true }),
+    supabase.from("face_embeddings").select("*", { count: "exact", head: true }).eq("source", "qualificados"),
+    supabase.from("face_skipped").select("*", { count: "exact", head: true }).eq("source", "qualificados"),
   ]);
 
   const cobertura =
