@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
 import ResultCard from "./ResultCard";
 
@@ -61,6 +61,29 @@ export default function FaceSearch() {
     if (f) handleFile(f);
   }, []);
 
+  // Detecta rosto automaticamente quando imagem é carregada
+  useEffect(() => {
+    if (file && imgDisplay) {
+      detectFace(file);
+    }
+  }, [file, imgDisplay]);
+
+
+  async function detectFace(f: File) {
+    const form = new FormData();
+    form.append("file", f);
+    form.append("threshold", String(0.99));
+    try {
+      const res = await fetch("/api/face/search", { method: "POST", body: form });
+      const data = await res.json();
+      if (res.ok) {
+        setResponse(data);
+        setError("");
+      }
+    } catch (err) {
+      // Falha silenciosa na detecção
+    }
+  }
 
   async function runSearch(f: File, t: number) {
     setLoading(true);
