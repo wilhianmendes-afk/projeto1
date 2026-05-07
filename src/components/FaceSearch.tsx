@@ -71,18 +71,23 @@ export default function FaceSearch() {
 
 
   async function detectFace(f: File) {
+    console.log("🔍 Iniciando detecção automática de rosto...");
     const form = new FormData();
     form.append("file", f);
     form.append("threshold", String(0.99));
     try {
       const res = await fetch("/api/face/search", { method: "POST", body: form });
       const data = await res.json();
+      console.log("✅ Resposta da detecção:", data);
       if (res.ok) {
         setResponse(data);
         setError("");
+        console.log("✅ Bbox pronto para exibição:", data.query_bbox);
+      } else {
+        console.log("❌ Erro na detecção:", data);
       }
     } catch (err) {
-      // Falha silenciosa na detecção
+      console.log("❌ Erro na chamada de detecção:", err);
     }
   }
 
