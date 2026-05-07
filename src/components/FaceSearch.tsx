@@ -23,6 +23,7 @@ interface SearchResponse {
   query_bbox?: BBox;
   faces_detected?: number;
   elapsed_ms?: number;
+  image_size?: { w: number; h: number };
 }
 
 const confidenceColor: Record<string, string> = {
