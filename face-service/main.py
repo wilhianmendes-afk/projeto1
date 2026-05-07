@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from insightface.app import FaceAnalysis
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageEnhance
 import io, time, os
 
 app = FastAPI(title="Face Service — 42 BPM Intel")
@@ -49,6 +49,12 @@ async def embed(file: UploadFile, min_score: float | None = None):
         raise HTTPException(status_code=400, detail="Imagem inválida ou corrompida")
 
     faces = fa.get(img)
+
+    # Se não detectou nada, tenta com contraste e brilho aumentados
+    if len(faces) == 0:
+        enhanced = ImageEnhance.Contrast(pil_img).enhance(1.8)
+        enhanced = ImageEnhance.Brightness(enhanced).enhance(1.2)
+        faces = fa.get(np.array(enhanced))
 
     results = []
     for f in faces:
