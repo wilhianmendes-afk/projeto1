@@ -61,6 +61,9 @@ async function runBackfill(limit: number) {
     );
   }
 
+  // Log de início do backfill
+  console.log(`[backfill] Iniciando backfill de até ${limit} registros...`);
+
   const service = getAdminClient();
 
   const { data: alreadyIndexed } = await service
@@ -80,7 +83,7 @@ async function runBackfill(limit: number) {
   const allPending = (pendentes ?? []).filter((p: { id: string }) => !done.has(p.id));
   const queue = allPending.slice(0, limit);
 
-  let processed = 0, embedded = 0, skipped = 0;
+  let processed = 0, embedded = 0, skipped = 0, errors = 0;
 
   for (const pessoa of queue) {
     const urls: string[] = [pessoa.foto_url, ...((pessoa.fotos_extras as string[]) ?? [])].filter(Boolean);
@@ -93,13 +96,18 @@ async function runBackfill(limit: number) {
         const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
         if (!res.ok) throw new Error("HTTP " + res.status);
         buffer = Buffer.from(await res.arrayBuffer());
-      } catch { continue; }
+      } catch (e) {
+        console.warn(`[backfill] Erro ao baixar ${pessoa.nome}: ${e}`);
+        continue;
+      }
 
       let embedResponse;
       try {
         embedResponse = await embedImage(buffer);
-      } catch {
+      } catch (e) {
+        console.error(`[backfill] Erro do face service para ${pessoa.nome}: ${e}`);
         serviceError = true; // face service indisponível — não marcar como sem rosto
+        errors++;
         continue;
       }
 
@@ -121,17 +129,21 @@ async function runBackfill(limit: number) {
         source_label: pessoa.nome, reason: "no_face_detected",
       }, { onConflict: "source,source_id" });
       skipped++;
+      console.log(`[backfill] Sem rosto: ${pessoa.nome}`);
     } else if (pessoaEmbedded > 0) {
       embedded += pessoaEmbedded;
+      console.log(`[backfill] ✅ ${pessoa.nome}: ${pessoaEmbedded} rosto(s) indexado(s)`);
     }
     // serviceError && pessoaEmbedded === 0 → permanece pendente, será reprocessado
     processed++;
   }
 
+  console.log(`[backfill] Completado: ${processed} processados, ${embedded} embeddings, ${skipped} sem rosto, ${errors} erros`);
+
   return NextResponse.json({
-    ok: true, processed, embedded, skipped,
+    ok: true, processed, embedded, skipped, errors,
     total_pending: allPending.length,
-    remaining: allPending.length - processed,
+    remaining: Math.max(0, allPending.length - (queue.length - (embedded > 0 ? queue.length : 0) - skipped)),
   }, { headers: CORS_HEADERS });
 }
 
