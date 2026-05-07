@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
         embedResponse.total_detected === 0
           ? `Nenhum rosto detectado na imagem. (tamanho: ${embedResponse.image_size?.w}×${embedResponse.image_size?.h}px)`
           : "Rosto detectado mas com qualidade baixa (det_score < 0.35).",
+      image_size: embedResponse.image_size,
       elapsed_ms: embedResponse.elapsed_ms,
     });
   }
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
     query_det_score: bestFace.det_score,
     query_bbox: bestFace.bbox,
     faces_detected: embedResponse.total_detected,
+    image_size: embedResponse.image_size,
     elapsed_ms: embedResponse.elapsed_ms,
   });
 }
