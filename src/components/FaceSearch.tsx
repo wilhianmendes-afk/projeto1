@@ -202,10 +202,22 @@ export default function FaceSearch() {
                     </span>
                   </div>
                 )}
+                {/* Indicador de detecção de rosto */}
+                {detecting && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="w-8 h-8 text-white animate-spin" />
+                      <p className="text-white text-sm font-medium">Detectando rosto...</p>
+                    </div>
+                  </div>
+                )}
                 {/* Indicador de loading sobre a foto */}
                 {loading && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
-                    <Loader2 className="w-8 h-8 text-white animate-spin" />
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="w-8 h-8 text-white animate-spin" />
+                      <p className="text-white text-sm font-medium">Buscando...</p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -288,10 +300,8 @@ export default function FaceSearch() {
       {/* Coluna direita — resultados */}
       <div>
         <h2 className="text-sm font-medium text-gray-400 mb-3">
-          {detecting
-            ? "🔍 Detectando rosto na foto..."
-            : loading
-            ? "🔍 Buscando no banco..."
+          {loading
+            ? "Buscando no banco de dados..."
             : response
             ? response.results.length > 0
               ? `${response.results.length} resultado(s) encontrado(s)`
@@ -311,7 +321,7 @@ export default function FaceSearch() {
               <img
                 src={r.photo_url}
                 alt=""
-                className="w-16 h-16 rounded-lg object-cover border border-gray-700 flex-shrink-0"
+                className="w-16 h-16 rounded-lg object-contain border border-gray-700 flex-shrink-0 bg-black"
               />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-white truncate">
