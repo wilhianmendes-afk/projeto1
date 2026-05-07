@@ -38,7 +38,13 @@ async def embed(file: UploadFile, min_score: float | None = None):
     threshold = min_score if min_score is not None else MIN_DET_SCORE
 
     try:
-        img = np.array(Image.open(io.BytesIO(raw)).convert("RGB"))
+        pil_img = Image.open(io.BytesIO(raw)).convert("RGB")
+        # Upscale imagens pequenas para melhorar detecção facial
+        w, h = pil_img.size
+        if max(w, h) < 300:
+            scale = 300 / max(w, h)
+            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        img = np.array(pil_img)
     except Exception:
         raise HTTPException(status_code=400, detail="Imagem inválida ou corrompida")
 
