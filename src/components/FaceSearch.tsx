@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
 import ResultCard from "./ResultCard";
+import ComparisonModal from "./ComparisonModal";
 
 interface BBox { x: number; y: number; w: number; h: number }
 
@@ -42,6 +43,7 @@ export default function FaceSearch() {
   const [error, setError]       = useState("");
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
   const [imgDisplay, setImgDisplay] = useState<{ w: number; h: number } | null>(null);
+  const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
 
   const fileRef  = useRef<HTMLInputElement>(null);
   const imgRef   = useRef<HTMLImageElement>(null);
@@ -295,7 +297,8 @@ export default function FaceSearch() {
           {response?.results.map((r, i) => (
             <div
               key={i}
-              className={`flex items-center gap-4 bg-gray-900 border rounded-xl p-4 ${
+              onClick={() => setSelectedResult(r)}
+              className={`flex items-center gap-4 bg-gray-900 border rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-800 ${
                 confidenceColor[r.confidence]?.split(" ").slice(2).join(" ") ?? "border-gray-800"
               }`}
             >
@@ -327,6 +330,14 @@ export default function FaceSearch() {
           )}
         </div>
       </div>
+
+      {/* Modal de Comparação */}
+      <ComparisonModal
+        isOpen={selectedResult !== null}
+        result={selectedResult}
+        queryImage={image}
+        onClose={() => setSelectedResult(null)}
+      />
     </div>
   );
 }
