@@ -14,6 +14,7 @@ export default function DeleteButton({ id, nome }: { id: string; nome: string })
     const res = await fetch(`/api/qualificados/${id}`, { method: "DELETE" });
     if (res.ok) {
       router.back();
+      router.refresh();
     } else {
       alert("Erro ao excluir. Tente novamente.");
       setLoading(false);
