@@ -65,11 +65,11 @@ export async function POST(req: NextRequest) {
 
   const sourceIds = [...new Set((matches ?? []).map((m: { source_id: string }) => m.source_id))];
 
-  let pessoas: Record<string, { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string }> = {};
+  let pessoas: Record<string, { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string; nascimento?: string; genitora?: string }> = {};
   if (sourceIds.length > 0) {
     const { data } = await service
       .from("qualificados")
-      .select("id, nome, vulgo, cpf, cidade, uf")
+      .select("id, nome, vulgo, cpf, cidade, uf, nascimento, genitora")
       .in("id", sourceIds);
     pessoas = Object.fromEntries((data ?? []).map((p) => [p.id, p]));
   }

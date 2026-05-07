@@ -14,7 +14,7 @@ interface SearchResult {
   det_score: number;
   bbox: object;
   confidence: string;
-  pessoa: { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string } | null;
+  pessoa: { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string; nascimento?: string; genitora?: string } | null;
 }
 
 interface SearchResponse {
