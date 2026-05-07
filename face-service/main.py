@@ -1,6 +1,7 @@
-from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from insightface.app import FaceAnalysis
+from typing import Optional
 import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
 import io, time, os
@@ -30,27 +31,32 @@ def health():
     }
 
 
-def detect_faces(pil_img: Image.Image, threshold: float) -> list:
-    """Tenta detectar rostos com múltiplas estratégias."""
+@app.post("/embed")
+async def embed(file: UploadFile, min_score: Optional[float] = Query(default=None)):
+    t0 = time.time()
+    raw = await file.read()
+    threshold = min_score if min_score is not None else MIN_DET_SCORE
+
+    try:
+        pil_img = Image.open(io.BytesIO(raw))
+        pil_img = ImageOps.exif_transpose(pil_img)
+        pil_img = pil_img.convert("RGB")
+        w, h = pil_img.size
+        if max(w, h) < 640:
+            scale = 640 / max(w, h)
+            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Imagem invalida: {e}")
+
     img = np.array(pil_img)
     faces = fa.get(img)
 
-    # Estratégia 2: contraste aumentado
+    # Fallback: contraste aumentado se nenhum rosto detectado
     if len(faces) == 0:
         try:
             enhanced = ImageEnhance.Contrast(pil_img).enhance(2.0)
             enhanced = ImageEnhance.Brightness(enhanced).enhance(1.3)
             faces = fa.get(np.array(enhanced))
-        except Exception:
-            pass
-
-    # Estratégia 3: escala diferente (pode detectar rostos que 640 perde)
-    if len(faces) == 0:
-        try:
-            w, h = pil_img.size
-            scale = 480 / max(w, h)
-            small = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-            faces = fa.get(np.array(small))
         except Exception:
             pass
 
@@ -69,31 +75,10 @@ def detect_faces(pil_img: Image.Image, threshold: float) -> list:
             "det_score": score,
             "embedding": f.normed_embedding.tolist(),
         })
-    return results, len(faces)
-
-
-@app.post("/embed")
-async def embed(file: UploadFile, min_score: float | None = None):
-    t0 = time.time()
-    raw = await file.read()
-    threshold = min_score if min_score is not None else MIN_DET_SCORE
-
-    try:
-        pil_img = Image.open(io.BytesIO(raw))
-        pil_img = ImageOps.exif_transpose(pil_img)
-        pil_img = pil_img.convert("RGB")
-        w, h = pil_img.size
-        if max(w, h) < 640:
-            scale = 640 / max(w, h)
-            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Imagem inválida: {e}")
-
-    results, total_detected = detect_faces(pil_img, threshold)
 
     return {
         "count": len(results),
-        "total_detected": total_detected,
+        "total_detected": len(faces),
         "elapsed_ms": int((time.time() - t0) * 1000),
         "image_size": {"w": pil_img.size[0], "h": pil_img.size[1]},
         "faces": results,
