@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
 import ResultCard from "./ResultCard";
 
@@ -61,10 +61,6 @@ export default function FaceSearch() {
     if (f) handleFile(f);
   }, []);
 
-  // Auto-busca ao carregar imagem
-  useEffect(() => {
-    if (file) runSearch(file, threshold);
-  }, [file]);
 
   async function runSearch(f: File, t: number) {
     setLoading(true);
@@ -86,7 +82,6 @@ export default function FaceSearch() {
 
   function onThresholdChange(val: number) {
     setThreshold(val);
-    if (file) runSearch(file, val);
   }
 
   function onImgLoad() {
@@ -198,6 +193,19 @@ export default function FaceSearch() {
               <span>0.90 (só certeza)</span>
             </div>
           </div>
+
+          <button
+            onClick={() => file && runSearch(file, threshold)}
+            disabled={!file || loading}
+            className={`w-full py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+              file && !loading
+                ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                : "bg-gray-700 text-gray-500 cursor-not-allowed"
+            }`}
+          >
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? "Buscando..." : "Buscar"}
+          </button>
         </div>
 
         {error && (
