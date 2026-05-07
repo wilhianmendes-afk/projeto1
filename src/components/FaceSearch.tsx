@@ -128,15 +128,29 @@ export default function FaceSearch() {
   // Calcula posição do bbox escalado para o tamanho exibido
   function scaledBbox(bbox: BBox) {
     if (!imgNatural || !imgDisplay || !imgNatural.w) return null;
+    if (!response?.image_size) return null;
+
+    // O face-service redimensiona a imagem se for < 640px
+    // O bbox vem nas coordenadas da imagem redimensionada
+    // Precisa desescalar de volta para a imagem original
+    const processingScale = response.image_size.w / imgNatural.w;
+    const bboxNatural = {
+      x: bbox.x / processingScale,
+      y: bbox.y / processingScale,
+      w: bbox.w / processingScale,
+      h: bbox.h / processingScale,
+    };
+
+    // Agora escala para o tamanho exibido
     const sx = imgDisplay.w / imgNatural.w;
     const sy = imgDisplay.h / imgNatural.h;
     const scaled = {
-      left:   Math.round(bbox.x * sx),
-      top:    Math.round(bbox.y * sy),
-      width:  Math.round(bbox.w * sx),
-      height: Math.round(bbox.h * sy),
+      left:   Math.round(bboxNatural.x * sx),
+      top:    Math.round(bboxNatural.y * sy),
+      width:  Math.round(bboxNatural.w * sx),
+      height: Math.round(bboxNatural.h * sy),
     };
-    console.log("Scaled bbox:", { bbox, sx, sy, scaled, imgNatural, imgDisplay });
+    console.log("Scaled bbox:", { bbox, processingScale, bboxNatural, sx, sy, scaled, imgNatural, imgDisplay, imageSize: response.image_size });
     return scaled;
   }
 
