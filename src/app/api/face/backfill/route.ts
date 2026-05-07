@@ -104,6 +104,11 @@ async function runBackfill(limit: number) {
       let embedResponse;
       try {
         embedResponse = await embedImage(buffer);
+        // Se não detectou rosto no threshold padrão, tenta com threshold mais baixo
+        if (embedResponse.count === 0 && embedResponse.total_detected > 0) {
+          console.log(`[backfill] Retry com threshold menor para ${pessoa.nome}`);
+          embedResponse = await embedImage(buffer, "photo.jpg", 0.35);
+        }
       } catch (e) {
         console.error(`[backfill] Erro do face service para ${pessoa.nome}: ${e}`);
         serviceError = true; // face service indisponível — não marcar como sem rosto

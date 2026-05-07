@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV MIN_DET_SCORE=0.6
+ENV MIN_DET_SCORE=0.45
 ENV MAX_FILE_SIZE=52428800
 ENV REQUEST_TIMEOUT=30
 
