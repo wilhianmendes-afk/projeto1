@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
 import ResultCard from "./ResultCard";
+
+interface BBox { x: number; y: number; w: number; h: number }
 
 interface SearchResult {
   source_id: string;
@@ -18,19 +20,30 @@ interface SearchResponse {
   results: SearchResult[];
   message?: string;
   query_det_score?: number;
+  query_bbox?: BBox;
   faces_detected?: number;
   elapsed_ms?: number;
 }
 
+const confidenceColor: Record<string, string> = {
+  alta:    "text-green-400 bg-green-950 border-green-800",
+  forte:   "text-blue-400 bg-blue-950 border-blue-800",
+  incerto: "text-yellow-400 bg-yellow-950 border-yellow-800",
+  baixa:   "text-gray-400 bg-gray-800 border-gray-700",
+};
+
 export default function FaceSearch() {
-  const [image, setImage] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [image, setImage]       = useState<string | null>(null);
+  const [file, setFile]         = useState<File | null>(null);
   const [threshold, setThreshold] = useState(0.30);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]   = useState(false);
   const [response, setResponse] = useState<SearchResponse | null>(null);
-  const [error, setError] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
-  const dropRef = useRef<HTMLDivElement>(null);
+  const [error, setError]       = useState("");
+  const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
+  const [imgDisplay, setImgDisplay] = useState<{ w: number; h: number } | null>(null);
+
+  const fileRef  = useRef<HTMLInputElement>(null);
+  const imgRef   = useRef<HTMLImageElement>(null);
 
   function handleFile(f: File) {
     if (!f.type.startsWith("image/")) return;
@@ -38,6 +51,8 @@ export default function FaceSearch() {
     setImage(URL.createObjectURL(f));
     setResponse(null);
     setError("");
+    setImgNatural(null);
+    setImgDisplay(null);
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -46,17 +61,19 @@ export default function FaceSearch() {
     if (f) handleFile(f);
   }, []);
 
-  async function handleSearch() {
-    if (!file) return;
+  // Auto-busca ao carregar imagem
+  useEffect(() => {
+    if (file) runSearch(file, threshold);
+  }, [file]);
+
+  async function runSearch(f: File, t: number) {
     setLoading(true);
     setError("");
-
     const form = new FormData();
-    form.append("file", file);
-    form.append("threshold", String(threshold));
-
+    form.append("file", f);
+    form.append("threshold", String(t));
     try {
-      const res = await fetch("/api/face/search", { method: "POST", body: form });
+      const res  = await fetch("/api/face/search", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro desconhecido");
       setResponse(data);
@@ -67,38 +84,78 @@ export default function FaceSearch() {
     }
   }
 
-  function clear() {
-    setImage(null);
-    setFile(null);
-    setResponse(null);
-    setError("");
+  function onThresholdChange(val: number) {
+    setThreshold(val);
+    if (file) runSearch(file, val);
   }
 
-  const confidenceColor: Record<string, string> = {
-    alta: "text-green-400 bg-green-950 border-green-800",
-    forte: "text-blue-400 bg-blue-950 border-blue-800",
-    incerto: "text-yellow-400 bg-yellow-950 border-yellow-800",
-    baixa: "text-gray-400 bg-gray-800 border-gray-700",
-  };
+  function onImgLoad() {
+    if (!imgRef.current) return;
+    setImgNatural({ w: imgRef.current.naturalWidth, h: imgRef.current.naturalHeight });
+    setImgDisplay({ w: imgRef.current.clientWidth,  h: imgRef.current.clientHeight });
+  }
+
+  function clear() {
+    setImage(null); setFile(null); setResponse(null);
+    setError(""); setImgNatural(null); setImgDisplay(null);
+  }
+
+  // Calcula posição do bbox escalado para o tamanho exibido
+  function scaledBbox(bbox: BBox) {
+    if (!imgNatural || !imgDisplay || !imgNatural.w) return null;
+    const sx = imgDisplay.w / imgNatural.w;
+    const sy = imgDisplay.h / imgNatural.h;
+    return {
+      left:   Math.round(bbox.x * sx),
+      top:    Math.round(bbox.y * sy),
+      width:  Math.round(bbox.w * sx),
+      height: Math.round(bbox.h * sy),
+    };
+  }
+
+  const bbox = response?.query_bbox ? scaledBbox(response.query_bbox) : null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Coluna esquerda */}
       <div>
         <div
-          ref={dropRef}
           onDrop={onDrop}
           onDragOver={(e) => e.preventDefault()}
           onClick={() => !image && fileRef.current?.click()}
           className={`relative border-2 border-dashed rounded-xl flex items-center justify-center transition-colors ${
-            image
-              ? "border-gray-700 cursor-default"
-              : "border-gray-700 hover:border-blue-600 cursor-pointer"
+            image ? "border-gray-700 cursor-default" : "border-gray-700 hover:border-blue-600 cursor-pointer"
           }`}
           style={{ minHeight: 280 }}
         >
           {image ? (
             <>
-              <img src={image} alt="Query" className="max-h-72 max-w-full rounded-xl object-contain" />
+              <div className="relative inline-block">
+                <img
+                  ref={imgRef}
+                  src={image}
+                  alt="Query"
+                  className="max-h-72 max-w-full rounded-xl object-contain"
+                  onLoad={onImgLoad}
+                />
+                {/* Bounding box overlay */}
+                {bbox && (
+                  <div
+                    className="absolute border-2 border-blue-400 pointer-events-none"
+                    style={{ left: bbox.left, top: bbox.top, width: bbox.width, height: bbox.height }}
+                  >
+                    <span className="absolute -top-5 left-0 bg-blue-600 text-white text-xs font-bold px-1.5 py-0.5 rounded">
+                      ROSTO
+                    </span>
+                  </div>
+                )}
+                {/* Indicador de loading sobre a foto */}
+                {loading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
+                    <Loader2 className="w-8 h-8 text-white animate-spin" />
+                  </div>
+                )}
+              </div>
               <button
                 onClick={clear}
                 className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-white rounded-full p-1.5"
@@ -111,11 +168,12 @@ export default function FaceSearch() {
               <Upload className="w-10 h-10" />
               <div>
                 <p className="font-medium text-gray-300">Arraste ou clique para enviar</p>
-                <p className="text-sm">JPG, PNG, WEBP</p>
+                <p className="text-sm">JPG, PNG, WEBP — detecção automática</p>
               </div>
             </div>
           )}
         </div>
+
         <input
           ref={fileRef}
           type="file"
@@ -130,12 +188,9 @@ export default function FaceSearch() {
               Threshold de similaridade: <span className="text-white font-medium">{threshold.toFixed(2)}</span>
             </label>
             <input
-              type="range"
-              min={0.20}
-              max={0.90}
-              step={0.05}
+              type="range" min={0.20} max={0.90} step={0.05}
               value={threshold}
-              onChange={(e) => setThreshold(parseFloat(e.target.value))}
+              onChange={(e) => onThresholdChange(parseFloat(e.target.value))}
               className="w-full accent-blue-600"
             />
             <div className="flex justify-between text-xs text-gray-600 mt-0.5">
@@ -143,21 +198,6 @@ export default function FaceSearch() {
               <span>0.90 (só certeza)</span>
             </div>
           </div>
-
-          <button
-            onClick={handleSearch}
-            disabled={!file || loading}
-            className="w-full bg-blue-700 hover:bg-blue-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Buscando...
-              </>
-            ) : (
-              "Buscar"
-            )}
-          </button>
         </div>
 
         {error && (
@@ -166,19 +206,25 @@ export default function FaceSearch() {
           </p>
         )}
 
-        {response && (
+        {response && !loading && (
           <div className="mt-3 text-xs text-gray-500 space-y-0.5">
+            {response.faces_detected !== undefined && (
+              <p>{response.faces_detected} rosto(s) detectado(s) na imagem</p>
+            )}
             {response.query_det_score !== undefined && (
-              <p>Det score da query: {(response.query_det_score * 100).toFixed(0)}%</p>
+              <p>Det score: {(response.query_det_score * 100).toFixed(0)}%</p>
             )}
             {response.elapsed_ms !== undefined && <p>Tempo: {response.elapsed_ms}ms</p>}
           </div>
         )}
       </div>
 
+      {/* Coluna direita — resultados */}
       <div>
         <h2 className="text-sm font-medium text-gray-400 mb-3">
-          {response
+          {loading
+            ? "Detectando rosto e buscando..."
+            : response
             ? response.results.length > 0
               ? `${response.results.length} resultado(s) encontrado(s)`
               : response.message ?? "Nenhum resultado"
@@ -202,20 +248,12 @@ export default function FaceSearch() {
                 <p className="font-semibold text-white truncate">
                   {r.pessoa?.nome ?? "Desconhecido"}
                 </p>
-                {r.pessoa?.vulgo && (
-                  <p className="text-gray-400 text-sm">"{r.pessoa.vulgo}"</p>
-                )}
-                {r.pessoa?.cpf && <p className="text-gray-500 text-xs">CPF: {r.pessoa.cpf}</p>}
+                {r.pessoa?.vulgo && <p className="text-gray-400 text-sm">"{r.pessoa.vulgo}"</p>}
+                {r.pessoa?.cpf   && <p className="text-gray-500 text-xs">CPF: {r.pessoa.cpf}</p>}
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="text-lg font-bold text-white">
-                  {(r.similarity * 100).toFixed(0)}%
-                </p>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded border font-medium ${
-                    confidenceColor[r.confidence] ?? ""
-                  }`}
-                >
+                <p className="text-lg font-bold text-white">{(r.similarity * 100).toFixed(0)}%</p>
+                <span className={`text-xs px-2 py-0.5 rounded border font-medium ${confidenceColor[r.confidence] ?? ""}`}>
                   {r.confidence}
                 </span>
               </div>

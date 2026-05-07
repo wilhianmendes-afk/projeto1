@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     results,
     query_det_score: bestFace.det_score,
+    query_bbox: bestFace.bbox,
     faces_detected: embedResponse.total_detected,
     elapsed_ms: embedResponse.elapsed_ms,
   });
