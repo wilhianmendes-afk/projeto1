@@ -5,7 +5,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 
 export default function IndexButton({ qualificadoId }: { qualificadoId: string }) {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ embedded: number } | null>(null);
+  const [result, setResult] = useState<{ embedded: number; diagnostics?: object[] } | null>(null);
   const [error, setError] = useState("");
 
   async function run() {
@@ -39,7 +39,14 @@ export default function IndexButton({ qualificadoId }: { qualificadoId: string }
         {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
         Re-indexar
       </button>
-      {result && <span className="text-green-400 text-xs">{result.embedded} embeddings gerados</span>}
+      {result && result.embedded > 0 && (
+        <span className="text-green-400 text-xs">{result.embedded} embeddings gerados</span>
+      )}
+      {result && result.embedded === 0 && result.diagnostics && (
+        <span className="text-yellow-400 text-xs font-mono">
+          {JSON.stringify(result.diagnostics)}
+        </span>
+      )}
       {error && <span className="text-red-400 text-xs">{error}</span>}
     </div>
   );

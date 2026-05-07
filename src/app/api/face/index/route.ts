@@ -35,14 +35,18 @@ export async function POST(req: NextRequest) {
   ].filter(Boolean);
 
   let embedded = 0;
+  const diagnostics: object[] = [];
 
   for (const url of allUrls) {
     let buffer: Buffer;
+    let photoSize = 0;
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
       if (!res.ok) throw new Error("HTTP " + res.status);
       buffer = Buffer.from(await res.arrayBuffer());
-    } catch {
+      photoSize = buffer.length;
+    } catch (e) {
+      diagnostics.push({ url, error: "photo_download_failed", detail: String(e) });
       await service.from("face_skipped").upsert({
         source: "qualificados",
         source_id: qualificadoId,
@@ -55,13 +59,23 @@ export async function POST(req: NextRequest) {
     let embedResponse;
     try {
       embedResponse = await embedImage(buffer);
-      // Se não detectou com threshold padrão, tenta com threshold menor
-      if (embedResponse.count === 0 && embedResponse.total_detected === 0) {
+      // Rosto detectado mas abaixo do threshold padrão — tenta com threshold menor
+      if (embedResponse.count === 0 && embedResponse.total_detected > 0) {
         embedResponse = await embedImage(buffer, "photo.jpg", 0.35);
       }
-    } catch {
+    } catch (e) {
+      diagnostics.push({ url, error: "face_service_error", detail: String(e) });
       continue;
     }
+
+    diagnostics.push({
+      url,
+      photo_bytes: photoSize,
+      image_size: embedResponse.image_size,
+      total_detected: embedResponse.total_detected,
+      count: embedResponse.count,
+      scores: embedResponse.faces.map(f => f.det_score),
+    });
 
     if (embedResponse.count === 0) {
       if (allUrls.indexOf(url) === allUrls.length - 1 && embedded === 0) {
@@ -97,5 +111,5 @@ export async function POST(req: NextRequest) {
       .eq("source_id", qualificadoId);
   }
 
-  return NextResponse.json({ ok: true, embedded });
+  return NextResponse.json({ ok: true, embedded, diagnostics });
 }
