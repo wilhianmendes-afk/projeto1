@@ -55,7 +55,7 @@ export default async function IndexacaoPage() {
 
   const totalSkipped = (skippedIds ?? []).filter(
     (r: { source_id: string }) => activeIdSet.has(r.source_id)
-  ).size;
+  ).length;
 
   const pendentes = Math.max(0, totalAtivos - totalIndexados - totalSkipped);
   const cobertura = totalAtivos > 0 ? Math.round((totalIndexados / totalAtivos) * 100) : 0;
