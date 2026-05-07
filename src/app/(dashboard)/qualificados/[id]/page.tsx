@@ -64,17 +64,21 @@ export default async function QualificadoPage({
       </div>
 
       <div className="flex items-start gap-6 mb-8">
-        {pessoa.foto_url ? (
-          <img
-            src={pessoa.foto_url}
-            alt={pessoa.nome}
-            className="w-28 h-28 rounded-xl object-cover border border-gray-700 flex-shrink-0"
-          />
-        ) : (
-          <div className="w-28 h-28 rounded-xl bg-gray-800 flex-shrink-0 flex items-center justify-center text-gray-500 text-4xl font-bold">
-            {pessoa.nome.charAt(0)}
+        <div style={{ width: 180, flexShrink: 0 }}>
+          <div style={{ width: '100%', aspectRatio: '3/4', background: '#1f2937', borderRadius: 12, overflow: 'hidden', border: '1px solid #374151' }}>
+            {pessoa.foto_url ? (
+              <img
+                src={pessoa.foto_url}
+                alt={pessoa.nome}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
+              />
+            ) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '3rem', fontWeight: 'bold' }}>
+                {pessoa.nome.charAt(0)}
+              </div>
+            )}
           </div>
-        )}
+        </div>
         <div>
           <h1 className="text-2xl font-bold text-white">{pessoa.nome}</h1>
           {pessoa.vulgo && <p className="text-gray-400">"{pessoa.vulgo}"</p>}
