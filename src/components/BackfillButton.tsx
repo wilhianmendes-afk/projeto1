@@ -35,7 +35,15 @@ export default function AutoBackfill() {
     while (!stopped.current) {
       try {
         const res  = await fetch("/api/face/backfill", { method: "POST" });
-        const data = await res.json();
+
+        let data;
+        try {
+          data = await res.json();
+        } catch (e) {
+          // Se não conseguir fazer parse de JSON, pegar o texto
+          const text = await res.text();
+          throw new Error(`Resposta inválida: ${text.substring(0, 100)}`);
+        }
 
         if (!res.ok) {
           const msg = data.error ?? `HTTP ${res.status}`;
