@@ -31,7 +31,9 @@ export default function QualificadosSearch({
     return initialData.filter((q) =>
       q.nome.toLowerCase().includes(term) ||
       q.vulgo?.toLowerCase().includes(term) ||
-      q.cpf?.includes(term)
+      q.cpf?.includes(term) ||
+      q.genitora?.toLowerCase().includes(term) ||
+      q.nascimento?.includes(term)
     );
   }, [searchTerm, initialData]);
 
@@ -39,7 +41,7 @@ export default function QualificadosSearch({
     <div>
       <input
         type="search"
-        placeholder="Buscar por nome, alcunha ou CPF..."
+        placeholder="Buscar por nome, alcunha, CPF, data de nascimento ou mãe..."
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 mb-5"
