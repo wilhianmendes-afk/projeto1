@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
-  const threshold = parseFloat((formData.get("threshold") as string) ?? "0.40");
+  const threshold = parseFloat((formData.get("threshold") as string) ?? "0.30");
   const limit = parseInt((formData.get("limit") as string) ?? "15");
 
   if (!file) return NextResponse.json({ error: "Nenhuma imagem enviada" }, { status: 400 });
@@ -79,9 +79,9 @@ export async function POST(req: NextRequest) {
     ...m,
     pessoa: pessoas[m.source_id] ?? null,
     confidence:
-      m.similarity >= 0.8 ? "alta" :
-      m.similarity >= 0.65 ? "forte" :
-      m.similarity >= 0.45 ? "incerto" : "baixa",
+      m.similarity >= 0.55 ? "alta" :
+      m.similarity >= 0.42 ? "forte" :
+      m.similarity >= 0.30 ? "incerto" : "baixa",
   }));
 
   return NextResponse.json({

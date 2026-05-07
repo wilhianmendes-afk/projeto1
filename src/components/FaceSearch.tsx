@@ -25,7 +25,7 @@ interface SearchResponse {
 export default function FaceSearch() {
   const [image, setImage] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [threshold, setThreshold] = useState(0.40);
+  const [threshold, setThreshold] = useState(0.30);
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [error, setError] = useState("");
@@ -131,7 +131,7 @@ export default function FaceSearch() {
             </label>
             <input
               type="range"
-              min={0.30}
+              min={0.20}
               max={0.90}
               step={0.05}
               value={threshold}
@@ -139,7 +139,7 @@ export default function FaceSearch() {
               className="w-full accent-blue-600"
             />
             <div className="flex justify-between text-xs text-gray-600 mt-0.5">
-              <span>0.30 (mais resultados)</span>
+              <span>0.20 (mais resultados)</span>
               <span>0.90 (só certeza)</span>
             </div>
           </div>
