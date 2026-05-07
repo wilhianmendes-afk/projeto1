@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
+import { embedImage } from "@/lib/face-service";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -10,7 +11,6 @@ function getAdminClient() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 }
-import { embedImage } from "@/lib/face-service";
 
 export const maxDuration = 300;
 
