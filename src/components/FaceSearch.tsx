@@ -39,6 +39,7 @@ export default function FaceSearch() {
   const [file, setFile]         = useState<File | null>(null);
   const [threshold, setThreshold] = useState(0.30);
   const [loading, setLoading]   = useState(false);
+  const [detecting, setDetecting] = useState(false);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [error, setError]       = useState("");
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
@@ -74,6 +75,7 @@ export default function FaceSearch() {
 
   async function detectFace(f: File) {
     console.log("🔍 Iniciando detecção automática de rosto...");
+    setDetecting(true);
     const form = new FormData();
     form.append("file", f);
     form.append("threshold", String(0.99));
@@ -90,6 +92,8 @@ export default function FaceSearch() {
       }
     } catch (err) {
       console.log("❌ Erro na chamada de detecção:", err);
+    } finally {
+      setDetecting(false);
     }
   }
 
@@ -284,8 +288,10 @@ export default function FaceSearch() {
       {/* Coluna direita — resultados */}
       <div>
         <h2 className="text-sm font-medium text-gray-400 mb-3">
-          {loading
-            ? "Detectando rosto e buscando..."
+          {detecting
+            ? "🔍 Detectando rosto na foto..."
+            : loading
+            ? "🔍 Buscando no banco..."
             : response
             ? response.results.length > 0
               ? `${response.results.length} resultado(s) encontrado(s)`

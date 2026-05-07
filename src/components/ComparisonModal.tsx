@@ -62,7 +62,7 @@ export default function ComparisonModal({
               <img
                 src={queryImage}
                 alt="Foto buscada"
-                className="w-full aspect-square object-cover rounded-lg border border-gray-700"
+                className="w-full aspect-square object-contain rounded-lg border border-gray-700 bg-black"
               />
             </div>
 
@@ -74,7 +74,7 @@ export default function ComparisonModal({
               <img
                 src={result.photo_url}
                 alt="Resultado"
-                className="w-full aspect-square object-cover rounded-lg border border-gray-700"
+                className="w-full aspect-square object-contain rounded-lg border border-gray-700 bg-black"
               />
             </div>
           </div>
