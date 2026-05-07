@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 import { embedImage } from "@/lib/face-service";
 
 export const maxDuration = 300;
@@ -24,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!folderId) return NextResponse.json({ error: "folderId obrigatório" }, { status: 400 });
 
   const drive = getDriveClient();
-  const service = await createServiceClient();
+  const service = getAdminClient();
 
   let pageToken: string | undefined;
   let imported = 0;
