@@ -27,13 +27,40 @@ export default function QualificadosSearch({
   const filteredQualificados = useMemo(() => {
     if (!searchTerm.trim()) return initialData;
 
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.toLowerCase().trim();
+
+    // Tentar converter termo de busca como data
+    let dateSearchVariations: string[] = [];
+
+    // Se é apenas números, tentar interpretar como DDMMAAAA
+    if (/^\d+$/.test(term)) {
+      if (term.length === 8) {
+        const dd = term.substring(0, 2);
+        const mm = term.substring(2, 4);
+        const yyyy = term.substring(4, 8);
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+        dateSearchVariations = [dateStr, `${dd}/${mm}/${yyyy}`];
+      }
+    }
+    // Se tem barra, tentar DD/MM/AAAA
+    else if (term.includes("/")) {
+      const parts = term.split("/");
+      if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+        const dd = parts[0];
+        const mm = parts[1];
+        const yyyy = parts[2];
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+        dateSearchVariations = [dateStr, `${dd}/${mm}/${yyyy}`];
+      }
+    }
+
     return initialData.filter((q) =>
       q.nome.toLowerCase().includes(term) ||
       q.vulgo?.toLowerCase().includes(term) ||
       q.cpf?.includes(term) ||
       q.genitora?.toLowerCase().includes(term) ||
-      q.nascimento?.includes(term)
+      q.nascimento?.includes(term) ||
+      dateSearchVariations.some(dateVar => q.nascimento?.includes(dateVar))
     );
   }, [searchTerm, initialData]);
 
@@ -41,7 +68,7 @@ export default function QualificadosSearch({
     <div>
       <input
         type="search"
-        placeholder="Buscar por nome, alcunha, CPF, data de nascimento ou mãe..."
+        placeholder="Buscar por nome, alcunha, CPF, mãe ou data (DD/MM/AAAA ou DDMMAAAA)..."
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
         className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 mb-5"
