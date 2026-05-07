@@ -49,7 +49,8 @@ export default async function QualificadoPage({
     { label: "Vulgo", value: pessoa.vulgo },
     { label: "CPF", value: pessoa.cpf },
     { label: "RG", value: pessoa.rg },
-    { label: "Nascimento", value: pessoa.nascimento },
+    { label: "Nascimento", value: pessoa.nascimento ? new Date(pessoa.nascimento + "T00:00:00").toLocaleDateString("pt-BR") : null },
+    { label: "Mãe", value: pessoa.genitora },
     { label: "Cidade/UF", value: pessoa.cidade ? `${pessoa.cidade}/${pessoa.uf}` : null },
     { label: "Fonte", value: pessoa.fonte },
     { label: "Fonte ID", value: pessoa.fonte_id },
@@ -123,7 +124,7 @@ export default async function QualificadoPage({
                 <img
                   src={e.photo_url}
                   alt=""
-                  className="w-full aspect-square object-cover rounded-lg border border-gray-700"
+                  className="w-full aspect-square object-contain rounded-lg border border-gray-700 bg-black"
                 />
                 <span className="absolute bottom-1 right-1 bg-black/70 text-xs text-green-400 px-1.5 py-0.5 rounded">
                   {(e.det_score * 100).toFixed(0)}%
