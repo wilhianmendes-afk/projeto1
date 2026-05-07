@@ -21,7 +21,7 @@ export default async function QualificadosPage() {
     .select("id, nome, vulgo, cpf, rg, nascimento, genitora, foto_url, fonte, created_at", { count: "exact" })
     .is("deleted_at", null)
     .order("nome")
-    .limit(10000);
+    .limit(100000);
 
   return (
     <div>
