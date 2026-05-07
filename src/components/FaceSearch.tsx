@@ -110,10 +110,14 @@ export default function FaceSearch() {
   function onImgLoad() {
     if (!imgRef.current) return;
     const img = imgRef.current;
-    setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
-    // Pegar o tamanho exato que a imagem ocupa na tela
+    const natural = { w: img.naturalWidth, h: img.naturalHeight };
     const rect = img.getBoundingClientRect();
-    setImgDisplay({ w: rect.width, h: rect.height });
+    const display = { w: rect.width, h: rect.height };
+
+    setImgNatural(natural);
+    setImgDisplay(display);
+
+    console.log("Image loaded:", { natural, display, bbox: response?.query_bbox });
   }
 
   function clear() {
@@ -126,12 +130,14 @@ export default function FaceSearch() {
     if (!imgNatural || !imgDisplay || !imgNatural.w) return null;
     const sx = imgDisplay.w / imgNatural.w;
     const sy = imgDisplay.h / imgNatural.h;
-    return {
+    const scaled = {
       left:   Math.round(bbox.x * sx),
       top:    Math.round(bbox.y * sy),
       width:  Math.round(bbox.w * sx),
       height: Math.round(bbox.h * sy),
     };
+    console.log("Scaled bbox:", { bbox, sx, sy, scaled, imgNatural, imgDisplay });
+    return scaled;
   }
 
   const bbox = response?.query_bbox ? scaledBbox(response.query_bbox) : null;
