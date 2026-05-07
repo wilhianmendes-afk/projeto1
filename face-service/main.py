@@ -31,9 +31,11 @@ def health():
 
 
 @app.post("/embed")
-async def embed(file: UploadFile):
+async def embed(file: UploadFile, min_score: float | None = None):
     t0 = time.time()
     raw = await file.read()
+
+    threshold = min_score if min_score is not None else MIN_DET_SCORE
 
     try:
         img = np.array(Image.open(io.BytesIO(raw)).convert("RGB"))
@@ -45,7 +47,7 @@ async def embed(file: UploadFile):
     results = []
     for f in faces:
         score = float(f.det_score)
-        if score < MIN_DET_SCORE:
+        if score < threshold:
             continue
         results.append(
             {

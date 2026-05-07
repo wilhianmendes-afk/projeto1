@@ -55,6 +55,10 @@ export async function POST(req: NextRequest) {
     let embedResponse;
     try {
       embedResponse = await embedImage(buffer);
+      // Se não detectou com threshold padrão, tenta com threshold menor
+      if (embedResponse.count === 0 && embedResponse.total_detected === 0) {
+        embedResponse = await embedImage(buffer, "photo.jpg", 0.35);
+      }
     } catch {
       continue;
     }

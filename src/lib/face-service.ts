@@ -15,11 +15,15 @@ export interface EmbedResponse {
   faces: FaceResult[];
 }
 
-export async function embedImage(imageBuffer: Buffer, filename = "photo.jpg"): Promise<EmbedResponse> {
+export async function embedImage(imageBuffer: Buffer, filename = "photo.jpg", minScore?: number): Promise<EmbedResponse> {
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(imageBuffer)]), filename);
 
-  const res = await fetch(`${FACE_SERVICE_URL}/embed`, {
+  const url = minScore !== undefined
+    ? `${FACE_SERVICE_URL}/embed?min_score=${minScore}`
+    : `${FACE_SERVICE_URL}/embed`;
+
+  const res = await fetch(url, {
     method: "POST",
     headers: FACE_SERVICE_TOKEN ? { Authorization: `Bearer ${FACE_SERVICE_TOKEN}` } : {},
     body: form,
