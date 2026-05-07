@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -38,7 +47,7 @@ export async function POST(req: NextRequest) {
     a.det_score > b.det_score ? a : b
   );
 
-  const service = await createServiceClient();
+  const service = getAdminClient();
   const { data: matches, error } = await service.rpc("face_search", {
     query_embedding: JSON.stringify(bestFace.embedding),
     similarity_threshold: threshold,
