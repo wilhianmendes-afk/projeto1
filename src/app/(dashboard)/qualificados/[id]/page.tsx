@@ -46,15 +46,16 @@ export default async function QualificadoPage({
 
   const fields = [
     { label: "Nome", value: pessoa.nome },
-    { label: "Vulgo", value: pessoa.vulgo },
+    { label: "Vulgo (Alcunha)", value: pessoa.vulgo },
     { label: "CPF", value: pessoa.cpf },
     { label: "RG", value: pessoa.rg },
-    { label: "Nascimento", value: pessoa.nascimento ? new Date(pessoa.nascimento + "T00:00:00").toLocaleDateString("pt-BR") : null },
-    { label: "Mãe", value: pessoa.genitora },
-    { label: "Cidade/UF", value: pessoa.cidade ? `${pessoa.cidade}/${pessoa.uf}` : null },
-    { label: "Fonte", value: pessoa.fonte },
-    { label: "Fonte ID", value: pessoa.fonte_id },
-    { label: "Cadastrado", value: new Date(pessoa.created_at).toLocaleDateString("pt-BR") },
+    { label: "Data de Nascimento", value: pessoa.nascimento ? new Date(pessoa.nascimento + "T00:00:00").toLocaleDateString("pt-BR") : null },
+    { label: "Nome da Mãe", value: pessoa.genitora },
+    { label: "Cidade", value: pessoa.cidade },
+    { label: "UF", value: pessoa.uf },
+    { label: "Fonte de Dados", value: pessoa.fonte },
+    { label: "ID na Fonte", value: pessoa.fonte_id },
+    { label: "Data de Cadastro", value: new Date(pessoa.created_at).toLocaleDateString("pt-BR") },
   ];
 
   return (
@@ -101,6 +102,23 @@ export default async function QualificadoPage({
             </div>
           ))}
       </div>
+
+      {pessoa.fotos_extras && pessoa.fotos_extras.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+          <h2 className="font-semibold text-white mb-4">Fotos Adicionais</h2>
+          <div className="grid grid-cols-4 gap-3">
+            {pessoa.fotos_extras.map((foto, idx) => (
+              <div key={idx} className="rounded-lg border border-gray-700 overflow-hidden bg-black">
+                <img
+                  src={foto}
+                  alt={`Foto adicional ${idx + 1}`}
+                  className="w-full aspect-square object-contain"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
