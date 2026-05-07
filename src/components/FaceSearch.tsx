@@ -86,8 +86,10 @@ export default function FaceSearch() {
 
   function onImgLoad() {
     if (!imgRef.current) return;
-    setImgNatural({ w: imgRef.current.naturalWidth, h: imgRef.current.naturalHeight });
-    setImgDisplay({ w: imgRef.current.clientWidth,  h: imgRef.current.clientHeight });
+    const img = imgRef.current;
+    setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
+    // Com object-contain, o tamanho exibido da imagem (não do container)
+    setImgDisplay({ w: img.width, h: img.height });
   }
 
   function clear() {
