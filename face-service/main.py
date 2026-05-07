@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from insightface.app import FaceAnalysis
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageOps
 import io, time, os
 
 app = FastAPI(title="Face Service — 42 BPM Intel")
@@ -38,7 +38,10 @@ async def embed(file: UploadFile, min_score: float | None = None):
     threshold = min_score if min_score is not None else MIN_DET_SCORE
 
     try:
-        pil_img = Image.open(io.BytesIO(raw)).convert("RGB")
+        pil_img = Image.open(io.BytesIO(raw))
+        # Corrige orientação EXIF (fotos de celular ficam "deitadas" sem isso)
+        pil_img = ImageOps.exif_transpose(pil_img)
+        pil_img = pil_img.convert("RGB")
         # Upscale imagens pequenas — det_size=640 precisa de imagem >= 640px
         w, h = pil_img.size
         if max(w, h) < 640:
