@@ -17,7 +17,7 @@ app.add_middleware(
 fa = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
 fa.prepare(ctx_id=0, det_size=(640, 640))
 
-MIN_DET_SCORE = float(os.getenv("MIN_DET_SCORE", "0.6"))
+MIN_DET_SCORE = float(os.getenv("MIN_DET_SCORE", "0.5"))
 
 
 @app.get("/health")
@@ -30,57 +30,71 @@ def health():
     }
 
 
-@app.post("/embed")
-async def embed(file: UploadFile, min_score: float | None = None):
-    t0 = time.time()
-    raw = await file.read()
-
-    threshold = min_score if min_score is not None else MIN_DET_SCORE
-
-    try:
-        pil_img = Image.open(io.BytesIO(raw))
-        # Corrige orientação EXIF (fotos de celular ficam "deitadas" sem isso)
-        pil_img = ImageOps.exif_transpose(pil_img)
-        pil_img = pil_img.convert("RGB")
-        # Upscale imagens pequenas — det_size=640 precisa de imagem >= 640px
-        w, h = pil_img.size
-        if max(w, h) < 640:
-            scale = 640 / max(w, h)
-            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-        img = np.array(pil_img)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Imagem inválida ou corrompida")
-
+def detect_faces(pil_img: Image.Image, threshold: float) -> list:
+    """Tenta detectar rostos com múltiplas estratégias."""
+    img = np.array(pil_img)
     faces = fa.get(img)
 
-    # Se não detectou nada, tenta com contraste e brilho aumentados
+    # Estratégia 2: contraste aumentado
     if len(faces) == 0:
-        enhanced = ImageEnhance.Contrast(pil_img).enhance(1.8)
-        enhanced = ImageEnhance.Brightness(enhanced).enhance(1.2)
-        faces = fa.get(np.array(enhanced))
+        try:
+            enhanced = ImageEnhance.Contrast(pil_img).enhance(2.0)
+            enhanced = ImageEnhance.Brightness(enhanced).enhance(1.3)
+            faces = fa.get(np.array(enhanced))
+        except Exception:
+            pass
+
+    # Estratégia 3: escala diferente (pode detectar rostos que 640 perde)
+    if len(faces) == 0:
+        try:
+            w, h = pil_img.size
+            scale = 480 / max(w, h)
+            small = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+            faces = fa.get(np.array(small))
+        except Exception:
+            pass
 
     results = []
     for f in faces:
         score = float(f.det_score)
         if score < threshold:
             continue
-        results.append(
-            {
-                "bbox": {
-                    "x": int(f.bbox[0]),
-                    "y": int(f.bbox[1]),
-                    "w": int(f.bbox[2] - f.bbox[0]),
-                    "h": int(f.bbox[3] - f.bbox[1]),
-                },
-                "det_score": score,
-                "embedding": f.normed_embedding.tolist(),
-            }
-        )
+        results.append({
+            "bbox": {
+                "x": int(f.bbox[0]),
+                "y": int(f.bbox[1]),
+                "w": int(f.bbox[2] - f.bbox[0]),
+                "h": int(f.bbox[3] - f.bbox[1]),
+            },
+            "det_score": score,
+            "embedding": f.normed_embedding.tolist(),
+        })
+    return results, len(faces)
+
+
+@app.post("/embed")
+async def embed(file: UploadFile, min_score: float | None = None):
+    t0 = time.time()
+    raw = await file.read()
+    threshold = min_score if min_score is not None else MIN_DET_SCORE
+
+    try:
+        pil_img = Image.open(io.BytesIO(raw))
+        pil_img = ImageOps.exif_transpose(pil_img)
+        pil_img = pil_img.convert("RGB")
+        w, h = pil_img.size
+        if max(w, h) < 640:
+            scale = 640 / max(w, h)
+            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Imagem inválida: {e}")
+
+    results, total_detected = detect_faces(pil_img, threshold)
 
     return {
         "count": len(results),
-        "total_detected": len(faces),
+        "total_detected": total_detected,
         "elapsed_ms": int((time.time() - t0) * 1000),
-        "image_size": {"w": img.shape[1], "h": img.shape[0]},
+        "image_size": {"w": pil_img.size[0], "h": pil_img.size[1]},
         "faces": results,
     }
