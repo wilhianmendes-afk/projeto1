@@ -18,14 +18,14 @@ export default async function IndexacaoPage() {
   const supabase = getAdminClient();
 
   const [
-    { count: totalAtivos },
+    { data: activeQualificados },
     { data: embeddingIds },
-    { count: totalSkipped },
+    { data: skippedIds },
     { data: recentSkipped },
   ] = await Promise.all([
     supabase
       .from("qualificados")
-      .select("*", { count: "exact", head: true })
+      .select("id")
       .is("deleted_at", null),
     supabase
       .from("face_embeddings")
@@ -33,7 +33,7 @@ export default async function IndexacaoPage() {
       .eq("source", "qualificados"),
     supabase
       .from("face_skipped")
-      .select("*", { count: "exact", head: true })
+      .select("source_id, source_label, reason")
       .eq("source", "qualificados"),
     supabase
       .from("face_skipped")
@@ -43,14 +43,22 @@ export default async function IndexacaoPage() {
       .limit(10),
   ]);
 
-  // Conta qualificados DISTINTOS com pelo menos 1 embedding (1 pessoa pode ter N linhas)
-  const totalIndexados = new Set((embeddingIds ?? []).map((r: { source_id: string }) => r.source_id)).size;
+  const activeIdSet = new Set((activeQualificados ?? []).map((r: { id: string }) => r.id));
+  const totalAtivos = activeIdSet.size;
 
-  const pendentes = Math.max(0, (totalAtivos ?? 0) - totalIndexados - (totalSkipped ?? 0));
-  const cobertura =
-    totalAtivos && totalAtivos > 0
-      ? Math.round((totalIndexados / totalAtivos) * 100)
-      : 0;
+  // Só conta indexados/skipped cujo source_id ainda existe em qualificados ativos
+  const totalIndexados = new Set(
+    (embeddingIds ?? [])
+      .map((r: { source_id: string }) => r.source_id)
+      .filter((id: string) => activeIdSet.has(id))
+  ).size;
+
+  const totalSkipped = (skippedIds ?? []).filter(
+    (r: { source_id: string }) => activeIdSet.has(r.source_id)
+  ).size;
+
+  const pendentes = Math.max(0, totalAtivos - totalIndexados - totalSkipped);
+  const cobertura = totalAtivos > 0 ? Math.round((totalIndexados / totalAtivos) * 100) : 0;
 
   return (
     <div>
@@ -60,7 +68,7 @@ export default async function IndexacaoPage() {
         <StatCard icon={TrendingUp} color="blue" label="Cobertura" value={`${cobertura}%`} />
         <StatCard icon={CheckCircle} color="green" label="Indexados" value={totalIndexados ?? 0} />
         <StatCard icon={Clock} color="yellow" label="Pendentes" value={Math.max(0, pendentes)} />
-        <StatCard icon={XCircle} color="red" label="Sem rosto" value={totalSkipped ?? 0} />
+        <StatCard icon={XCircle} color="red" label="Sem rosto" value={totalSkipped} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -76,7 +84,7 @@ export default async function IndexacaoPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-white">Sem rosto detectado</h2>
-            <ClearSkippedButton total={totalSkipped ?? 0} />
+            <ClearSkippedButton total={totalSkipped} />
           </div>
           <div className="space-y-2">
             {recentSkipped.map((s, i) => (
