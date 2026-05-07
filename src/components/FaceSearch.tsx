@@ -111,8 +111,9 @@ export default function FaceSearch() {
     if (!imgRef.current) return;
     const img = imgRef.current;
     setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
-    // Com object-contain, o tamanho exibido da imagem (não do container)
-    setImgDisplay({ w: img.width, h: img.height });
+    // Pegar o tamanho exato que a imagem ocupa na tela
+    const rect = img.getBoundingClientRect();
+    setImgDisplay({ w: rect.width, h: rect.height });
   }
 
   function clear() {
