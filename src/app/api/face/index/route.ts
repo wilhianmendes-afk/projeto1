@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -10,7 +19,7 @@ export async function POST(req: NextRequest) {
   const { qualificadoId } = await req.json();
   if (!qualificadoId) return NextResponse.json({ error: "qualificadoId obrigatório" }, { status: 400 });
 
-  const service = await createServiceClient();
+  const service = getAdminClient();
 
   const { data: pessoa } = await service
     .from("qualificados")
