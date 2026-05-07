@@ -269,3 +269,61 @@ TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
 
 ## Branch de desenvolvimento
 `claude/check-github-access-v30TG`
+
+## Mudanças Recentes (Sessão Atual)
+
+### 1. Página de Busca Facial (/busca)
+- ✅ **Botão "Buscar" explícito**: removido auto-search ao alterar threshold
+- ✅ **Detecção automática**: rosto é detectado assim que imagem é inserida
+- ✅ **Enquadramento visual**: bbox (linhas azuis) aparece na foto automaticamente
+- ✅ **Correção do bbox**: 
+  - Conta com o `object-contain` da imagem
+  - Usa `getBoundingClientRect()` para precisão
+  - Desescala coordenadas do face-service (que redimensiona para 640px)
+- ✅ **Modal de comparação**: clique em resultado abre comparação lado a lado
+- ✅ **Imagens sem corte**: mudado de `object-cover` para `object-contain`
+- ✅ **Mensagens de status**: "Detectando rosto..." e "Buscando..." aparecem sobre a foto
+
+### 2. Página de Qualificados (/qualificados)
+- ✅ **Filtro em tempo real**: resultados são atualizados enquanto digita (sem Enter)
+- ✅ **Busca por múltiplos campos**:
+  - Nome
+  - Alcunha (vulgo)
+  - CPF
+  - Data de nascimento (DD/MM/AAAA ou DDMMAAAA)
+  - Nome da mãe (genitora)
+- ✅ **Suporte a formatos de data**: 
+  - `20/07/1988` (DD/MM/AAAA)
+  - `20071988` (DDMMAAAA)
+  - Ambos são convertidos para busca no formato YYYY-MM-DD
+- ✅ **Imagens sem corte**: cards de resultado com `object-contain`
+
+### 3. Página de Detalhes (/qualificados/[id])
+- ✅ **Data de nascimento formatada**: exibida como DD/MM/AAAA
+- ✅ **Todos os campos exibidos**:
+  - Nome, Vulgo, CPF, RG
+  - Data de Nascimento, Nome da Mãe
+  - Cidade, UF
+  - Fonte de Dados, ID na Fonte
+  - Data de Cadastro
+- ✅ **Seção de Fotos Adicionais**: exibe `fotos_extras` se disponível
+- ✅ **Embeddings faciais**: imagens sem corte com `object-contain`
+
+### 4. Modal de Comparação
+- ✅ **Layout amplo**: max-width 6xl para melhor visualização
+- ✅ **Imagens grandes**: lado a lado em tamanho quadrado
+- ✅ **Dados detalhados**:
+  - Foto buscada vs. Foto do qualificado
+  - Similaridade em percentual grande
+  - Nome, alcunha, data de nascimento, mãe
+  - CPF, localização
+  - Confiança e det score
+- ✅ **Fundo preto**: melhor contraste para imagens
+
+### Componentes Novos
+- `src/components/QualificadosSearch.tsx` — filtro client-side com busca em tempo real
+- `src/components/ComparisonModal.tsx` — modal de comparação de fotos
+
+### Alterações na API
+- `/api/face/search` retorna agora `image_size` para cálculo correto do bbox
+- Busca retorna dados adicionais: `nascimento`, `genitora`
