@@ -39,10 +39,10 @@ async def embed(file: UploadFile, min_score: float | None = None):
 
     try:
         pil_img = Image.open(io.BytesIO(raw)).convert("RGB")
-        # Upscale imagens pequenas para melhorar detecção facial
+        # Upscale imagens pequenas — det_size=640 precisa de imagem >= 640px
         w, h = pil_img.size
-        if max(w, h) < 300:
-            scale = 300 / max(w, h)
+        if max(w, h) < 640:
+            scale = 640 / max(w, h)
             pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
         img = np.array(pil_img)
     except Exception:
