@@ -15,3 +15,6 @@ create index if not exists face_embeddings_hnsw_idx
   on face_embeddings
   using hnsw (embedding vector_cosine_ops)
   with (m = 16, ef_construction = 64);
+
+create unique index if not exists face_embeddings_unique_idx
+  on face_embeddings (source, source_id, photo_url, face_index);
