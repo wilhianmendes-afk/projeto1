@@ -18,6 +18,7 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
+ANTHROPIC_API_KEY=   # respostas automáticas do Chat do Dev
 IBIS_IMPORT_TOKEN=   # opcional — protege /api/ibis/import e /api/face/backfill
 ```
 
@@ -47,13 +48,19 @@ IBIS_IMPORT_TOKEN=   # opcional — protege /api/ibis/import e /api/face/backfil
 - `source`, `source_id`, `source_label` — referência ao qualificado
 - `photo_url`, `embedding` (vector 512), `bbox`, `det_score`, `face_index`
 - Índice HNSW para busca por similaridade
+- **UNIQUE INDEX** em `(source, source_id, photo_url, face_index)` — obrigatório para o upsert do backfill funcionar
 
 **`face_skipped`** — registros sem rosto detectado
 - `source`, `source_id`, `source_label`, `reason`
 
-**Storage bucket `faces`** — fotos em `ibis/` e `drive/`
+**`dev_chat_messages`** — Chat do Dev
+- `role` (user/assistant), `content`, `attachments` (jsonb), `read_at`, `created_at`
 
-**RLS**: Desabilitado nas 3 tabelas (`ALTER TABLE x DISABLE ROW LEVEL SECURITY`).
+**Storage buckets**:
+- `faces` — fotos em `ibis/`, `drive/`, `manual/` (upload manual pela UI)
+- `dev-chat` — anexos do Chat do Dev (criado automaticamente na primeira mensagem)
+
+**RLS**: Desabilitado em todas as tabelas.
 
 ## Clientes Supabase
 
@@ -73,49 +80,83 @@ function getAdminClient() {
 }
 ```
 
-> **CRÍTICO**: `createClient()` SSR e `createServiceClient()` do `@supabase/ssr` **não retornam dados nem fazem INSERT** mesmo com RLS desabilitado. Usar `getAdminClient()` (sem await) em TODAS as páginas e em TODOS os endpoints de importação/backfill.
+> **CRÍTICO**: `createClient()` SSR não retorna dados nem faz INSERT mesmo com RLS desabilitado. Usar `getAdminClient()` em TODAS as páginas e endpoints de dados.
+
+> **CRÍTICO**: Queries Supabase sem `.limit()` explícito retornam no máximo 1000 linhas (padrão do projeto). Sempre usar `.limit(10000)` ou superior para tabelas grandes.
 
 ## Cache Next.js / Vercel
 
 Todas as páginas do dashboard devem ter no topo:
 ```typescript
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 ```
-Sem isso, o Vercel Edge Cache serve dados antigos mesmo após truncate do banco.
 
 ## Endpoints principais
 | Rota | Descrição |
 |------|-----------|
 | `POST /api/ibis/import` | Recebe pessoas do script extrator do IBIS (CORS aberto) |
 | `DELETE /api/qualificados/[id]` | Remove qualificado + embeddings + foto do Storage |
-| `POST /api/face/search` | Busca facial por imagem enviada (multipart `image`) |
-| `GET  /api/face/backfill` | Gera embeddings dos registros pendentes (50 por chamada) |
+| `POST /api/qualificados/[id]/foto` | Faz upload de foto, atualiza foto_url, limpa embeddings anteriores |
+| `POST /api/face/search` | Busca facial por imagem (multipart `file`) |
+| `GET  /api/face/backfill` | Gera embeddings dos registros pendentes |
 | `POST /api/face/backfill` | Mesmo — usado pelo cron e pelo script extrator |
-| `POST /api/face/index` | Indexa um qualificado específico manualmente |
+| `POST /api/face/index` | Re-indexa um qualificado específico com retry de threshold |
 | `POST /api/drive/import` | Importa fotos do Google Drive |
+| `GET  /api/dev-chat` | Histórico do Chat do Dev |
+| `POST /api/dev-chat` | Envia mensagem + gera resposta automática (Claude Haiku) |
+| `PATCH /api/dev-chat/[id]/read` | Marca mensagem como lida |
 
-## Backfill automático
-O backfill de embeddings é totalmente automático — nenhum script manual é necessário:
+## Face Service (Railway)
 
-1. **Vercel Cron** (`vercel.json`): executa `POST /api/face/backfill` uma vez por dia às 3h (`0 3 * * *`)
-   - Plano Hobby do Vercel só permite 1 execução por dia — não usar `*/30 * * * *`
-2. **Script extrator**: ao concluir importação, dispara `POST /api/face/backfill` automaticamente
-   - Pode retornar 401 se `IBIS_IMPORT_TOKEN` não configurado — o cron diário supre
-3. **Auth do backfill**: aceita:
-   - Header `x-backfill-token: <IBIS_IMPORT_TOKEN>`
-   - Header Vercel Cron `x-vercel-cron: 1`
-   - Usuário logado (sessão SSR)
+```
+face-service/
+├── main.py          # FastAPI: GET /health, POST /embed, POST /embed-raw
+├── Dockerfile       # buffalo_l pré-baixado no build (sem download em runtime)
+├── railway.json     # watchPatterns: face-service/** (não redeploya em push de frontend)
+└── requirements.txt
+```
+
+- InsightFace `buffalo_l` com `CPUExecutionProvider`
+- **`POST /embed`** — multipart/form-data (para chamadas do browser)
+- **`POST /embed-raw`** — binário puro `Content-Type: image/jpeg` (para chamadas server-to-server do Vercel)
+- Ambos aceitam `?min_score=0.35` para threshold por requisição
+- `MIN_DET_SCORE=0.6` no ambiente (Railway env var)
+- **Upscaling manual removido** — causava crash do ONNX Runtime em imagens pequenas. InsightFace redimensiona internamente.
+- **Modelo pré-baked no Docker** — evita download de 281MB a cada restart
+
+> **CRÍTICO**: chamadas server-to-server (Vercel → Railway) **devem usar `/embed-raw`**. O runtime serverless do Vercel não serializa `FormData/Blob` corretamente para Railway (retorna 502).
+
+## Backfill de embeddings
+
+O backfill processa qualificados que têm `foto_url` mas ainda não têm embedding nem estão em `face_skipped`.
+
+**Funcionamento:**
+1. **Vercel Cron** (`vercel.json`): `POST /api/face/backfill` às 3h UTC diariamente
+2. **BackfillButton** (`/indexacao`): loop automático, chama a cada 1.5s, atualiza a página a cada 5 rodadas
+3. **Batch padrão**: 3 registros por chamada (limite de 60s do Vercel Hobby)
+4. **Sem healthCheck** — healthCheck com latência variável (4-10s) causava falsos positivos. Se o face service falhar, `serviceError=true` e o registro fica pendente para a próxima rodada.
+5. **Retry automático** de threshold: se `total_detected > 0` mas `count == 0`, tenta novamente com `min_score=0.35`
+6. **Queries paralelas**: `face_embeddings` + `face_skipped` + `qualificados` em `Promise.all`
+
+**Auth do backfill**: aceita:
+- Header `x-vercel-cron: 1`
+- Header `x-backfill-token: <IBIS_IMPORT_TOKEN>`
+- Usuário logado (sessão SSR)
+
+**Limites de timeout por operação:**
+- Download de imagem: 10s
+- Chamada `/embed-raw`: 10s
+- Função Vercel total: 60s (plano Hobby)
 
 ## Páginas
 | Rota | Descrição |
 |------|-----------|
 | `/` | Dashboard — stats: qualificados, embeddings, sem rosto, cobertura % |
-| `/busca` | Busca facial — upload de foto, retorna matches com score |
-| `/qualificados` | Grade de fotos (prontuário) com busca por nome, paginação |
-| `/qualificados/[id]` | Detalhe do qualificado + embeddings + botão de indexar |
+| `/busca` | Busca facial — detecção automática ao inserir foto, botão "Buscar" só ativo após detectar rosto |
+| `/qualificados` | Grade de fotos com busca por nome, vulgo, CPF, nascimento, mãe |
+| `/qualificados/[id]` | Detalhe do qualificado — foto 300px, upload de foto, re-indexação, excluir |
 | `/qualificados/novo` | Formulário para cadastrar manualmente |
-| `/indexacao` | Status da indexação + importação por Drive |
+| `/indexacao` | Status da indexação, lista "sem rosto" (links p/ qualificado), lista "sem foto" expansível |
 | `/login` | Login com usuário (sem @) |
 
 ## Página de Qualificados (grade)
@@ -124,15 +165,29 @@ Fotos estilo prontuário: foto 3:4 + rodapé branco com nome/DN/MÃE/ALC.
 - `overflow-hidden` **apenas** no div da foto, não no Link pai
 - Rodapé com **inline styles** (não Tailwind): `overflowWrap: 'break-word', wordBreak: 'break-word'`
 
-## Face Service (Railway)
-```
-face-service/
-├── main.py          # FastAPI: GET /health, POST /embed
-├── Dockerfile
-└── requirements.txt
-```
-- InsightFace `buffalo_l` com `CPUExecutionProvider`
-- `POST /embed` recebe imagem, retorna `{ faces: [{ embedding: float[512], bbox, det_score }] }`
+## Página de Indexação (/indexacao)
+- **Cobertura**: baseada apenas em qualificados com `foto_url` (sem foto = excluído do denominador)
+- **Sem foto**: lista expansível com link para cada qualificado — clicar abre a página onde a foto pode ser adicionada
+- **Sem rosto**: lista dos 10 mais recentes, cada nome é link para `/qualificados/[id]` para re-indexar
+- **BackfillButton**: atualiza contadores e lista "sem rosto" a cada 5 rodadas via `router.refresh()`
+
+## Upload de foto manual
+`POST /api/qualificados/[id]/foto` — aceita `multipart/form-data` com campo `foto`.
+- Faz upload para `faces/manual/<id>_<timestamp>.jpg`
+- Atualiza `foto_url` no banco
+- Remove embeddings e `face_skipped` anteriores (força re-indexação)
+- Componente: `src/components/FotoUpload.tsx` (drag & drop ou clique)
+
+## Chat do Dev
+
+Canal interno de desenvolvimento embarcado no dashboard. **Não expor publicamente.**
+
+- Componente: `src/components/DevChat.tsx` (flutuante, canto inferior direito)
+- API: `src/app/api/dev-chat/route.ts` (GET histórico / POST envio + resposta automática)
+- Marcar como lido: `src/app/api/dev-chat/[id]/read/route.ts`
+- Tabela: `dev_chat_messages` (migration `supabase/migrations/006_dev_chat.sql` — já aplicada)
+- Storage bucket: `dev-chat` (criado automaticamente na primeira mensagem)
+- Requer `ANTHROPIC_API_KEY` com créditos para respostas automáticas via Claude Haiku
 
 ## Integração IBIS (ibis.app.br)
 
@@ -152,50 +207,24 @@ Scripts disponíveis:
 
 **Observações:**
 - `fonte_id` = nome do arquivo da foto (ex: `3b429bce-....jpg`) — chave de deduplicação
-- URL `fotocrim/?pfdrid_c=true` (sem filename) = **sem foto no IBIS** → `naturalWidth=0` → ignorado pelo script (normal)
+- URL `fotocrim/?pfdrid_c=true` (sem filename) = **sem foto no IBIS** → `naturalWidth=0` → ignorado
 - **URLs do PrimeFaces expiram** — NÃO re-fazer fetch. Capturar via `canvas.drawImage(imgEl)` enquanto o `<img>` está no DOM
-- Aguardar imagens carregarem: `Promise.all(imgs.map(img => new Promise(r => { img.onload=r; img.onerror=r; setTimeout(r,4000); })))`
-- Ao final, dispara backfill automaticamente (pode dar 401 — cron resolve)
-- **nascimento**: endpoint converte automaticamente de `DD/MM/AAAA` para `AAAA-MM-DD`
-- Busca requer mínimo 2 letras (ex: "AA", "AB"...)
-- **Somente registros com foto são importados** — script filtra `comFoto` antes de enviar, API também rejeita
+- **Somente registros com foto são importados**
 
-**Lógica de deduplicação e update (`/api/ibis/import`):**
+**Lógica de deduplicação (`/api/ibis/import`):**
 - Com `fonte_id` → checa por `fonte_id` no banco
 - Sem `fonte_id` → checa por `nome` (ilike) + `nascimento`
-- Registro já existente → **sempre atualiza `foto_url`** quando nova foto chega (não apenas se vazio)
-- Também preenche `vulgo`, `genitora`, `nascimento` se estiverem vazios
-- Filename no Storage: `ibis/<fonte_id>.jpg` ou `ibis/<timestamp>_<uuid>.jpg` (sem fonte_id)
+- Registro existente → atualiza `foto_url` sempre que nova foto chega
 
-**Filtro de importação — regras estritas (sem exceções):**
-- `naturalWidth=0` → sem foto no IBIS → não importa, sem aviso
-- Erro de canvas (CORS taint, arquivo corrompido, etc.) → não importa, loga `⚠️ Canvas falhou — NOME: motivo`
-- Somente registros onde canvas capturou `base64` com sucesso são importados
-- API também rejeita qualquer payload sem `foto_base64` como segunda barreira
-
-**Como usar (modo manual — arquivo `ibis-extractor-manual.js`):**
+**Como usar (modo manual):**
 1. Abra o IBIS logado e pesquise qualquer termo
-2. Quando os resultados aparecerem, abra o console (`F12`) e cole o conteúdo do arquivo (nunca do chat — pode corromper sintaxe)
-3. Ele processa a página atual e navega automaticamente por todas as páginas seguintes
-
-**Saída esperada no console:**
-```
-📄 Pág 1: 8 registros | 6 com foto | 1 sem foto no IBIS | 1 erro canvas
-  ⚠️ Canvas falhou — ISAAC SAMUEL FERREIRA DA SILVA: The operation is insecure.
-  ✅ +6 importados | 0 já existiam | fotos: 6 | acumulado: 6
-```
-
-**Registros com erro de canvas (CORS taint):**
-- Foto existe no IBIS mas o servidor bloqueou leitura via canvas
-- Não é possível importar pelo navegador — não há solução automática
-- Se o registro já estiver no sistema sem foto: use o botão **Excluir** na página dele
-- Ele nunca será re-importado sem foto (filtro garante isso)
+2. Quando os resultados aparecerem, abra o console (`F12`) e cole o conteúdo do arquivo `scripts/ibis-extractor-manual.js` (nunca do chat)
+3. Processa a página atual e navega automaticamente pelas seguintes
 
 **Limpar pasta ibis/ do Storage:**
 ```bash
 node scripts/clear-ibis-storage.js
 ```
-Lê credenciais do `.env.local`, deleta em lotes de 100, exibe progresso.
 
 **Reiniciar banco do zero (SQL Editor do Supabase):**
 ```sql
@@ -203,53 +232,33 @@ TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
 ```
 Depois rodar `node scripts/clear-ibis-storage.js` para limpar o Storage.
 
-**Diagnóstico de canvas (se fotos não baixarem):**
-```javascript
-(function() {
-  const tabela = document.querySelectorAll("table")[2];
-  if (!tabela) { console.log("❌ Tabela não encontrada"); return; }
-  tabela.querySelectorAll("tr").forEach(tr => {
-    const col = tr.querySelectorAll("td");
-    if (col.length < 2) return;
-    const nome = col[1]?.innerText.split(/ALCUNHA:/i)[0].split("\n")[0].trim();
-    if (!nome) return;
-    const img = col[0]?.querySelector("img");
-    if (!img) { console.log(`${nome} — SEM <img>`); return; }
-    console.log(`${nome}`);
-    console.log(`  src: ${img.src}`);
-    console.log(`  complete: ${img.complete} | naturalWidth: ${img.naturalWidth}`);
-    if (img.naturalWidth > 0) {
-      try {
-        const c = document.createElement("canvas");
-        c.width = img.naturalWidth; c.height = img.naturalHeight;
-        c.getContext("2d").drawImage(img, 0, 0);
-        console.log(`  ✅ Canvas OK — base64: ${c.toDataURL("image/jpeg").length} chars`);
-      } catch(e) { console.log(`  ❌ Canvas ERRO: ${e.message}`); }
-    } else { console.log(`  ⚠️ naturalWidth=0 — sem foto no IBIS`); }
-  });
-})();
-```
-
-**Script de extração manual — ver arquivo `scripts/ibis-extractor-manual.js`**
-Sempre copiar do VS Code, nunca do chat (markdown pode corromper a sintaxe).
-
 ## Deploy (Vercel)
 - Branch monitorado: `claude/check-github-access-v30TG`
 - **GitHub Action** (`.github/workflows/deploy.yml`): dispara deploy automaticamente a cada push
   - Requer secret `VERCEL_DEPLOY_HOOK` no GitHub (Settings → Secrets → Actions)
-  - Hook URL: configurada no Vercel → Settings → Git → Deploy Hooks → "manual-trigger"
-- O proxy git do Claude Code **não sincroniza de forma confiável** — sempre fazer `git pull` + `git push` no VS Code após mudanças do Claude Code
 - Deploy hook manual (PowerShell):
   ```powershell
   Invoke-RestMethod -Uri "<hook-url>" -Method POST
   ```
 
-## Páginas — funcionalidades
-| Rota | Funcionalidade extra |
-|------|---------------------|
-| `/qualificados/[id]` | Botão **Excluir** (DeleteButton) — remove registro + embeddings + foto do Storage |
+## Railway (face service)
+- Projeto: `adaptable-beauty` → serviço `projeto1`
+- `railway.json` com `watchPatterns: ["face-service/**"]` — só redeploya quando arquivos do face service mudam
+- Redeploys desnecessários por push de frontend eram a causa do "Face service offline" durante backfill
 
-`src/components/DeleteButton.tsx` — client component com confirmação em dois cliques.
+## Componentes principais
+| Componente | Função |
+|------------|--------|
+| `BackfillButton.tsx` | Loop automático de indexação com contadores e retry |
+| `ClearSkippedButton.tsx` | Limpa todos os registros de face_skipped |
+| `SemFotoList.tsx` | Lista expansível de qualificados sem foto (indexação) |
+| `FotoUpload.tsx` | Upload de foto na página do qualificado (drag & drop) |
+| `IndexButton.tsx` | Re-indexa um qualificado individual |
+| `DeleteButton.tsx` | Remove qualificado + embeddings + foto (confirmação dupla) |
+| `FaceSearch.tsx` | Busca facial com detecção automática e bbox overlay |
+| `ComparisonModal.tsx` | Modal de comparação lado a lado do resultado |
+| `QualificadosSearch.tsx` | Filtro client-side em tempo real na grade |
+| `DevChat.tsx` | Chat flutuante de desenvolvimento |
 
 ## Comandos úteis
 ```bash
@@ -257,84 +266,12 @@ npm run dev       # dev local
 npm run build     # checar build
 
 # Limpar pasta ibis/ do Storage:
-node scripts/clear-ibis-storage.js   # lê .env.local automaticamente
+node scripts/clear-ibis-storage.js
 
-# Reimportar do zero (SQL Editor do Supabase):
-TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
+# Reiniciar banco do zero:
+# SQL Editor Supabase: TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
 # Depois: node scripts/clear-ibis-storage.js
-
-# Ver logs do face-service:
-# Railway → projeto1 → Deployments → View logs
 ```
-
-## Chat do Dev
-
-Canal interno de desenvolvimento embarcado no dashboard. **Não expor publicamente.**
-
-- Componente: `src/components/DevChat.tsx` (flutuante, canto inferior direito)
-- API: `src/app/api/dev-chat/route.ts` (GET histórico / POST envio + resposta automática)
-- Marcar como lido: `src/app/api/dev-chat/[id]/read/route.ts`
-- Tabela: `dev_chat_messages` (migration `supabase/migrations/006_dev_chat.sql`)
-- Storage bucket: `dev-chat` (criado automaticamente na primeira mensagem)
-- Requer `ANTHROPIC_API_KEY` nas env vars para respostas automáticas via Claude Haiku
 
 ## Branch de desenvolvimento
 `claude/check-github-access-v30TG`
-
-## Mudanças Recentes (Sessão Atual)
-
-### 1. Página de Busca Facial (/busca)
-- ✅ **Botão "Buscar" explícito**: removido auto-search ao alterar threshold
-- ✅ **Detecção automática**: rosto é detectado assim que imagem é inserida
-- ✅ **Enquadramento visual**: bbox (linhas azuis) aparece na foto automaticamente
-- ✅ **Correção do bbox**: 
-  - Conta com o `object-contain` da imagem
-  - Usa `getBoundingClientRect()` para precisão
-  - Desescala coordenadas do face-service (que redimensiona para 640px)
-- ✅ **Modal de comparação**: clique em resultado abre comparação lado a lado
-- ✅ **Imagens sem corte**: mudado de `object-cover` para `object-contain`
-- ✅ **Mensagens de status**: "Detectando rosto..." e "Buscando..." aparecem sobre a foto
-
-### 2. Página de Qualificados (/qualificados)
-- ✅ **Filtro em tempo real**: resultados são atualizados enquanto digita (sem Enter)
-- ✅ **Busca por múltiplos campos**:
-  - Nome
-  - Alcunha (vulgo)
-  - CPF
-  - Data de nascimento (DD/MM/AAAA ou DDMMAAAA)
-  - Nome da mãe (genitora)
-- ✅ **Suporte a formatos de data**: 
-  - `20/07/1988` (DD/MM/AAAA)
-  - `20071988` (DDMMAAAA)
-  - Ambos são convertidos para busca no formato YYYY-MM-DD
-- ✅ **Imagens sem corte**: cards de resultado com `object-contain`
-
-### 3. Página de Detalhes (/qualificados/[id])
-- ✅ **Data de nascimento formatada**: exibida como DD/MM/AAAA
-- ✅ **Todos os campos exibidos**:
-  - Nome, Vulgo, CPF, RG
-  - Data de Nascimento, Nome da Mãe
-  - Cidade, UF
-  - Fonte de Dados, ID na Fonte
-  - Data de Cadastro
-- ✅ **Seção de Fotos Adicionais**: exibe `fotos_extras` se disponível
-- ✅ **Embeddings faciais**: imagens sem corte com `object-contain`
-
-### 4. Modal de Comparação
-- ✅ **Layout amplo**: max-width 6xl para melhor visualização
-- ✅ **Imagens grandes**: lado a lado em tamanho quadrado
-- ✅ **Dados detalhados**:
-  - Foto buscada vs. Foto do qualificado
-  - Similaridade em percentual grande
-  - Nome, alcunha, data de nascimento, mãe
-  - CPF, localização
-  - Confiança e det score
-- ✅ **Fundo preto**: melhor contraste para imagens
-
-### Componentes Novos
-- `src/components/QualificadosSearch.tsx` — filtro client-side com busca em tempo real
-- `src/components/ComparisonModal.tsx` — modal de comparação de fotos
-
-### Alterações na API
-- `/api/face/search` retorna agora `image_size` para cálculo correto do bbox
-- Busca retorna dados adicionais: `nascimento`, `genitora`
