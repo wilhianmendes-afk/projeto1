@@ -23,13 +23,12 @@ export async function GET() {
     return NextResponse.json(log);
   }
 
-  // Step 2: call face service exactly like embedImage does
+  // Step 2: call face service with raw binary (embed-raw)
   try {
-    const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(buffer)]), "photo.jpg");
-    const embedRes = await fetch(`${faceUrl}/embed`, {
+    const embedRes = await fetch(`${faceUrl}/embed-raw`, {
       method: "POST",
-      body: form,
+      headers: { "Content-Type": "image/jpeg" },
+      body: buffer,
       signal: AbortSignal.timeout(20000),
     });
     log.embedStatus = embedRes.status;
