@@ -267,6 +267,17 @@ TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
 # Railway → projeto1 → Deployments → View logs
 ```
 
+## Chat do Dev
+
+Canal interno de desenvolvimento embarcado no dashboard. **Não expor publicamente.**
+
+- Componente: `src/components/DevChat.tsx` (flutuante, canto inferior direito)
+- API: `src/app/api/dev-chat/route.ts` (GET histórico / POST envio + resposta automática)
+- Marcar como lido: `src/app/api/dev-chat/[id]/read/route.ts`
+- Tabela: `dev_chat_messages` (migration `supabase/migrations/006_dev_chat.sql`)
+- Storage bucket: `dev-chat` (criado automaticamente na primeira mensagem)
+- Requer `ANTHROPIC_API_KEY` nas env vars para respostas automáticas via Claude Haiku
+
 ## Branch de desenvolvimento
 `claude/check-github-access-v30TG`
 
