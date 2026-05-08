@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
   }
-  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "50");
+  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "10");
   return runBackfill(limit);
 }
 
@@ -154,6 +154,6 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
   }
   const body = await req.json().catch(() => ({}));
-  const limit = body.limit ?? 50;
+  const limit = body.limit ?? 10;
   return runBackfill(limit);
 }
