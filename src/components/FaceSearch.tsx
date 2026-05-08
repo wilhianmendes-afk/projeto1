@@ -264,18 +264,29 @@ export default function FaceSearch() {
             </div>
           </div>
 
-          <button
-            onClick={() => file && runSearch(file, threshold)}
-            disabled={!file || loading}
-            className={`w-full py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
-              file && !loading
-                ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-                : "bg-gray-700 text-gray-500 cursor-not-allowed"
-            }`}
-          >
-            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-            {loading ? "Buscando..." : "Buscar"}
-          </button>
+          {(() => {
+            const faceDetected = !!response?.query_bbox;
+            const canSearch = !!file && !loading && !detecting && faceDetected;
+            const label = !file ? "Buscar"
+              : detecting ? "Detectando rosto..."
+              : !faceDetected ? "Nenhum rosto detectado"
+              : loading ? "Buscando..."
+              : "Buscar";
+            return (
+              <button
+                onClick={() => file && runSearch(file, threshold)}
+                disabled={!canSearch}
+                className={`w-full py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                  canSearch
+                    ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                    : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                {(loading || detecting) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {label}
+              </button>
+            );
+          })()}
         </div>
 
         {error && (
