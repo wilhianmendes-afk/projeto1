@@ -58,6 +58,9 @@ export default function AutoBackfill() {
 
         setStats({ rodada, processed: totalProcessed, embedded: totalEmbedded, skipped: totalSkipped, remaining: data.remaining ?? 0 });
 
+        // Atualiza dados da página (lista "sem rosto", contadores) a cada 5 rodadas
+        if (rodada % 5 === 0) router.refresh();
+
         if ((data.remaining ?? 0) === 0) {
           setStatus("done");
           router.refresh();
