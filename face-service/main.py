@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from insightface.app import FaceAnalysis
 import numpy as np
 from PIL import Image, ImageOps
-import io, time, os
+import io, time, os, traceback
 
 app = FastAPI(title="Face Service — 42 BPM Intel")
 
@@ -25,15 +25,15 @@ def process_image(raw: bytes, t0: float) -> dict:
         pil_img = Image.open(io.BytesIO(raw))
         pil_img = ImageOps.exif_transpose(pil_img)
         pil_img = pil_img.convert("RGB")
-        w, h = pil_img.size
-        if max(w, h) < 640:
-            scale = 640 / max(w, h)
-            pil_img = pil_img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
         img = np.array(pil_img)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"image decode error: {e}")
 
-    faces = fa.get(img)
+    try:
+        faces = fa.get(img)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"face detection error: {e}")
 
     results = []
     for f in faces:
@@ -72,8 +72,7 @@ async def embed(file: UploadFile):
 
 @app.post("/embed-raw")
 async def embed_raw(request: Request):
-    """Accepts raw image bytes (Content-Type: image/jpeg or image/png).
-    Avoids multipart/form-data streaming issues from serverless runtimes."""
+    """Accepts raw image bytes (Content-Type: image/jpeg or image/png)."""
     t0 = time.time()
     raw = await request.body()
     if not raw:
