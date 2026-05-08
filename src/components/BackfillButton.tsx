@@ -38,11 +38,10 @@ export default function AutoBackfill() {
 
         let data;
         try {
-          data = await res.json();
-        } catch (e) {
-          // Se não conseguir fazer parse de JSON, pegar o texto
           const text = await res.text();
-          throw new Error(`Resposta inválida: ${text.substring(0, 100)}`);
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error(`Resposta inválida: ${String(e).substring(0, 100)}`);
         }
 
         if (!res.ok) {
