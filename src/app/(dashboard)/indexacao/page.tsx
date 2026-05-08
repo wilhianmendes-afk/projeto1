@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import BackfillButton from "@/components/BackfillButton";
 import ClearSkippedButton from "@/components/ClearSkippedButton";
 import DriveImport from "@/components/DriveImport";
+import SemFotoList from "@/components/SemFotoList";
 import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +28,9 @@ export default async function IndexacaoPage() {
   ] = await Promise.all([
     supabase
       .from("qualificados")
-      .select("id, foto_url")
+      .select("id, nome, foto_url")
       .is("deleted_at", null)
+      .order("nome", { ascending: true })
       .limit(10000),
     supabase
       .from("face_embeddings")
@@ -52,12 +54,15 @@ export default async function IndexacaoPage() {
   const totalAtivos = activeIdSet.size;
 
   // Qualificados sem foto nunca serão indexados — excluir do cálculo de pendentes
+  const semFotoList = (activeQualificados ?? [])
+    .filter((r: { foto_url: string | null }) => !r.foto_url)
+    .map((r: { id: string; nome: string }) => ({ id: r.id, nome: r.nome }));
+
   const comFotoIdSet = new Set(
     (activeQualificados ?? [])
       .filter((r: { foto_url: string | null }) => r.foto_url)
       .map((r: { id: string }) => r.id)
   );
-  const semFoto = totalAtivos - comFotoIdSet.size;
 
   // Indexados: source_ids únicos em face_embeddings que ainda existem em qualificados ativos
   const totalIndexados = new Set(
@@ -86,11 +91,7 @@ export default async function IndexacaoPage() {
         <StatCard icon={XCircle} color="red" label="Sem rosto" value={totalSkipped} />
       </div>
 
-      {semFoto > 0 && (
-        <p className="text-gray-500 text-xs mb-6">
-          {semFoto} qualificado{semFoto !== 1 ? "s" : ""} sem foto cadastrada — não entram na indexação.
-        </p>
-      )}
+      <SemFotoList qualificados={semFotoList} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
