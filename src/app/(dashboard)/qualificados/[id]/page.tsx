@@ -4,6 +4,7 @@ import { Fingerprint } from "lucide-react";
 import IndexButton from "@/components/IndexButton";
 import DeleteButton from "@/components/DeleteButton";
 import BackButton from "@/components/BackButton";
+import FotoUpload from "@/components/FotoUpload";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -80,6 +81,7 @@ export default async function QualificadoPage({
               </div>
             )}
           </div>
+          <FotoUpload qualificadoId={id} temFoto={!!pessoa.foto_url} />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-white">{pessoa.nome}</h1>
