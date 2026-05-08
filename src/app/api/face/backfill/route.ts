@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { embedImage, healthCheck } from "@/lib/face-service";
+import { embedImage } from "@/lib/face-service";
 
 export const maxDuration = 60;
 
@@ -54,22 +54,13 @@ function isAuthorized(req: NextRequest): boolean {
 async function runBackfill(limit: number) {
   const service = getAdminClient();
 
-  // healthCheck e queries do Supabase em paralelo para não desperdiçar tempo
-  const [serviceOnline, { data: alreadyIndexed }, { data: alreadySkipped }, { data: pendentes }] =
+  const [{ data: alreadyIndexed }, { data: alreadySkipped }, { data: pendentes }] =
     await Promise.all([
-      healthCheck(),
       service.from("face_embeddings").select("source_id").eq("source", "qualificados").limit(50000),
       service.from("face_skipped").select("source_id").eq("source", "qualificados").limit(10000),
       service.from("qualificados").select("id, nome, foto_url, fotos_extras")
         .is("deleted_at", null).not("foto_url", "is", null).limit(10000),
     ]);
-
-  if (!serviceOnline) {
-    return NextResponse.json(
-      { ok: false, error: "Face service offline. Verifique o Railway.", processed: 0, embedded: 0, skipped: 0, remaining: -1 },
-      { status: 503, headers: CORS_HEADERS }
-    );
-  }
 
   const done = new Set([
     ...(alreadyIndexed ?? []).map((r: { source_id: string }) => r.source_id),
