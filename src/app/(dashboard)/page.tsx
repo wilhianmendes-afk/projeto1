@@ -17,38 +17,53 @@ export default async function DashboardPage() {
   const supabase = getAdminClient();
 
   const [
-    { count: totalQualificados },
-    { count: totalEmbeddings },
-    { count: totalSkipped },
+    { data: qualificadosData },
+    { data: embeddingIds },
+    { data: skippedIds },
   ] = await Promise.all([
-    supabase.from("qualificados").select("*", { count: "exact", head: true }).is("deleted_at", null),
-    supabase.from("face_embeddings").select("*", { count: "exact", head: true }).eq("source", "qualificados"),
-    supabase.from("face_skipped").select("*", { count: "exact", head: true }).eq("source", "qualificados"),
+    supabase.from("qualificados").select("id, foto_url").is("deleted_at", null).limit(10000),
+    supabase.from("face_embeddings").select("source_id").eq("source", "qualificados").limit(50000),
+    supabase.from("face_skipped").select("source_id").eq("source", "qualificados").limit(10000),
   ]);
 
-  const cobertura =
-    totalQualificados && totalQualificados > 0
-      ? Math.round(((totalEmbeddings ?? 0) / totalQualificados) * 100)
-      : 0;
+  const activeIdSet = new Set((qualificadosData ?? []).map((r: { id: string }) => r.id));
+  const totalQualificados = activeIdSet.size;
+
+  // Qualificados com foto (denominador da cobertura)
+  const comFoto = (qualificadosData ?? []).filter((r: { foto_url: string | null }) => r.foto_url).length;
+
+  // Indexados = qualificados únicos com pelo menos um embedding
+  const totalIndexados = new Set(
+    (embeddingIds ?? [])
+      .map((r: { source_id: string }) => r.source_id)
+      .filter((id: string) => activeIdSet.has(id))
+  ).size;
+
+  // Sem rosto = qualificados em face_skipped que ainda existem
+  const totalSkipped = (skippedIds ?? []).filter(
+    (r: { source_id: string }) => activeIdSet.has(r.source_id)
+  ).length;
+
+  const cobertura = comFoto > 0 ? Math.round((totalIndexados / comFoto) * 100) : 0;
 
   const stats = [
     {
       label: "Qualificados",
-      value: totalQualificados ?? 0,
+      value: totalQualificados,
       icon: Users,
       color: "text-blue-400",
       bg: "bg-blue-950",
     },
     {
-      label: "Embeddings",
-      value: totalEmbeddings ?? 0,
+      label: "Indexados",
+      value: totalIndexados,
       icon: Database,
       color: "text-green-400",
       bg: "bg-green-950",
     },
     {
       label: "Sem rosto",
-      value: totalSkipped ?? 0,
+      value: totalSkipped,
       icon: AlertTriangle,
       color: "text-yellow-400",
       bg: "bg-yellow-950",
