@@ -89,7 +89,7 @@ async function runBackfill(limit: number) {
     for (const url of urls) {
       let buffer: Buffer;
       try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) throw new Error("HTTP " + res.status);
         buffer = Buffer.from(await res.arrayBuffer());
       } catch { continue; }
@@ -141,7 +141,7 @@ export async function GET(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
   }
-  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "5");
+  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "3");
   return runBackfill(limit);
 }
 
@@ -153,6 +153,6 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
   }
   const body = await req.json().catch(() => ({}));
-  const limit = body.limit ?? 5;
+  const limit = body.limit ?? 3;
   return runBackfill(limit);
 }

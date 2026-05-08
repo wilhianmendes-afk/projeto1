@@ -27,6 +27,7 @@ export async function embedImage(imageBuffer: Buffer, filename = "photo.jpg", mi
     method: "POST",
     headers,
     body: new Uint8Array(imageBuffer),
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) {
