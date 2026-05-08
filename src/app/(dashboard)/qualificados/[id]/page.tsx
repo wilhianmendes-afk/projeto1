@@ -66,24 +66,24 @@ export default async function QualificadoPage({
         <DeleteButton id={id} nome={pessoa.nome} />
       </div>
 
-      <div className="flex items-start gap-6 mb-8">
-        <div style={{ width: 180, flexShrink: 0 }}>
+      <div className="flex flex-col sm:flex-row items-start gap-6 mb-8">
+        <div style={{ width: '100%', maxWidth: 300, flexShrink: 0 }}>
           <div style={{ width: '100%', aspectRatio: '3/4', background: '#1f2937', borderRadius: 12, overflow: 'hidden', border: '1px solid #374151' }}>
             {pessoa.foto_url ? (
               <img
                 src={pessoa.foto_url}
                 alt={pessoa.nome}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
               />
             ) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '3rem', fontWeight: 'bold' }}>
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280', fontSize: '5rem', fontWeight: 'bold' }}>
                 {pessoa.nome.charAt(0)}
               </div>
             )}
           </div>
           <FotoUpload qualificadoId={id} temFoto={!!pessoa.foto_url} />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold text-white">{pessoa.nome}</h1>
           {pessoa.vulgo && <p className="text-gray-400">"{pessoa.vulgo}"</p>}
           {pessoa.observacoes && (
