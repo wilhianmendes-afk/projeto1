@@ -18,6 +18,7 @@ function getAdminClient() {
 export default async function IndexacaoPage() {
   const supabase = getAdminClient();
 
+  // Limit alto para superar o teto padrão de 1000 linhas do Supabase REST
   const [
     { data: activeQualificados },
     { data: embeddingIds },
@@ -26,16 +27,19 @@ export default async function IndexacaoPage() {
   ] = await Promise.all([
     supabase
       .from("qualificados")
-      .select("id")
-      .is("deleted_at", null),
+      .select("id, foto_url")
+      .is("deleted_at", null)
+      .limit(10000),
     supabase
       .from("face_embeddings")
       .select("source_id")
-      .eq("source", "qualificados"),
+      .eq("source", "qualificados")
+      .limit(50000),
     supabase
       .from("face_skipped")
       .select("source_id, source_label, reason")
-      .eq("source", "qualificados"),
+      .eq("source", "qualificados")
+      .limit(10000),
     supabase
       .from("face_skipped")
       .select("source_id, source_label, reason, created_at")
@@ -47,19 +51,29 @@ export default async function IndexacaoPage() {
   const activeIdSet = new Set((activeQualificados ?? []).map((r: { id: string }) => r.id));
   const totalAtivos = activeIdSet.size;
 
-  // Só conta indexados/skipped cujo source_id ainda existe em qualificados ativos
+  // Qualificados sem foto nunca serão indexados — excluir do cálculo de pendentes
+  const comFotoIdSet = new Set(
+    (activeQualificados ?? [])
+      .filter((r: { foto_url: string | null }) => r.foto_url)
+      .map((r: { id: string }) => r.id)
+  );
+  const semFoto = totalAtivos - comFotoIdSet.size;
+
+  // Indexados: source_ids únicos em face_embeddings que ainda existem em qualificados ativos
   const totalIndexados = new Set(
     (embeddingIds ?? [])
       .map((r: { source_id: string }) => r.source_id)
       .filter((id: string) => activeIdSet.has(id))
   ).size;
 
+  // Skipped: registros em face_skipped que ainda existem em qualificados ativos
   const totalSkipped = (skippedIds ?? []).filter(
     (r: { source_id: string }) => activeIdSet.has(r.source_id)
   ).length;
 
-  const pendentes = Math.max(0, totalAtivos - totalIndexados - totalSkipped);
-  const cobertura = totalAtivos > 0 ? Math.round((totalIndexados / totalAtivos) * 100) : 0;
+  // Pendentes = com foto - já indexados - sem rosto detectado
+  const pendentes = Math.max(0, comFotoIdSet.size - totalIndexados - totalSkipped);
+  const cobertura = comFotoIdSet.size > 0 ? Math.round((totalIndexados / comFotoIdSet.size) * 100) : 0;
 
   return (
     <div>
@@ -67,10 +81,16 @@ export default async function IndexacaoPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard icon={TrendingUp} color="blue" label="Cobertura" value={`${cobertura}%`} />
-        <StatCard icon={CheckCircle} color="green" label="Indexados" value={totalIndexados ?? 0} />
-        <StatCard icon={Clock} color="yellow" label="Pendentes" value={Math.max(0, pendentes)} />
+        <StatCard icon={CheckCircle} color="green" label="Indexados" value={totalIndexados} />
+        <StatCard icon={Clock} color="yellow" label="Pendentes" value={pendentes} />
         <StatCard icon={XCircle} color="red" label="Sem rosto" value={totalSkipped} />
       </div>
+
+      {semFoto > 0 && (
+        <p className="text-gray-500 text-xs mb-6">
+          {semFoto} qualificado{semFoto !== 1 ? "s" : ""} sem foto cadastrada — não entram na indexação.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">

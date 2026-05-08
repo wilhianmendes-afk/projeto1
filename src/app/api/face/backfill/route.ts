@@ -58,10 +58,10 @@ async function runBackfill(limit: number) {
   const [serviceOnline, { data: alreadyIndexed }, { data: alreadySkipped }, { data: pendentes }] =
     await Promise.all([
       healthCheck(),
-      service.from("face_embeddings").select("source_id").eq("source", "qualificados"),
-      service.from("face_skipped").select("source_id").eq("source", "qualificados"),
+      service.from("face_embeddings").select("source_id").eq("source", "qualificados").limit(50000),
+      service.from("face_skipped").select("source_id").eq("source", "qualificados").limit(10000),
       service.from("qualificados").select("id, nome, foto_url, fotos_extras")
-        .is("deleted_at", null).not("foto_url", "is", null),
+        .is("deleted_at", null).not("foto_url", "is", null).limit(10000),
     ]);
 
   if (!serviceOnline) {
