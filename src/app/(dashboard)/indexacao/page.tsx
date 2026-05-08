@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import BackfillButton from "@/components/BackfillButton";
 import ClearSkippedButton from "@/components/ClearSkippedButton";
@@ -37,7 +38,7 @@ export default async function IndexacaoPage() {
       .eq("source", "qualificados"),
     supabase
       .from("face_skipped")
-      .select("source_label, reason, created_at")
+      .select("source_id, source_label, reason, created_at")
       .eq("source", "qualificados")
       .order("created_at", { ascending: false })
       .limit(10),
@@ -89,8 +90,13 @@ export default async function IndexacaoPage() {
           <div className="space-y-2">
             {recentSkipped.map((s, i) => (
               <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-gray-800 last:border-0">
-                <span className="text-gray-300 truncate max-w-xs">{s.source_label ?? "—"}</span>
-                <span className="text-yellow-400 text-xs ml-2">{s.reason}</span>
+                <Link
+                  href={`/qualificados/${s.source_id}`}
+                  className="text-gray-300 hover:text-white hover:underline truncate max-w-xs transition-colors"
+                >
+                  {s.source_label ?? "—"}
+                </Link>
+                <span className="text-yellow-400 text-xs ml-2 flex-shrink-0">{s.reason}</span>
               </div>
             ))}
           </div>
