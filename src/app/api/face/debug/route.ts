@@ -28,7 +28,7 @@ export async function GET() {
     const embedRes = await fetch(`${faceUrl}/embed-raw`, {
       method: "POST",
       headers: { "Content-Type": "image/jpeg" },
-      body: buffer,
+      body: new Uint8Array(buffer),
       signal: AbortSignal.timeout(20000),
     });
     log.embedStatus = embedRes.status;
