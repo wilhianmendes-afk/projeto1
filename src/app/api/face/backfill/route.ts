@@ -52,8 +52,18 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 async function runBackfill(limit: number) {
-  // Verifica se o face service está online antes de processar
-  const serviceOnline = await healthCheck();
+  const service = getAdminClient();
+
+  // healthCheck e queries do Supabase em paralelo para não desperdiçar tempo
+  const [serviceOnline, { data: alreadyIndexed }, { data: alreadySkipped }, { data: pendentes }] =
+    await Promise.all([
+      healthCheck(),
+      service.from("face_embeddings").select("source_id").eq("source", "qualificados"),
+      service.from("face_skipped").select("source_id").eq("source", "qualificados"),
+      service.from("qualificados").select("id, nome, foto_url, fotos_extras")
+        .is("deleted_at", null).not("foto_url", "is", null),
+    ]);
+
   if (!serviceOnline) {
     return NextResponse.json(
       { ok: false, error: "Face service offline. Verifique o Railway.", processed: 0, embedded: 0, skipped: 0, remaining: -1 },
@@ -61,21 +71,10 @@ async function runBackfill(limit: number) {
     );
   }
 
-  const service = getAdminClient();
-
-  const { data: alreadyIndexed } = await service
-    .from("face_embeddings").select("source_id").eq("source", "qualificados");
-  const { data: alreadySkipped } = await service
-    .from("face_skipped").select("source_id").eq("source", "qualificados");
-
   const done = new Set([
     ...(alreadyIndexed ?? []).map((r: { source_id: string }) => r.source_id),
     ...(alreadySkipped ?? []).map((r: { source_id: string }) => r.source_id),
   ]);
-
-  const { data: pendentes } = await service
-    .from("qualificados").select("id, nome, foto_url, fotos_extras")
-    .is("deleted_at", null).not("foto_url", "is", null);
 
   const allPending = (pendentes ?? []).filter((p: { id: string }) => !done.has(p.id));
   const queue = allPending.slice(0, limit);
@@ -142,7 +141,7 @@ export async function GET(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
   }
-  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "10");
+  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "5");
   return runBackfill(limit);
 }
 
@@ -154,6 +153,6 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401, headers: CORS_HEADERS });
   }
   const body = await req.json().catch(() => ({}));
-  const limit = body.limit ?? 10;
+  const limit = body.limit ?? 5;
   return runBackfill(limit);
 }
