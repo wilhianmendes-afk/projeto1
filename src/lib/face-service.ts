@@ -26,7 +26,7 @@ export async function embedImage(imageBuffer: Buffer, filename = "photo.jpg", mi
   const res = await fetch(url, {
     method: "POST",
     headers,
-    body: imageBuffer,
+    body: new Uint8Array(imageBuffer),
   });
 
   if (!res.ok) {
