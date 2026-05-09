@@ -247,6 +247,8 @@ Scripts:
 2. Abra o console (`F12`) e cole o conteúdo do arquivo (nunca do chat)
 3. Processa a página atual e navega automaticamente pelas seguintes
 
+> **Token**: o script já inclui `IBIS_IMPORT_TOKEN` no header `X-Ibis-Token`. Se o token mudar, atualizar a constante `IBIS_TOKEN` no topo do script.
+
 **Limpar banco do zero:**
 ```sql
 TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
