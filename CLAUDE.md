@@ -246,8 +246,9 @@ Scripts:
 1. Abra o IBIS logado e pesquise qualquer termo
 2. Abra o console (`F12`) e cole o conteúdo do arquivo (nunca do chat)
 3. Processa a página atual e navega automaticamente pelas seguintes
+4. Ao finalizar, dispara o backfill de embeddings automaticamente
 
-> **Token**: o script já inclui `IBIS_IMPORT_TOKEN` no header `X-Ibis-Token`. Se o token mudar, atualizar a constante `IBIS_TOKEN` no topo do script.
+> **Token**: o script já inclui `IBIS_IMPORT_TOKEN` no header `X-Ibis-Token`. Se o token mudar, atualizar a constante `IBIS_TOKEN` no topo do script (`scripts/ibis-extractor-manual.js` linha 3).
 
 **Limpar banco do zero:**
 ```sql
