@@ -10,6 +10,7 @@
 
 (async function () {
   const VERCEL_URL  = "https://projeto1-liard-one.vercel.app";
+  const IBIS_TOKEN  = "Z2XTlF4YgnICGN-u_o8jIsFFXX5WpHgvfHiRlfXpebs";
   const BATCH_SIZE  = 10;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -82,7 +83,7 @@
     try {
       const res = await fetch(`${VERCEL_URL}/api/ibis/import`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Ibis-Token": IBIS_TOKEN },
         body: JSON.stringify({ pessoas: batch }),
       });
       const data = await res.json();
