@@ -50,7 +50,7 @@ export default function BackfillStatus({ initialRemaining }: { initialRemaining:
       <div className="flex items-center gap-3 text-sm text-gray-400">
         <div className="flex items-center gap-1.5 bg-green-950 border border-green-800 text-green-400 px-3 py-1.5 rounded-lg text-xs font-medium">
           <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-          Automático — a cada 15 min via GitHub Actions
+          Contínuo — worker ativo no Railway
         </div>
       </div>
 
