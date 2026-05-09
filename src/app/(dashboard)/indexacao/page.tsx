@@ -39,13 +39,15 @@ export default async function IndexacaoPage() {
       .limit(1000),
   ]);
 
-  const { totalQualificados, totalIndexados, totalSkipped, totalSemFoto, cobertura } = stats;
-  const pendentes = Math.max(0, totalQualificados - totalSemFoto - totalIndexados - totalSkipped);
+  const { totalQualificados, totalIndexados, totalSemFoto, cobertura } = stats;
   const semFotoList = (semFotoData ?? []).map((r: { id: string; nome: string }) => ({ id: r.id, nome: r.nome }));
   const semRostoList = (recentSkipped ?? []).map((r: { source_id: string; source_label: string | null }) => ({
     source_id: r.source_id,
     source_label: r.source_label,
   }));
+  // Usar a lista direta como fonte única para sem rosto — evita divergência com o stat card
+  const totalSkipped = semRostoList.length;
+  const pendentes = Math.max(0, totalQualificados - totalSemFoto - totalIndexados - totalSkipped);
 
   return (
     <div>
