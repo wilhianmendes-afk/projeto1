@@ -54,26 +54,32 @@ function isAuthorized(req: NextRequest): boolean {
 async function runBackfill(limit: number) {
   const service = getAdminClient();
 
-  const [{ data: alreadyIndexed }, { data: alreadySkipped }, { data: pendentes }] =
-    await Promise.all([
-      service.from("face_embeddings").select("source_id").eq("source", "qualificados").limit(50000),
-      service.from("face_skipped").select("source_id").eq("source", "qualificados").limit(10000),
-      service.from("qualificados").select("id, nome, foto_url, fotos_extras")
-        .is("deleted_at", null).not("foto_url", "is", null).limit(10000),
-    ]);
+  // RPC contorna o max_rows=1000 do Supabase — retorna apenas os pendentes reais
+  const { data: queue, error: rpcErr } = await service
+    .rpc("get_pending_qualificados", { batch_limit: limit });
 
-  const done = new Set([
-    ...(alreadyIndexed ?? []).map((r: { source_id: string }) => r.source_id),
-    ...(alreadySkipped ?? []).map((r: { source_id: string }) => r.source_id),
-  ]);
+  if (rpcErr) {
+    return NextResponse.json(
+      { ok: false, error: rpcErr.message },
+      { status: 500, headers: CORS_HEADERS }
+    );
+  }
 
-  const allPending = (pendentes ?? []).filter((p: { id: string }) => !done.has(p.id));
-  const queue = allPending.slice(0, limit);
+  // Contar total de pendentes (sem o batch limit) para o campo remaining
+  const { data: totalData } = await service
+    .rpc("get_face_stats");
+  const stats = totalData as { total_qualificados: number; total_com_foto: number; total_indexados: number; total_skipped: number; total_sem_foto: number } | null;
+  const totalPending = stats
+    ? Math.max(0, (stats.total_com_foto) - stats.total_indexados - stats.total_skipped)
+    : -1;
 
   let processed = 0, embedded = 0, skipped = 0;
 
-  for (const pessoa of queue) {
-    const urls: string[] = [pessoa.foto_url, ...((pessoa.fotos_extras as string[]) ?? [])].filter(Boolean);
+  for (const pessoa of (queue ?? [])) {
+    const extras = Array.isArray(pessoa.fotos_extras)
+      ? pessoa.fotos_extras as string[]
+      : [];
+    const urls: string[] = [pessoa.foto_url, ...extras].filter(Boolean);
     let pessoaEmbedded = 0;
     let serviceError = false;
 
@@ -120,8 +126,8 @@ async function runBackfill(limit: number) {
 
   return NextResponse.json({
     ok: true, processed, embedded, skipped,
-    total_pending: allPending.length,
-    remaining: allPending.length - processed,
+    total_pending: totalPending,
+    remaining: Math.max(0, totalPending - processed),
   }, { headers: CORS_HEADERS });
 }
 
