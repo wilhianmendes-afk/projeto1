@@ -156,6 +156,7 @@ face-service/
 - Roda `process_image()` no thread pool (`run_in_executor`) — não bloqueia endpoints HTTP
 - Quando fila vazia: dorme `WORKER_SLEEP` segundos e verifica novamente
 - Requer `SUPABASE_URL` e `SUPABASE_SERVICE_KEY` no Railway — se ausentes, worker fica desabilitado sem erro
+- HTTP calls do worker usam **`urllib.request` (stdlib)** — NÃO usar httpx. httpx adicionado ao requirements.txt causa crash silencioso no Railway (ImportError antes do uvicorn inicializar, sem output nos logs de runtime)
 
 > **CRÍTICO**: chamadas Vercel → Railway **devem usar `/embed-raw`**. FormData/Blob não serializa corretamente no runtime serverless do Vercel (retorna 502).
 
@@ -249,9 +250,20 @@ UPDATE qualificados SET foto_url = REPLACE(foto_url, '%2520', '%20') WHERE foto_
 
 ## Fotos sem rosto detectado (`face_skipped`)
 
-`total_detected: 0` significa que o InsightFace não encontrou geometria facial — não é problema de threshold. Causas comuns: foto muito comprimida (< 25KB), rosto muito pequeno na imagem, ângulo extremo, iluminação ruim. O retry com `min_score=0.35` só ajuda quando `total_detected > 0` mas `count == 0`.
+`total_detected: 0` significa que o InsightFace não encontrou geometria facial. Causas:
 
-**Solução**: fazer upload de foto de melhor qualidade na página do qualificado. O upload limpa embeddings e face_skipped anteriores, forçando re-indexação automática.
+| Causa | Solução |
+|-------|---------|
+| Foto muito comprimida (< 25KB) | Upload de foto de melhor qualidade |
+| Rosto muito pequeno na imagem | Upload de foto com rosto maior |
+| **Rosto grande demais no frame** (foto 3×3/close-up > 70%) | **Corrigido no `process_image` — padding automático** |
+| Ângulo extremo ou iluminação ruim | Upload de foto melhor |
+
+**Fix de close-up implementado em `face-service/main.py`**: quando `total_detected == 0`, o `process_image` adiciona borda branca de tamanho `max(h, w)` ao redor da imagem antes de retentar. Isso reduz o rosto de ~90% do frame para ~33%, dentro do range do detector SCRFD. O bbox é ajustado de volta ao espaço da imagem original.
+
+O retry com `min_score=0.35` só ajuda quando `total_detected > 0` mas `count == 0` (rosto detectado mas abaixo do threshold).
+
+**Solução para casos sem solução automática**: fazer upload de foto de melhor qualidade na página do qualificado. O upload limpa embeddings e face_skipped anteriores, forçando re-indexação.
 
 ## Chat do Dev
 Canal interno embarcado no dashboard. **Não expor publicamente.**
