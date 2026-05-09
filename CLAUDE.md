@@ -19,7 +19,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
 ANTHROPIC_API_KEY=   # respostas automáticas do Chat do Dev
-IBIS_IMPORT_TOKEN=   # protege /api/ibis/import e /api/face/backfill — usado pelo GitHub Actions
+IBIS_IMPORT_TOKEN=   # protege /api/ibis/import e /api/face/backfill
+```
+
+## Variáveis de ambiente (Railway — face-service)
+```
+MIN_DET_SCORE=0.6          # threshold padrão de detecção
+SUPABASE_URL=              # https://avtbwrkjqaepbawvxyvf.supabase.co
+SUPABASE_SERVICE_KEY=      # service role key do Supabase
+WORKER_BATCH=10            # pessoas por lote (default 10)
+WORKER_SLEEP=60            # segundos de espera quando fila vazia (default 60)
 ```
 
 ## Supabase — regras críticas
@@ -130,16 +139,23 @@ export const revalidate = 0;
 
 ```
 face-service/
-├── main.py          # FastAPI: GET /health, POST /embed, POST /embed-raw
+├── main.py          # FastAPI: GET /health, POST /embed, POST /embed-raw + backfill worker
 ├── Dockerfile       # buffalo_l pré-baixado no build — sem download em runtime
 ├── railway.json     # watchPatterns: face-service/** — não redeploya em push de frontend
-└── requirements.txt
+└── requirements.txt # inclui httpx para o worker
 ```
 
 - **`POST /embed`** — multipart/form-data (browser)
 - **`POST /embed-raw`** — binário puro `Content-Type: image/jpeg` (server-to-server)
 - Ambos aceitam `?min_score=0.35` para threshold por requisição
 - `MIN_DET_SCORE=0.6` padrão no Railway
+
+**Worker de backfill contínuo** (`backfill_worker` em `main.py`):
+- Inicia junto com o FastAPI via `lifespan`
+- Chama `get_pending_qualificados` diretamente no Supabase (sem HTTP round-trip)
+- Roda `process_image()` no thread pool (`run_in_executor`) — não bloqueia endpoints HTTP
+- Quando fila vazia: dorme `WORKER_SLEEP` segundos e verifica novamente
+- Requer `SUPABASE_URL` e `SUPABASE_SERVICE_KEY` no Railway — se ausentes, worker fica desabilitado sem erro
 
 > **CRÍTICO**: chamadas Vercel → Railway **devem usar `/embed-raw`**. FormData/Blob não serializa corretamente no runtime serverless do Vercel (retorna 502).
 
@@ -160,15 +176,21 @@ curl -s "https://backboard.railway.app/graphql/v2" \
 
 Usa `get_pending_qualificados(batch_limit)` — RPC que retorna qualificados sem embedding e sem face_skipped, sem limite de linhas.
 
-**Automação — GitHub Actions** (`.github/workflows/backfill.yml`):
-- Executa a cada **15 minutos** automaticamente, sem browser aberto
+**Primário — Worker contínuo no Railway** (`face-service/main.py`):
+- Processa embeddings em loop contínuo, sem intervalo fixo
+- Batch de 10 pessoas por vez; quando fila vazia dorme 60s e tenta de novo
+- Sem custo adicional — roda no mesmo container do face-service
+- Logs visíveis no dashboard Railway
+
+**Backup — GitHub Actions** (`.github/workflows/backfill.yml`):
+- Executa a cada **15 minutos** via cron
 - Processa até 20 lotes × 5 registros = **100 embeddings por rodada**
 - Para automaticamente quando `remaining = 0`
+- Mantido como redundância — se worker Railway cair, GH Actions assume
 - Pode ser disparado manualmente em: https://github.com/wilhianmendes-afk/projeto1/actions/workflows/backfill.yml
-- Requer secret `IBIS_IMPORT_TOKEN` no repositório GitHub (já configurado)
 
-**Funcionamento do endpoint:**
-- **Paralelo**: todos os registros do batch processados com `Promise.all` (~10s por lote)
+**Funcionamento do endpoint `/api/face/backfill`:**
+- **Paralelo**: todos os registros do batch processados com `Promise.all`
 - **Batch padrão**: 5 registros
 - **Retry automático**: se `total_detected > 0` mas `count == 0`, tenta com `min_score=0.35`
 - **Sem healthCheck**: se o face service falhar, registro fica pendente para próxima rodada
@@ -183,6 +205,7 @@ Usa `get_pending_qualificados(batch_limit)` — RPC que retorna qualificados sem
 - Exibe apenas status (stats + listas) — sem loop client-side
 - Botão "Rodar agora" para execução manual pontual
 - Stats atualizam automaticamente a cada 60s
+- Badge: "Contínuo — worker ativo no Railway"
 
 ## Estatísticas compartilhadas — `src/lib/face-stats.ts`
 
@@ -196,14 +219,14 @@ Dashboard e indexação usam a mesma função `getFaceStats()` que chama `get_fa
 | `/qualificados` | Grade com busca por nome, vulgo, CPF, nascimento, mãe |
 | `/qualificados/[id]` | Detalhe — foto 300px, upload de foto, re-indexação, excluir |
 | `/qualificados/novo` | Formulário para cadastrar manualmente |
-| `/indexacao` | Stats + lista "sem foto" + lista "sem rosto" + botão "Rodar agora" (automático via GH Actions) |
+| `/indexacao` | Stats + lista "sem foto" + lista "sem rosto" + botão "Rodar agora" (worker contínuo Railway) |
 | `/login` | Login com usuário (sem @) |
 
 ## Página de Indexação (/indexacao)
 - **Cobertura**: indexados ÷ qualificados com foto (exclui sem foto do denominador)
 - **Sem foto**: lista expansível `SemFotoList` — link para cada qualificado, pode adicionar foto
 - **Sem rosto**: lista expansível `SemRostoList` — link para cada qualificado + botão Limpar
-- **BackfillStatus**: exibe status + botão "Rodar agora"; indexação real feita pelo GitHub Actions a cada 15min
+- **BackfillStatus**: exibe status + botão "Rodar agora"; indexação real feita pelo worker contínuo no Railway (GH Actions como backup)
 
 ## Upload de foto manual
 `POST /api/qualificados/[id]/foto` — campo `foto` em multipart.
