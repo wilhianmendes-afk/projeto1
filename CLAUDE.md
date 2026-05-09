@@ -30,14 +30,20 @@ IBIS_IMPORT_TOKEN=   # protege /api/ibis/import e /api/face/backfill — usado p
 
 ### Funções RPC criadas
 ```sql
--- Retorna stats completos sem limite de linhas
-get_face_stats() → { total_qualificados, total_com_foto, total_sem_foto, total_indexados, total_skipped }
+-- Retorna stats completos sem limite de linhas + lista de skipped
+get_face_stats() → {
+  total_qualificados, total_com_foto, total_sem_foto,
+  total_indexados, total_skipped,
+  skipped_list: [{source_id, source_label}]  -- só qualificados não deletados
+}
 
 -- Retorna próximo batch para indexação (sem repetir já indexados/skipped)
 get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_extras)
 ```
 
 Chamadas via `supabase.rpc("get_face_stats")` e `supabase.rpc("get_pending_qualificados", { batch_limit: N })`.
+
+> **CRÍTICO — divergência de stats**: `total_skipped` e `skipped_list` DEVEM usar o mesmo filtro `source_id IN (SELECT id FROM qualificados WHERE deleted_at IS NULL)`. Se diferirem, stat card e lista ficam inconsistentes. A função `getFaceStats()` em `src/lib/face-stats.ts` retorna `skippedList` — a página de indexação usa esse campo diretamente, nunca query REST separada.
 
 ## Estrutura do banco
 
@@ -103,6 +109,7 @@ const supabase = await createClient();
 Todas as páginas do dashboard devem ter:
 ```typescript
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 ```
 
 ## Endpoints principais
@@ -205,14 +212,23 @@ Dashboard e indexação usam a mesma função `getFaceStats()` que chama `get_fa
 - Remove embeddings e face_skipped anteriores (força re-indexação)
 
 ## IBIS Import — sanitização de filename
-`fonte_id` do IBIS pode conter espaços ou `%20` no nome. O import aplica:
+`fonte_id` do IBIS pode conter espaços, `%20` ou extensão `.jpg` embutida. O import aplica:
 ```typescript
-const safeId = decodeURIComponent(rawId).replace(/[^a-zA-Z0-9._-]/g, "_");
+const safeId = decodeURIComponent(rawId)
+  .replace(/[^a-zA-Z0-9._-]/g, "_")
+  .replace(/\.(jpe?g|png|gif|webp|bmp)$/i, "");  // remove extensão já existente
+const filename = `ibis/${safeId}.jpg`;
 ```
-Evita double-encoding `%2520` na `foto_url`. Os 27 registros afetados foram corrigidos via:
+Evita double-encoding `%2520` e extensão dupla `.jpg.jpg`. Os 27 registros com `%2520` foram corrigidos via:
 ```sql
 UPDATE qualificados SET foto_url = REPLACE(foto_url, '%2520', '%20') WHERE foto_url LIKE '%2520%';
 ```
+
+## Fotos sem rosto detectado (`face_skipped`)
+
+`total_detected: 0` significa que o InsightFace não encontrou geometria facial — não é problema de threshold. Causas comuns: foto muito comprimida (< 25KB), rosto muito pequeno na imagem, ângulo extremo, iluminação ruim. O retry com `min_score=0.35` só ajuda quando `total_detected > 0` mas `count == 0`.
+
+**Solução**: fazer upload de foto de melhor qualidade na página do qualificado. O upload limpa embeddings e face_skipped anteriores, forçando re-indexação automática.
 
 ## Chat do Dev
 Canal interno embarcado no dashboard. **Não expor publicamente.**
