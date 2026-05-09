@@ -7,6 +7,7 @@ import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
 import { getFaceStats } from "@/lib/face-stats";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function getAdminClient() {
   return createSupabaseClient(
