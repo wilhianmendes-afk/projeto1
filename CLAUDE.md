@@ -19,7 +19,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
 ANTHROPIC_API_KEY=   # respostas automáticas do Chat do Dev
-IBIS_IMPORT_TOKEN=   # opcional — protege /api/ibis/import e /api/face/backfill
+IBIS_IMPORT_TOKEN=   # protege /api/ibis/import e /api/face/backfill — usado pelo GitHub Actions
 ```
 
 ## Supabase — regras críticas
@@ -153,21 +153,29 @@ curl -s "https://backboard.railway.app/graphql/v2" \
 
 Usa `get_pending_qualificados(batch_limit)` — RPC que retorna qualificados sem embedding e sem face_skipped, sem limite de linhas.
 
-**Funcionamento:**
-- **Paralelo**: todos os registros do batch processados simultaneamente com `Promise.all`
-- **Batch padrão**: 5 registros (~10s por lote — limitado pelo mais lento)
-- **Retry automático**: se `total_detected > 0` mas `count == 0` (score < 0.6), tenta com `min_score=0.35`
-- **Sem healthCheck**: se o face service falhar, `serviceError=true` e o registro fica pendente
-- **Vercel Cron** (`vercel.json`): `POST /api/face/backfill` às 3h UTC
+**Automação — GitHub Actions** (`.github/workflows/backfill.yml`):
+- Executa a cada **15 minutos** automaticamente, sem browser aberto
+- Processa até 20 lotes × 5 registros = **100 embeddings por rodada**
+- Para automaticamente quando `remaining = 0`
+- Pode ser disparado manualmente em: https://github.com/wilhianmendes-afk/projeto1/actions/workflows/backfill.yml
+- Requer secret `IBIS_IMPORT_TOKEN` no repositório GitHub (já configurado)
+
+**Funcionamento do endpoint:**
+- **Paralelo**: todos os registros do batch processados com `Promise.all` (~10s por lote)
+- **Batch padrão**: 5 registros
+- **Retry automático**: se `total_detected > 0` mas `count == 0`, tenta com `min_score=0.35`
+- **Sem healthCheck**: se o face service falhar, registro fica pendente para próxima rodada
+- **Vercel Cron** (`vercel.json`): backup diário às 3h UTC
 
 **Auth do backfill:**
-- Header `x-vercel-cron: 1`
 - Header `x-backfill-token: <IBIS_IMPORT_TOKEN>`
+- Header `x-vercel-cron: 1`
 - Usuário logado (sessão SSR)
 
-**Throughput estimado** (Railway respondendo normalmente):
-- ~30 registros/minuto com BackfillButton em loop
-- 826 pendentes ÷ 30/min ≈ ~28 minutos para indexar tudo
+**Página /indexacao:**
+- Exibe apenas status (stats + listas) — sem loop client-side
+- Botão "Rodar agora" para execução manual pontual
+- Stats atualizam automaticamente a cada 60s
 
 ## Estatísticas compartilhadas — `src/lib/face-stats.ts`
 
@@ -181,14 +189,14 @@ Dashboard e indexação usam a mesma função `getFaceStats()` que chama `get_fa
 | `/qualificados` | Grade com busca por nome, vulgo, CPF, nascimento, mãe |
 | `/qualificados/[id]` | Detalhe — foto 300px, upload de foto, re-indexação, excluir |
 | `/qualificados/novo` | Formulário para cadastrar manualmente |
-| `/indexacao` | Stats + lista "sem foto" expansível + lista "sem rosto" expansível + BackfillButton |
+| `/indexacao` | Stats + lista "sem foto" + lista "sem rosto" + botão "Rodar agora" (automático via GH Actions) |
 | `/login` | Login com usuário (sem @) |
 
 ## Página de Indexação (/indexacao)
 - **Cobertura**: indexados ÷ qualificados com foto (exclui sem foto do denominador)
 - **Sem foto**: lista expansível `SemFotoList` — link para cada qualificado, pode adicionar foto
 - **Sem rosto**: lista expansível `SemRostoList` — link para cada qualificado + botão Limpar
-- **BackfillButton**: loop automático, atualiza página a cada 5 rodadas via `router.refresh()`
+- **BackfillStatus**: exibe status + botão "Rodar agora"; indexação real feita pelo GitHub Actions a cada 15min
 
 ## Upload de foto manual
 `POST /api/qualificados/[id]/foto` — campo `foto` em multipart.
@@ -234,10 +242,21 @@ Depois: `node scripts/clear-ibis-storage.js`
 - GitHub Action (`.github/workflows/deploy.yml`): deploy automático a cada push
 - Requer secret `VERCEL_DEPLOY_HOOK` no GitHub
 
+## GitHub Actions — workflows
+| Arquivo | Trigger | Função |
+|---------|---------|--------|
+| `.github/workflows/deploy.yml` | push no branch | Deploy na Vercel |
+| `.github/workflows/backfill.yml` | a cada 15min + manual | Indexação automática de embeddings |
+
+**Secrets necessários no repositório:**
+- `VERCEL_DEPLOY_HOOK` — URL do deploy hook da Vercel
+- `IBIS_IMPORT_TOKEN` — token de autenticação do backfill (já configurado)
+
 ## Componentes principais
 | Componente | Função |
 |------------|--------|
-| `BackfillButton.tsx` | Loop de indexação com contadores, refresh a cada 5 rodadas |
+| `BackfillButton.tsx` | (legado — substituído por BackfillStatus na página de indexação) |
+| `BackfillStatus.tsx` | Status da indexação + botão "Rodar agora" manual |
 | `SemFotoList.tsx` | Lista expansível de qualificados sem foto |
 | `SemRostoList.tsx` | Lista expansível de qualificados sem rosto + botão Limpar |
 | `FotoUpload.tsx` | Upload de foto na página do qualificado (drag & drop) |
