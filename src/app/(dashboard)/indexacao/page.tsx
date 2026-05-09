@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import BackfillButton from "@/components/BackfillButton";
-import ClearSkippedButton from "@/components/ClearSkippedButton";
 import DriveImport from "@/components/DriveImport";
 import SemFotoList from "@/components/SemFotoList";
+import SemRostoList from "@/components/SemRostoList";
 import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
 import { getFaceStats } from "@/lib/face-stats";
 
@@ -31,18 +30,22 @@ export default async function IndexacaoPage() {
       .is("foto_url", null)
       .order("nome", { ascending: true })
       .limit(10000),
-    // 10 mais recentes sem rosto para a lista
+    // Todos os sem rosto (46 total, bem abaixo do max_rows)
     supabase
       .from("face_skipped")
-      .select("source_id, source_label, reason, created_at")
+      .select("source_id, source_label")
       .eq("source", "qualificados")
-      .order("created_at", { ascending: false })
-      .limit(10),
+      .order("source_label", { ascending: true })
+      .limit(1000),
   ]);
 
   const { totalQualificados, totalIndexados, totalSkipped, totalSemFoto, cobertura } = stats;
   const pendentes = Math.max(0, totalQualificados - totalSemFoto - totalIndexados - totalSkipped);
   const semFotoList = (semFotoData ?? []).map((r: { id: string; nome: string }) => ({ id: r.id, nome: r.nome }));
+  const semRostoList = (recentSkipped ?? []).map((r: { source_id: string; source_label: string | null }) => ({
+    source_id: r.source_id,
+    source_label: r.source_label,
+  }));
 
   return (
     <div>
@@ -56,6 +59,7 @@ export default async function IndexacaoPage() {
       </div>
 
       <SemFotoList qualificados={semFotoList} />
+      <SemRostoList records={semRostoList} total={totalSkipped} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -65,28 +69,6 @@ export default async function IndexacaoPage() {
 
         <DriveImport />
       </div>
-
-      {recentSkipped && recentSkipped.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-white">Sem rosto detectado</h2>
-            <ClearSkippedButton total={totalSkipped} />
-          </div>
-          <div className="space-y-2">
-            {recentSkipped.map((s, i) => (
-              <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-gray-800 last:border-0">
-                <Link
-                  href={`/qualificados/${s.source_id}`}
-                  className="text-gray-300 hover:text-white hover:underline truncate max-w-xs transition-colors"
-                >
-                  {s.source_label ?? "—"}
-                </Link>
-                <span className="text-yellow-400 text-xs ml-2 flex-shrink-0">{s.reason}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
