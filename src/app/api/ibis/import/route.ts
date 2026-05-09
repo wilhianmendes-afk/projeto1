@@ -61,7 +61,9 @@ export async function POST(req: NextRequest) {
       const photoBuffer = Buffer.from(p.foto_base64, "base64");
       // Sanitiza o nome do arquivo: decodifica encoding existente e remove caracteres problemáticos
       const rawId = p.fonte_id ?? `${Date.now()}_${crypto.randomUUID()}`;
-      const safeId = decodeURIComponent(rawId).replace(/[^a-zA-Z0-9._-]/g, "_");
+      const safeId = decodeURIComponent(rawId)
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .replace(/\.(jpe?g|png|gif|webp|bmp)$/i, "");
       const filename = `ibis/${safeId}.jpg`;
       const { error: uploadError } = await service.storage
         .from("faces").upload(filename, photoBuffer, { contentType: "image/jpeg", upsert: true });
