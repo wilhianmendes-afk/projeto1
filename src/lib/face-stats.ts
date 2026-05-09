@@ -5,7 +5,7 @@ export interface FaceStats {
   totalIndexados: number;
   totalSkipped: number;
   totalSemFoto: number;
-  cobertura: number; // % sobre qualificados com foto
+  cobertura: number;
 }
 
 function getAdminClient() {
@@ -19,48 +19,14 @@ function getAdminClient() {
 export async function getFaceStats(): Promise<FaceStats> {
   const supabase = getAdminClient();
 
-  const [
-    { data: qualificados },
-    { data: embeddingIds },
-    { data: skippedIds },
-  ] = await Promise.all([
-    supabase
-      .from("qualificados")
-      .select("id, foto_url")
-      .is("deleted_at", null)
-      .limit(10000),
-    supabase
-      .from("face_embeddings")
-      .select("source_id")
-      .eq("source", "qualificados")
-      .limit(50000),
-    supabase
-      .from("face_skipped")
-      .select("source_id")
-      .eq("source", "qualificados")
-      .limit(10000),
-  ]);
+  const { data, error } = await supabase.rpc("get_face_stats");
+  if (error || !data) throw new Error(`get_face_stats: ${error?.message ?? "no data"}`);
 
-  const activeIdSet = new Set((qualificados ?? []).map((r: { id: string }) => r.id));
-  const totalQualificados = activeIdSet.size;
-
-  const semFotoIds = new Set(
-    (qualificados ?? [])
-      .filter((r: { foto_url: string | null }) => !r.foto_url)
-      .map((r: { id: string }) => r.id)
-  );
-  const totalSemFoto = semFotoIds.size;
-  const totalComFoto = totalQualificados - totalSemFoto;
-
-  const totalIndexados = new Set(
-    (embeddingIds ?? [])
-      .map((r: { source_id: string }) => r.source_id)
-      .filter((id: string) => activeIdSet.has(id))
-  ).size;
-
-  const totalSkipped = (skippedIds ?? []).filter(
-    (r: { source_id: string }) => activeIdSet.has(r.source_id)
-  ).length;
+  const totalQualificados = Number(data.total_qualificados);
+  const totalIndexados    = Number(data.total_indexados);
+  const totalSkipped      = Number(data.total_skipped);
+  const totalSemFoto      = Number(data.total_sem_foto);
+  const totalComFoto      = Number(data.total_com_foto);
 
   const cobertura = totalComFoto > 0
     ? Math.round((totalIndexados / totalComFoto) * 100)
