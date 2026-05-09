@@ -5,8 +5,8 @@ from insightface.app import FaceAnalysis
 import numpy as np
 from PIL import Image, ImageOps
 import io, time, os, traceback, asyncio, json, logging
+import urllib.request, urllib.error
 from typing import Optional
-import httpx
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("worker")
@@ -14,11 +14,11 @@ log = logging.getLogger("worker")
 fa = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
 fa.prepare(ctx_id=0, det_size=(640, 640))
 
-MIN_DET_SCORE   = float(os.getenv("MIN_DET_SCORE", "0.45"))
-SUPABASE_URL    = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY    = os.getenv("SUPABASE_SERVICE_KEY", "")
-WORKER_BATCH    = int(os.getenv("WORKER_BATCH", "10"))
-WORKER_SLEEP    = int(os.getenv("WORKER_SLEEP", "60"))   # segundos entre polls quando fila vazia
+MIN_DET_SCORE = float(os.getenv("MIN_DET_SCORE", "0.45"))
+SUPABASE_URL  = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY  = os.getenv("SUPABASE_SERVICE_KEY", "")
+WORKER_BATCH  = int(os.getenv("WORKER_BATCH", "10"))
+WORKER_SLEEP  = int(os.getenv("WORKER_SLEEP", "60"))
 
 
 def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE) -> dict:
@@ -59,80 +59,92 @@ def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE) -> di
     }
 
 
-# ── worker helpers ────────────────────────────────────────────────────────────
+# ── worker helpers (stdlib urllib, sem dependências externas) ─────────────────
 
-def _sb_headers(extra: dict | None = None) -> dict:
-    h = {
+def _sb_headers(extra: dict = {}) -> dict:
+    return {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
+        **extra,
     }
-    if extra:
-        h.update(extra)
-    return h
 
 
-async def _process_pessoa(client: httpx.AsyncClient, pessoa: dict) -> int:
+def _http_post(url: str, payload: dict, headers: dict) -> None:
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15):
+            pass
+    except urllib.error.HTTPError:
+        pass  # conflitos de upsert (409) são ignorados
+
+
+def _http_get(url: str, timeout: int = 10) -> bytes:
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def _fetch_pending(batch: int) -> list:
+    url = f"{SUPABASE_URL}/rest/v1/rpc/get_pending_qualificados"
+    data = json.dumps({"batch_limit": batch}).encode()
+    req = urllib.request.Request(url, data=data, headers=_sb_headers(), method="POST")
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        result = json.loads(resp.read())
+        return result if isinstance(result, list) else []
+
+
+def _process_pessoa_sync(pessoa: dict) -> int:
     extras = pessoa.get("fotos_extras") or []
     urls = [u for u in [pessoa["foto_url"]] + (extras if isinstance(extras, list) else []) if u]
     embedded = 0
     service_error = False
-    loop = asyncio.get_running_loop()
 
     for url in urls:
         try:
-            r = await client.get(url, timeout=10.0)
-            r.raise_for_status()
-            raw = r.content
+            raw = _http_get(url)
         except Exception:
             continue
 
         try:
-            result = await loop.run_in_executor(None, process_image, raw, time.time(), MIN_DET_SCORE)
+            result = process_image(raw, time.time(), MIN_DET_SCORE)
             if result["count"] == 0 and result["total_detected"] > 0:
-                result = await loop.run_in_executor(None, process_image, raw, time.time(), 0.35)
+                result = process_image(raw, time.time(), 0.35)
         except Exception:
             service_error = True
             continue
 
         for face_index, face in enumerate(result["faces"]):
-            try:
-                await client.post(
-                    f"{SUPABASE_URL}/rest/v1/face_embeddings"
-                    "?on_conflict=source,source_id,photo_url,face_index",
-                    json={
-                        "source":       "qualificados",
-                        "source_id":    pessoa["id"],
-                        "source_label": pessoa["nome"],
-                        "photo_url":    url,
-                        "embedding":    json.dumps(face["embedding"]),
-                        "bbox":         face["bbox"],
-                        "det_score":    face["det_score"],
-                        "face_index":   face_index,
-                    },
-                    headers=_sb_headers({"Prefer": "resolution=ignore-duplicates"}),
-                    timeout=10.0,
-                )
-                embedded += 1
-            except Exception:
-                pass
-
-    if embedded == 0 and not service_error:
-        try:
-            await client.post(
-                f"{SUPABASE_URL}/rest/v1/face_skipped"
-                "?on_conflict=source,source_id",
-                json={
+            _http_post(
+                f"{SUPABASE_URL}/rest/v1/face_embeddings"
+                "?on_conflict=source,source_id,photo_url,face_index",
+                {
                     "source":       "qualificados",
                     "source_id":    pessoa["id"],
                     "source_label": pessoa["nome"],
-                    "reason":       "no_face_detected",
+                    "photo_url":    url,
+                    "embedding":    json.dumps(face["embedding"]),
+                    "bbox":         face["bbox"],
+                    "det_score":    face["det_score"],
+                    "face_index":   face_index,
                 },
-                headers=_sb_headers({"Prefer": "resolution=merge-duplicates"}),
-                timeout=10.0,
+                _sb_headers({"Prefer": "resolution=ignore-duplicates"}),
             )
-        except Exception:
-            pass
+            embedded += 1
+
+    if embedded == 0 and not service_error:
+        _http_post(
+            f"{SUPABASE_URL}/rest/v1/face_skipped"
+            "?on_conflict=source,source_id",
+            {
+                "source":       "qualificados",
+                "source_id":    pessoa["id"],
+                "source_label": pessoa["nome"],
+                "reason":       "no_face_detected",
+            },
+            _sb_headers({"Prefer": "resolution=merge-duplicates"}),
+        )
 
     return embedded
 
@@ -143,36 +155,28 @@ async def backfill_worker():
         return
 
     log.info("Backfill worker iniciado (batch=%d, sleep=%ds)", WORKER_BATCH, WORKER_SLEEP)
+    loop = asyncio.get_running_loop()
 
-    async with httpx.AsyncClient() as client:
-        while True:
-            try:
-                resp = await client.post(
-                    f"{SUPABASE_URL}/rest/v1/rpc/get_pending_qualificados",
-                    json={"batch_limit": WORKER_BATCH},
-                    headers=_sb_headers(),
-                    timeout=15.0,
-                )
-                queue = resp.json() if resp.status_code == 200 else []
-                if not isinstance(queue, list):
-                    queue = []
+    while True:
+        try:
+            queue = await loop.run_in_executor(None, _fetch_pending, WORKER_BATCH)
 
-                if not queue:
-                    log.info("Fila vazia — aguardando %ds", WORKER_SLEEP)
-                    await asyncio.sleep(WORKER_SLEEP)
-                    continue
+            if not queue:
+                log.info("Fila vazia — aguardando %ds", WORKER_SLEEP)
+                await asyncio.sleep(WORKER_SLEEP)
+                continue
 
-                log.info("Processando lote de %d", len(queue))
-                for pessoa in queue:
-                    n = await _process_pessoa(client, pessoa)
-                    log.info("  %s → %d face(s)", pessoa.get("nome", pessoa.get("id")), n)
+            log.info("Processando lote de %d", len(queue))
+            for pessoa in queue:
+                n = await loop.run_in_executor(None, _process_pessoa_sync, pessoa)
+                log.info("  %s → %d face(s)", pessoa.get("nome", pessoa.get("id")), n)
 
-            except asyncio.CancelledError:
-                log.info("Worker encerrado")
-                return
-            except Exception as e:
-                log.error("Worker erro: %s — retry em 30s", e)
-                await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            log.info("Worker encerrado")
+            return
+        except Exception as e:
+            log.error("Worker erro: %s — retry em 30s", e)
+            await asyncio.sleep(30)
 
 
 # ── app ───────────────────────────────────────────────────────────────────────
