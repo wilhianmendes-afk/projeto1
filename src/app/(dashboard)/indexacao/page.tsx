@@ -1,5 +1,5 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import BackfillButton from "@/components/BackfillButton";
+import BackfillStatus from "@/components/BackfillStatus";
 import DriveImport from "@/components/DriveImport";
 import SemFotoList from "@/components/SemFotoList";
 import SemRostoList from "@/components/SemRostoList";
@@ -64,7 +64,7 @@ export default async function IndexacaoPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <h2 className="font-semibold text-white mb-4">Indexação de embeddings</h2>
-          <BackfillButton />
+          <BackfillStatus initialRemaining={pendentes} />
         </div>
 
         <DriveImport />
