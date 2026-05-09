@@ -5,6 +5,7 @@ import ClearSkippedButton from "@/components/ClearSkippedButton";
 import DriveImport from "@/components/DriveImport";
 import SemFotoList from "@/components/SemFotoList";
 import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
+import { getFaceStats } from "@/lib/face-stats";
 
 export const dynamic = "force-dynamic";
 
@@ -19,29 +20,18 @@ function getAdminClient() {
 export default async function IndexacaoPage() {
   const supabase = getAdminClient();
 
-  // Limit alto para superar o teto padrão de 1000 linhas do Supabase REST
-  const [
-    { data: activeQualificados },
-    { data: embeddingIds },
-    { data: skippedIds },
-    { data: recentSkipped },
-  ] = await Promise.all([
+  // Stats compartilhados com o dashboard (mesma lógica, mesmos números)
+  const [stats, { data: semFotoData }, { data: recentSkipped }] = await Promise.all([
+    getFaceStats(),
+    // Qualificados sem foto: precisa do nome para exibir na lista
     supabase
       .from("qualificados")
-      .select("id, nome, foto_url")
+      .select("id, nome")
       .is("deleted_at", null)
+      .is("foto_url", null)
       .order("nome", { ascending: true })
       .limit(10000),
-    supabase
-      .from("face_embeddings")
-      .select("source_id")
-      .eq("source", "qualificados")
-      .limit(50000),
-    supabase
-      .from("face_skipped")
-      .select("source_id, source_label, reason")
-      .eq("source", "qualificados")
-      .limit(10000),
+    // 10 mais recentes sem rosto para a lista
     supabase
       .from("face_skipped")
       .select("source_id, source_label, reason, created_at")
@@ -50,35 +40,9 @@ export default async function IndexacaoPage() {
       .limit(10),
   ]);
 
-  const activeIdSet = new Set((activeQualificados ?? []).map((r: { id: string }) => r.id));
-  const totalAtivos = activeIdSet.size;
-
-  // Qualificados sem foto nunca serão indexados — excluir do cálculo de pendentes
-  const semFotoList = (activeQualificados ?? [])
-    .filter((r: { foto_url: string | null }) => !r.foto_url)
-    .map((r: { id: string; nome: string }) => ({ id: r.id, nome: r.nome }));
-
-  const comFotoIdSet = new Set(
-    (activeQualificados ?? [])
-      .filter((r: { foto_url: string | null }) => r.foto_url)
-      .map((r: { id: string }) => r.id)
-  );
-
-  // Indexados: source_ids únicos em face_embeddings que ainda existem em qualificados ativos
-  const totalIndexados = new Set(
-    (embeddingIds ?? [])
-      .map((r: { source_id: string }) => r.source_id)
-      .filter((id: string) => activeIdSet.has(id))
-  ).size;
-
-  // Skipped: registros em face_skipped que ainda existem em qualificados ativos
-  const totalSkipped = (skippedIds ?? []).filter(
-    (r: { source_id: string }) => activeIdSet.has(r.source_id)
-  ).length;
-
-  // Pendentes = com foto - já indexados - sem rosto detectado
-  const pendentes = Math.max(0, comFotoIdSet.size - totalIndexados - totalSkipped);
-  const cobertura = comFotoIdSet.size > 0 ? Math.round((totalIndexados / comFotoIdSet.size) * 100) : 0;
+  const { totalQualificados, totalIndexados, totalSkipped, totalSemFoto, cobertura } = stats;
+  const pendentes = Math.max(0, totalQualificados - totalSemFoto - totalIndexados - totalSkipped);
+  const semFotoList = (semFotoData ?? []).map((r: { id: string; nome: string }) => ({ id: r.id, nome: r.nome }));
 
   return (
     <div>

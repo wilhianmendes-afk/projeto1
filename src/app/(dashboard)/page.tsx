@@ -1,50 +1,12 @@
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { Search, Users, Database, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { getFaceStats } from "@/lib/face-stats";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function getAdminClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
-
 export default async function DashboardPage() {
-  const supabase = getAdminClient();
-
-  const [
-    { data: qualificadosData },
-    { data: embeddingIds },
-    { data: skippedIds },
-  ] = await Promise.all([
-    supabase.from("qualificados").select("id, foto_url").is("deleted_at", null).limit(10000),
-    supabase.from("face_embeddings").select("source_id").eq("source", "qualificados").limit(50000),
-    supabase.from("face_skipped").select("source_id").eq("source", "qualificados").limit(10000),
-  ]);
-
-  const activeIdSet = new Set((qualificadosData ?? []).map((r: { id: string }) => r.id));
-  const totalQualificados = activeIdSet.size;
-
-  // Qualificados com foto (denominador da cobertura)
-  const comFoto = (qualificadosData ?? []).filter((r: { foto_url: string | null }) => r.foto_url).length;
-
-  // Indexados = qualificados únicos com pelo menos um embedding
-  const totalIndexados = new Set(
-    (embeddingIds ?? [])
-      .map((r: { source_id: string }) => r.source_id)
-      .filter((id: string) => activeIdSet.has(id))
-  ).size;
-
-  // Sem rosto = qualificados em face_skipped que ainda existem
-  const totalSkipped = (skippedIds ?? []).filter(
-    (r: { source_id: string }) => activeIdSet.has(r.source_id)
-  ).length;
-
-  const cobertura = comFoto > 0 ? Math.round((totalIndexados / comFoto) * 100) : 0;
+  const { totalQualificados, totalIndexados, totalSkipped, cobertura } = await getFaceStats();
 
   const stats = [
     {
