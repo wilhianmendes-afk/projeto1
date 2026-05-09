@@ -32,6 +32,16 @@ def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE) -> di
 
     try:
         faces = fa.get(img)
+        bbox_offset = 0
+
+        if len(faces) == 0:
+            # Foto close-up/3x3: rosto ocupa quase todo o frame e fica grande demais
+            # para o SCRFD detectar. Adiciona borda branca para reduzir a proporção.
+            pad = max(img.shape[0], img.shape[1])
+            padded = np.full((img.shape[0] + pad * 2, img.shape[1] + pad * 2, 3), 255, dtype=np.uint8)
+            padded[pad:pad + img.shape[0], pad:pad + img.shape[1]] = img
+            faces = fa.get(padded)
+            bbox_offset = pad
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"face detection error: {e}")
@@ -43,8 +53,10 @@ def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE) -> di
             continue
         results.append({
             "bbox": {
-                "x": int(f.bbox[0]), "y": int(f.bbox[1]),
-                "w": int(f.bbox[2] - f.bbox[0]), "h": int(f.bbox[3] - f.bbox[1]),
+                "x": max(0, int(f.bbox[0]) - bbox_offset),
+                "y": max(0, int(f.bbox[1]) - bbox_offset),
+                "w": int(f.bbox[2] - f.bbox[0]),
+                "h": int(f.bbox[3] - f.bbox[1]),
             },
             "det_score": score,
             "embedding": f.normed_embedding.tolist(),
