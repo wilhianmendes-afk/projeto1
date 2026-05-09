@@ -94,6 +94,10 @@ async function runBackfill(limit: number) {
       let embedResponse;
       try {
         embedResponse = await embedImage(buffer);
+        // Rosto detectado mas abaixo do threshold padrão — tenta com threshold menor
+        if (embedResponse.count === 0 && embedResponse.total_detected > 0) {
+          embedResponse = await embedImage(buffer, "photo.jpg", 0.35);
+        }
       } catch {
         serviceError = true; // face service indisponível — não marcar como sem rosto
         continue;
