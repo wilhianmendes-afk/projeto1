@@ -1,11 +1,17 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
+export interface SkippedRecord {
+  source_id: string;
+  source_label: string | null;
+}
+
 export interface FaceStats {
   totalQualificados: number;
   totalIndexados: number;
   totalSkipped: number;
   totalSemFoto: number;
   cobertura: number;
+  skippedList: SkippedRecord[];
 }
 
 function getAdminClient() {
@@ -27,10 +33,11 @@ export async function getFaceStats(): Promise<FaceStats> {
   const totalSkipped      = Number(data.total_skipped);
   const totalSemFoto      = Number(data.total_sem_foto);
   const totalComFoto      = Number(data.total_com_foto);
+  const skippedList       = (data.skipped_list ?? []) as SkippedRecord[];
 
   const cobertura = totalComFoto > 0
     ? Math.round((totalIndexados / totalComFoto) * 100)
     : 0;
 
-  return { totalQualificados, totalIndexados, totalSkipped, totalSemFoto, cobertura };
+  return { totalQualificados, totalIndexados, totalSkipped, totalSemFoto, cobertura, skippedList };
 }

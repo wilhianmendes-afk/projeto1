@@ -19,10 +19,9 @@ function getAdminClient() {
 export default async function IndexacaoPage() {
   const supabase = getAdminClient();
 
-  // Stats compartilhados com o dashboard (mesma lógica, mesmos números)
-  const [stats, { data: semFotoData }, { data: recentSkipped }] = await Promise.all([
+  // Todos os dados via RPC — bypassa max_rows e evita divergências
+  const [stats, { data: semFotoData }] = await Promise.all([
     getFaceStats(),
-    // Qualificados sem foto: precisa do nome para exibir na lista
     supabase
       .from("qualificados")
       .select("id, nome")
@@ -30,23 +29,11 @@ export default async function IndexacaoPage() {
       .is("foto_url", null)
       .order("nome", { ascending: true })
       .limit(10000),
-    // Todos os sem rosto (46 total, bem abaixo do max_rows)
-    supabase
-      .from("face_skipped")
-      .select("source_id, source_label")
-      .eq("source", "qualificados")
-      .order("source_label", { ascending: true })
-      .limit(1000),
   ]);
 
-  const { totalQualificados, totalIndexados, totalSemFoto, cobertura } = stats;
+  const { totalQualificados, totalIndexados, totalSkipped, totalSemFoto, cobertura, skippedList } = stats;
   const semFotoList = (semFotoData ?? []).map((r: { id: string; nome: string }) => ({ id: r.id, nome: r.nome }));
-  const semRostoList = (recentSkipped ?? []).map((r: { source_id: string; source_label: string | null }) => ({
-    source_id: r.source_id,
-    source_label: r.source_label,
-  }));
-  // Usar a lista direta como fonte única para sem rosto — evita divergência com o stat card
-  const totalSkipped = semRostoList.length;
+  const semRostoList = skippedList; // vem do RPC — mesma fonte do stat card
   const pendentes = Math.max(0, totalQualificados - totalSemFoto - totalIndexados - totalSkipped);
 
   return (
