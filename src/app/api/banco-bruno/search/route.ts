@@ -20,9 +20,21 @@ interface BrunoMatch {
   observacoes?: string | null;
 }
 
+interface BrunoDriveFile {
+  name: string;
+  web_view_url: string;
+  thumbnail_url?: string | null;
+}
+
+interface BrunoSearchResult {
+  matches: BrunoMatch[];
+  drive_files?: BrunoDriveFile[];
+  drive_total?: number;
+}
+
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q")?.trim();
-  if (!q || q.length < 2) return NextResponse.json({ matches: [] });
+  if (!q || q.length < 2) return NextResponse.json({ matches: [], drive_files: [] });
 
   try {
     const res = await fetch(BRUNO_URL, {
@@ -37,18 +49,22 @@ export async function GET(req: NextRequest) {
         method: "tools/call",
         params: { name: "search_text", arguments: { query: q, limit: 20 } },
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(10000),
     });
 
-    if (!res.ok) return NextResponse.json({ matches: [] });
+    if (!res.ok) return NextResponse.json({ matches: [], drive_files: [] });
 
     const data = await res.json();
     const text = data?.result?.content?.[0]?.text;
-    if (!text) return NextResponse.json({ matches: [] });
+    if (!text) return NextResponse.json({ matches: [], drive_files: [] });
 
-    const parsed = JSON.parse(text) as { matches: BrunoMatch[] };
-    return NextResponse.json({ matches: parsed.matches ?? [] });
+    const parsed = JSON.parse(text) as BrunoSearchResult;
+    return NextResponse.json({
+      matches: parsed.matches ?? [],
+      drive_files: parsed.drive_files ?? [],
+      drive_total: parsed.drive_total ?? 0,
+    });
   } catch {
-    return NextResponse.json({ matches: [] });
+    return NextResponse.json({ matches: [], drive_files: [] });
   }
 }

@@ -27,6 +27,12 @@ interface BrunoMatch {
   observacoes?: string | null;
 }
 
+interface BrunoDriveFile {
+  name: string;
+  web_view_url: string;
+  thumbnail_url?: string | null;
+}
+
 interface QualificadosSearchProps {
   initialData: Qualificado[];
   totalCount: number;
@@ -104,9 +110,46 @@ function CardBruno({ m }: { m: BrunoMatch }) {
   );
 }
 
+function CardDrive({ f }: { f: BrunoDriveFile }) {
+  return (
+    <a
+      href={f.web_view_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "block",
+        borderRadius: "12px",
+        border: "2px solid #1d4ed8",
+        overflow: "visible",
+        position: "relative",
+        textDecoration: "none",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#1d4ed8", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
+        DRIVE BRUNO
+      </div>
+      <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "10px 10px 0 0", overflow: "hidden" }}>
+        {f.thumbnail_url ? (
+          <img src={f.thumbnail_url} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }} />
+        ) : (
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: "2rem" }}>
+            📄
+          </div>
+        )}
+      </div>
+      <div style={{ background: "#dbeafe", borderRadius: "0 0 10px 10px", padding: "4px 6px", color: "#1e3a8a", fontSize: "9px", lineHeight: "1.3", overflowWrap: "break-word", wordBreak: "break-word" }}>
+        <div style={{ fontWeight: "bold" }}>{f.name}</div>
+        <div style={{ opacity: 0.7 }}>Abrir no Drive</div>
+      </div>
+    </a>
+  );
+}
+
 export default function QualificadosSearch({ initialData, totalCount }: QualificadosSearchProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [brunoResults, setBrunoResults] = useState<BrunoMatch[]>([]);
+  const [brunoDrive, setBrunoDrive] = useState<BrunoDriveFile[]>([]);
   const [brunoLoading, setBrunoLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -147,6 +190,7 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
 
     if (term.length < 2) {
       setBrunoResults([]);
+      setBrunoDrive([]);
       return;
     }
 
@@ -154,16 +198,18 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
       setBrunoLoading(true);
       try {
         const res = await fetch(`/api/banco-bruno/search?q=${encodeURIComponent(term)}`);
-        const data = await res.json() as { matches: BrunoMatch[] };
+        const data = await res.json() as { matches: BrunoMatch[]; drive_files: BrunoDriveFile[] };
 
-        // Deduplica: remove do Bruno quem já está no banco local (por CPF)
+        // Deduplica matches: remove quem já está no banco local (por CPF)
         const localCpfs = new Set(initialData.map((q) => q.cpf).filter(Boolean));
         const novosDoBruno = (data.matches ?? []).filter(
           (m) => !m.cpf || !localCpfs.has(m.cpf)
         );
         setBrunoResults(novosDoBruno);
+        setBrunoDrive(data.drive_files ?? []);
       } catch {
         setBrunoResults([]);
+        setBrunoDrive([]);
       } finally {
         setBrunoLoading(false);
       }
@@ -186,7 +232,11 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
       {isSearching ? (
         <p className="text-gray-400 text-sm mb-4">
           {filteredLocal.length} no banco local
-          {brunoLoading ? " · buscando no Banco Bruno..." : brunoResults.length > 0 ? ` · ${brunoResults.length} no Banco Bruno` : ""}
+          {brunoLoading
+            ? " · buscando no Banco Bruno..."
+            : (brunoResults.length > 0 || brunoDrive.length > 0)
+              ? ` · ${brunoResults.length + brunoDrive.length} no Banco Bruno`
+              : ""}
         </p>
       ) : (
         <p className="text-gray-400 text-sm mb-4">{totalCount} registros</p>
@@ -195,10 +245,13 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
         {filteredLocal.map((p) => <CardLocal key={p.id} p={p} />)}
 
-        {/* Resultados do Bruno — aparecem no final com badge laranja */}
+        {/* Resultados do banco do Bruno */}
         {isSearching && brunoResults.map((m) => <CardBruno key={`bruno-${m.id}`} m={m} />)}
 
-        {isSearching && !brunoLoading && filteredLocal.length === 0 && brunoResults.length === 0 && (
+        {/* Resultados do Drive do Bruno */}
+        {isSearching && brunoDrive.map((f, i) => <CardDrive key={`drive-${i}`} f={f} />)}
+
+        {isSearching && !brunoLoading && filteredLocal.length === 0 && brunoResults.length === 0 && brunoDrive.length === 0 && (
           <p className="col-span-full text-center text-gray-500 py-12">
             Nenhum registro encontrado.
           </p>
