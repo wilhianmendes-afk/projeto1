@@ -108,12 +108,37 @@ export async function POST(req: NextRequest) {
     try {
       const text = brunoSearch.value?.result?.content?.[0]?.text;
       if (text) {
-        const parsed = JSON.parse(text) as { results?: { source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object; pessoa: unknown; confidence: string }[] };
-        brunoResults = (parsed.results ?? []).map((m) => ({
-          ...m,
-          from_bruno: true,
-          bruno_id: m.source_id,
-        }));
+        type BrunoFaceMatch = { source: string; source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object; confidence: string };
+        const parsed = JSON.parse(text) as { results?: BrunoFaceMatch[] };
+        const rawMatches = parsed.results ?? [];
+
+        // Busca dados da pessoa para cada match do banco_qualificados em paralelo
+        const enriched = await Promise.all(
+          rawMatches.map(async (m) => {
+            let pessoa = null;
+            if (m.source === "banco_qualificados" && BRUNO_URL && BRUNO_TOKEN) {
+              try {
+                const r = await fetch(BRUNO_URL, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${BRUNO_TOKEN}` },
+                  body: JSON.stringify({
+                    jsonrpc: "2.0", id: 1, method: "tools/call",
+                    params: { name: "get_qualificado", arguments: { id: m.source_id } },
+                  }),
+                  signal: AbortSignal.timeout(8000),
+                });
+                const d = await r.json();
+                const t = d?.result?.content?.[0]?.text;
+                if (t) {
+                  const q = JSON.parse(t);
+                  pessoa = { nome: q.nome, vulgo: q.vulgo, cpf: q.cpf, cidade: q.cidade, nascimento: q.dn, genitora: q.genitora };
+                }
+              } catch { /* silently ignore */ }
+            }
+            return { ...m, from_bruno: true, bruno_id: m.source_id, pessoa };
+          })
+        );
+        brunoResults = enriched;
       }
     } catch { /* silently ignore */ }
   }
