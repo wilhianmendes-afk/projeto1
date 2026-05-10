@@ -1,10 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
+import { google } from "googleapis";
 
 export const dynamic = "force-dynamic";
 
 const MCP_TOKEN = process.env.MCP_BANCO_TOKEN;
+
+function getDriveClient() {
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+  auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+  return google.drive({ version: "v3", auth });
+}
+
+async function searchDrive(query: string, limit: number) {
+  try {
+    const drive = getDriveClient();
+    const safe = query.replace(/'/g, "\\'");
+    const { data } = await drive.files.list({
+      q: `fullText contains '${safe}' and mimeType contains 'image/' and trashed = false`,
+      fields: "files(id, name, thumbnailLink, webViewLink)",
+      pageSize: Math.min(limit, 30),
+      orderBy: "modifiedTime desc",
+    });
+    return (data.files ?? []).map((f) => ({
+      file_id: f.id,
+      name: f.name,
+      thumbnail_url: f.thumbnailLink ?? null,
+      web_view_url: f.webViewLink ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -72,18 +104,25 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<st
     const lim = Math.min(Number(limit), 50);
     const q = String(query).replace(/[%_]/g, "\\$&");
 
-    const { data, error } = await supabase
-      .from("qualificados")
-      .select("id, nome, vulgo, cpf, nascimento, genitora, cidade, uf, foto_url, observacoes, fonte, created_at")
-      .or(
-        `nome.ilike.%${q}%,vulgo.ilike.%${q}%,cpf.ilike.%${q}%,genitora.ilike.%${q}%,observacoes.ilike.%${q}%`
-      )
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .limit(lim);
+    const [supabaseResult, driveFiles] = await Promise.all([
+      supabase
+        .from("qualificados")
+        .select("id, nome, vulgo, cpf, nascimento, genitora, cidade, uf, foto_url, observacoes, fonte, created_at")
+        .or(`nome.ilike.%${q}%,vulgo.ilike.%${q}%,cpf.ilike.%${q}%,genitora.ilike.%${q}%,observacoes.ilike.%${q}%`)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(lim),
+      searchDrive(query, lim),
+    ]);
 
-    if (error) throw new Error(error.message);
-    return JSON.stringify({ matches: data ?? [], total: data?.length ?? 0 });
+    if (supabaseResult.error) throw new Error(supabaseResult.error.message);
+
+    return JSON.stringify({
+      matches: supabaseResult.data ?? [],
+      total: supabaseResult.data?.length ?? 0,
+      drive_files: driveFiles,
+      drive_total: driveFiles.length,
+    });
   }
 
   if (name === "get_qualificado") {
