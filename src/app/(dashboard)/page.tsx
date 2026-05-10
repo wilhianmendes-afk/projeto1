@@ -1,6 +1,7 @@
 import { Search, Users, Database, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { getFaceStats } from "@/lib/face-stats";
+import BancoParceiros from "@/components/BancoParceiros";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -55,7 +56,9 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <BancoParceiros />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
         <Link
           href="/busca"
           className="bg-blue-900 hover:bg-blue-800 border border-blue-700 rounded-xl p-6 flex items-center gap-4 transition-colors"
