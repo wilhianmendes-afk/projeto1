@@ -66,13 +66,16 @@ function CardLocal({ p }: { p: Qualificado }) {
 function CardBruno({ m }: { m: BrunoMatch }) {
   const fotoUrl = m.composite_url || m.foto_original_url;
   return (
-    <div
+    <Link
+      href={`/qualificados/bruno/${m.id}`}
       style={{
         display: "block",
         borderRadius: "12px",
         border: "2px solid #b45309",
         overflow: "visible",
         position: "relative",
+        textDecoration: "none",
+        cursor: "pointer",
       }}
     >
       {/* Badge */}
@@ -97,7 +100,7 @@ function CardBruno({ m }: { m: BrunoMatch }) {
         {m.cpf && <div>CPF: {m.cpf}</div>}
         {m.cidade && <div>{m.cidade}</div>}
       </div>
-    </div>
+    </Link>
   );
 }
 
