@@ -94,16 +94,18 @@ export default async function QualificadoPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-8">
-        {fields
-          .filter((f) => f.value)
-          .map((f) => (
-            <div key={f.label} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-              <p className="text-gray-500 text-xs mb-0.5">{f.label}</p>
-              <p className="text-white text-sm font-medium">{f.value}</p>
-            </div>
-          ))}
-      </div>
+      {pessoa.fonte !== "drive" && (
+        <div className="grid grid-cols-2 gap-3 mb-8">
+          {fields
+            .filter((f) => f.value)
+            .map((f) => (
+              <div key={f.label} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
+                <p className="text-gray-500 text-xs mb-0.5">{f.label}</p>
+                <p className="text-white text-sm font-medium">{f.value}</p>
+              </div>
+            ))}
+        </div>
+      )}
 
       {pessoa.fotos_extras && pessoa.fotos_extras.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 import { embedImage } from "@/lib/face-service";
+import Anthropic from "@anthropic-ai/sdk";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -24,40 +25,112 @@ function getDriveClient() {
   return google.drive({ version: "v3", auth });
 }
 
+type ExtractedData = {
+  nome: string | null;
+  vulgo: string | null;
+  cpf: string | null;
+  nascimento: string | null;
+  genitora: string | null;
+};
+
+async function extractDataFromPhoto(buffer: Buffer, mimeType: string): Promise<ExtractedData> {
+  try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const validMime = (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)
+      ? mimeType
+      : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+
+    const msg = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 200,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: validMime, data: buffer.toString("base64") },
+          },
+          {
+            type: "text",
+            text: `Extraia os dados pessoais visíveis nesta foto. Retorne APENAS um JSON com os campos encontrados. Campos: nome (nome completo da pessoa), vulgo (apelido ou alcunha), cpf (formato xxx.xxx.xxx-xx), nascimento (formato DD/MM/AAAA), genitora (nome da mãe). Use null para campos não encontrados. Responda SOMENTE com o JSON, sem markdown.`,
+          },
+        ],
+      }],
+    });
+
+    const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "{}";
+    const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return { nome: null, vulgo: null, cpf: null, nascimento: null, genitora: null };
+  }
+}
+
+async function listImagesInFolder(
+  drive: ReturnType<typeof getDriveClient>,
+  folderId: string,
+  recursive: boolean
+): Promise<Array<{ id: string; name: string; mimeType: string }>> {
+  const images: Array<{ id: string; name: string; mimeType: string }> = [];
+  let pageToken: string | undefined;
+
+  do {
+    const { data: listRes } = await drive.files.list({
+      q: `'${folderId}' in parents and trashed = false`,
+      fields: "nextPageToken, files(id, name, mimeType)",
+      pageSize: 100,
+      pageToken,
+    });
+
+    for (const file of listRes?.files ?? []) {
+      if (!file.id || !file.name) continue;
+      if (file.mimeType === "application/vnd.google-apps.folder" && recursive) {
+        const sub = await listImagesInFolder(drive, file.id, recursive);
+        images.push(...sub);
+      } else if (file.mimeType?.includes("image/")) {
+        images.push({ id: file.id, name: file.name, mimeType: file.mimeType });
+      }
+    }
+
+    pageToken = listRes?.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return images;
+}
+
 export async function POST(req: NextRequest) {
+  try {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const { folderId } = await req.json();
-  if (!folderId) return NextResponse.json({ error: "folderId obrigatório" }, { status: 400 });
+  const { folderIds, recursive = true } = await req.json();
+  const ids: string[] = Array.isArray(folderIds)
+    ? folderIds.filter(Boolean)
+    : typeof folderIds === "string" ? [folderIds].filter(Boolean) : [];
+
+  if (!ids.length) return NextResponse.json({ error: "Nenhum ID fornecido" }, { status: 400 });
 
   const drive = getDriveClient();
   const service = getAdminClient();
 
-  let pageToken: string | undefined;
-  let imported = 0;
-  let skipped = 0;
-
-  const { data: { publicUrl: storageBase } } = service.storage
-    .from("faces")
-    .getPublicUrl("_dummy");
+  const { data: { publicUrl: storageBase } } = service.storage.from("faces").getPublicUrl("_dummy");
   const bucketBase = storageBase.replace("/_dummy", "");
 
-  do {
-    const { data: listRes } = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
-      fields: "nextPageToken, files(id, name, mimeType)",
-      pageSize: 50,
-      pageToken,
-    });
+  let imported = 0, skipped = 0, sem_dados = 0;
 
-    const files = listRes?.files ?? [];
-    pageToken = listRes?.nextPageToken ?? undefined;
+  for (const entryId of ids) {
+    // Detecta se é arquivo ou pasta
+    const meta = await drive.files.get({ fileId: entryId, fields: "id,name,mimeType" });
+    const isFolder = meta.data.mimeType === "application/vnd.google-apps.folder";
+
+    const files = isFolder
+      ? await listImagesInFolder(drive, entryId, recursive)
+      : meta.data.mimeType?.includes("image/")
+        ? [{ id: meta.data.id!, name: meta.data.name!, mimeType: meta.data.mimeType! }]
+        : [];
 
     for (const file of files) {
-      if (!file.id || !file.name) continue;
-
       const { data: existing } = await service
         .from("qualificados")
         .select("id")
@@ -73,6 +146,9 @@ export async function POST(req: NextRequest) {
       );
       const buffer = Buffer.from(dlRes.data as ArrayBuffer);
 
+      const dados = await extractDataFromPhoto(buffer, file.mimeType);
+      if (!dados.nome) { sem_dados++; continue; }
+
       const storagePath = `drive/${file.id}/${file.name}`;
       await service.storage.from("faces").upload(storagePath, buffer, {
         contentType: file.mimeType ?? "image/jpeg",
@@ -80,11 +156,18 @@ export async function POST(req: NextRequest) {
       });
       const photoUrl = `${bucketBase}/${storagePath}`;
 
-      const nome = file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ").trim();
-
       const { data: qualificado } = await service
         .from("qualificados")
-        .insert({ nome, foto_url: photoUrl, fonte: "drive", fonte_id: file.id })
+        .insert({
+          nome: dados.nome,
+          vulgo: dados.vulgo ?? null,
+          cpf: dados.cpf ?? null,
+          nascimento: dados.nascimento ?? null,
+          genitora: dados.genitora ?? null,
+          foto_url: photoUrl,
+          fonte: "drive",
+          fonte_id: file.id,
+        })
         .select("id")
         .single();
 
@@ -94,7 +177,7 @@ export async function POST(req: NextRequest) {
       try {
         embedResponse = await embedImage(buffer, file.name);
       } catch {
-        skipped++;
+        imported++;
         continue;
       }
 
@@ -102,10 +185,10 @@ export async function POST(req: NextRequest) {
         await service.from("face_skipped").upsert({
           source: "qualificados",
           source_id: qualificado.id,
-          source_label: nome,
+          source_label: dados.nome,
           reason: "no_face_detected",
         }, { onConflict: "source,source_id" });
-        skipped++;
+        imported++;
         continue;
       }
 
@@ -114,7 +197,7 @@ export async function POST(req: NextRequest) {
         await service.from("face_embeddings").insert({
           source: "qualificados",
           source_id: qualificado.id,
-          source_label: nome,
+          source_label: dados.nome,
           photo_url: photoUrl,
           embedding: JSON.stringify(face.embedding),
           bbox: face.bbox,
@@ -125,7 +208,11 @@ export async function POST(req: NextRequest) {
 
       imported++;
     }
-  } while (pageToken);
+  }
 
-  return NextResponse.json({ ok: true, imported, skipped });
+  return NextResponse.json({ ok: true, imported, skipped, sem_dados });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
