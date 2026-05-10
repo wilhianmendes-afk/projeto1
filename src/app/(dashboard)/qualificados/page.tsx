@@ -2,6 +2,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import { UserPlus } from "lucide-react";
 import QualificadosSearch from "@/components/QualificadosSearch";
+import TotalQualificados from "@/components/TotalQualificados";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function QualificadosPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Qualificados</h1>
-          <p className="text-gray-400 text-sm">{count ?? 0} registros</p>
+          <TotalQualificados local={count ?? 0} />
         </div>
         <Link
           href="/qualificados/novo"
