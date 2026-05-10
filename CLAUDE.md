@@ -130,7 +130,7 @@ export const revalidate = 0;
 | `POST /api/face/search` | Busca facial por imagem (multipart `file`) |
 | `GET/POST /api/face/backfill` | Gera embeddings dos registros pendentes (paralelo, batch 5) |
 | `POST /api/face/index` | Re-indexa um qualificado específico com retry de threshold |
-| `POST /api/drive/import` | Importa fotos do Google Drive |
+| `POST /api/drive/import` | Importa fotos do Google Drive com OCR (Claude Haiku) — aceita `{ folderIds: string[], recursive: bool }` |
 | `GET  /api/dev-chat` | Histórico do Chat do Dev |
 | `POST /api/dev-chat` | Envia mensagem + gera resposta automática (Claude Haiku) |
 | `PATCH /api/dev-chat/[id]/read` | Marca mensagem como lida |
@@ -271,6 +271,32 @@ Canal interno embarcado no dashboard. **Não expor publicamente.**
 - Tabela: `dev_chat_messages` (migration 006 — já aplicada)
 - Requer `ANTHROPIC_API_KEY` com créditos para respostas automáticas via Claude Haiku
 
+## Integração Google Drive
+
+**Componente:** `src/components/DriveImport.tsx` — na página `/indexacao`
+
+**Como usar:**
+1. Cole links ou IDs do Google Drive na textarea (um por linha) — aceita link de pasta, link de arquivo ou ID puro
+2. Marque "Escanear subpastas automaticamente" para processar subpastas recursivamente (ativado por padrão)
+3. Clique em Importar
+
+**Fluxo de importação (`POST /api/drive/import`):**
+- Recebe `{ folderIds: string[], recursive: boolean }`
+- Detecta automaticamente se cada ID é pasta ou arquivo individual (via `mimeType` da API do Drive)
+- Para cada imagem: Claude Haiku (OCR via visão) extrai `nome`, `vulgo`, `cpf`, `nascimento`, `genitora`
+- Skipa fotos onde Claude não consegue identificar o `nome` (contador `sem_dados`)
+- Faz upload para Storage em `faces/drive/<file_id>/<filename>`
+- Insere em `qualificados` com `fonte: "drive"`, `fonte_id: <file_id>` (evita duplicatas)
+- Gera embedding facial via face-service Railway
+- Retorna `{ imported, skipped, sem_dados }`
+
+**Página `/qualificados/[id]` para fonte `"drive"`:**
+- Campos de dados (nome, CPF, nascimento, mãe, vulgo) **não são exibidos** abaixo da foto
+- A foto já contém o texto sobreposto com esses dados — evita duplicação visual
+- Busca por nome/vulgo/CPF continua funcionando (dados salvos no banco normalmente)
+
+> **`@anthropic-ai/sdk`** deve estar em `dependencies` do `package.json`. Estava ausente originalmente — já corrigido.
+
 ## Integração IBIS (ibis.app.br)
 
 Scripts:
@@ -320,6 +346,7 @@ Depois: `node scripts/clear-ibis-storage.js`
 | `ComparisonModal.tsx` | Modal de comparação lado a lado |
 | `QualificadosSearch.tsx` | Filtro client-side em tempo real na grade |
 | `DevChat.tsx` | Chat flutuante de desenvolvimento |
+| `DriveImport.tsx` | Importação Google Drive com OCR — textarea multi-ID, checkbox subpastas |
 
 ## Branch de desenvolvimento
 `claude/check-github-access-v30TG`
