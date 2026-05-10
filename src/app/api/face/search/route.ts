@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
         // Busca dados da pessoa para cada match do banco_qualificados em paralelo
         const enriched = await Promise.all(
           rawMatches.map(async (m) => {
-            let pessoa = null;
+            let pessoa: { nome: string; vulgo?: string; cpf?: string; cidade?: string; nascimento?: string; genitora?: string } | null = null;
             if (m.source === "banco_qualificados" && BRUNO_URL && BRUNO_TOKEN) {
               try {
                 const r = await fetch(BRUNO_URL, {
