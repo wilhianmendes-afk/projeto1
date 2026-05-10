@@ -14,6 +14,8 @@ interface SearchResult {
   det_score: number;
   bbox: object;
   confidence: string;
+  from_bruno?: boolean;
+  bruno_id?: string;
   pessoa: { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string; nascimento?: string; genitora?: string } | null;
 }
 
@@ -325,8 +327,10 @@ export default function FaceSearch() {
             <div
               key={i}
               onClick={() => setSelectedResult(r)}
-              className={`flex items-center gap-4 bg-gray-900 border rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-800 ${
-                confidenceColor[r.confidence]?.split(" ").slice(2).join(" ") ?? "border-gray-800"
+              className={`flex items-center gap-4 bg-gray-900 rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-800 ${
+                r.from_bruno
+                  ? "border-2 border-amber-700"
+                  : `border ${confidenceColor[r.confidence]?.split(" ").slice(2).join(" ") ?? "border-gray-800"}`
               }`}
             >
               <img
@@ -335,6 +339,11 @@ export default function FaceSearch() {
                 className="w-16 h-16 rounded-lg object-contain border border-gray-700 flex-shrink-0 bg-black"
               />
               <div className="flex-1 min-w-0">
+                {r.from_bruno && (
+                  <span className="inline-block text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded mb-1">
+                    BANCO BRUNO
+                  </span>
+                )}
                 <p className="font-semibold text-white truncate">
                   {r.pessoa?.nome ?? "Desconhecido"}
                 </p>

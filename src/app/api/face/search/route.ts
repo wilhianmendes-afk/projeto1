@@ -3,6 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
 
+const BRUNO_URL = process.env.BANCO_BRUNO_URL;
+const BRUNO_TOKEN = process.env.BANCO_BRUNO_TOKEN;
+
 function getAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,18 +56,36 @@ export async function POST(req: NextRequest) {
   );
 
   const service = getAdminClient();
-  const { data: matches, error } = await service.rpc("face_search", {
-    query_embedding: JSON.stringify(bestFace.embedding),
-    similarity_threshold: threshold,
-    match_count: limit,
-  });
 
-  if (error) {
-    return NextResponse.json({ error: "Erro na busca: " + error.message }, { status: 500 });
+  // Busca local + Bruno em paralelo
+  const base64Image = buffer.toString("base64");
+
+  const [localSearch, brunoSearch] = await Promise.allSettled([
+    service.rpc("face_search", {
+      query_embedding: JSON.stringify(bestFace.embedding),
+      similarity_threshold: threshold,
+      match_count: limit,
+    }),
+    BRUNO_URL && BRUNO_TOKEN
+      ? fetch(BRUNO_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${BRUNO_TOKEN}` },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 1, method: "tools/call",
+            params: { name: "search_face", arguments: { image_base64: base64Image, threshold, limit } },
+          }),
+          signal: AbortSignal.timeout(15000),
+        }).then((r) => r.json())
+      : Promise.resolve(null),
+  ]);
+
+  // Processa resultado local
+  if (localSearch.status === "rejected" || localSearch.value?.error) {
+    return NextResponse.json({ error: "Erro na busca local" }, { status: 500 });
   }
+  const matches = localSearch.value?.data ?? [];
 
-  const sourceIds = [...new Set((matches ?? []).map((m: { source_id: string }) => m.source_id))];
-
+  const sourceIds = [...new Set(matches.map((m: { source_id: string }) => m.source_id))];
   let pessoas: Record<string, { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string; nascimento?: string; genitora?: string }> = {};
   if (sourceIds.length > 0) {
     const { data } = await service
@@ -74,23 +95,36 @@ export async function POST(req: NextRequest) {
     pessoas = Object.fromEntries((data ?? []).map((p) => [p.id, p]));
   }
 
-  const results = (matches ?? []).map((m: {
-    source_id: string;
-    photo_url: string;
-    similarity: number;
-    det_score: number;
-    bbox: object;
-  }) => ({
+  const localResults = matches.map((m: { source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object }) => ({
     ...m,
+    from_bruno: false,
     pessoa: pessoas[m.source_id] ?? null,
-    confidence:
-      m.similarity >= 0.55 ? "alta" :
-      m.similarity >= 0.42 ? "forte" :
-      m.similarity >= 0.30 ? "incerto" : "baixa",
+    confidence: m.similarity >= 0.55 ? "alta" : m.similarity >= 0.42 ? "forte" : m.similarity >= 0.30 ? "incerto" : "baixa",
   }));
 
+  // Processa resultado do Bruno
+  let brunoResults: unknown[] = [];
+  if (brunoSearch.status === "fulfilled" && brunoSearch.value) {
+    try {
+      const text = brunoSearch.value?.result?.content?.[0]?.text;
+      if (text) {
+        const parsed = JSON.parse(text) as { results?: { source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object; pessoa: unknown; confidence: string }[] };
+        brunoResults = (parsed.results ?? []).map((m) => ({
+          ...m,
+          from_bruno: true,
+          bruno_id: m.source_id,
+        }));
+      }
+    } catch { /* silently ignore */ }
+  }
+
+  // Mescla e ordena por similaridade
+  const allResults = [...localResults, ...brunoResults].sort(
+    (a, b) => (b as { similarity: number }).similarity - (a as { similarity: number }).similarity
+  );
+
   return NextResponse.json({
-    results,
+    results: allResults,
     query_det_score: bestFace.det_score,
     query_bbox: bestFace.bbox,
     faces_detected: embedResponse.total_detected,

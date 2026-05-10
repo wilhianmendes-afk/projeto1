@@ -9,6 +9,8 @@ interface SearchResult {
   det_score: number;
   bbox: object;
   confidence: string;
+  from_bruno?: boolean;
+  bruno_id?: string;
   pessoa: { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string; nascimento?: string; genitora?: string } | null;
 }
 
@@ -156,10 +158,18 @@ export default function ComparisonModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-700 px-6 py-4 flex-shrink-0">
+        <div className="border-t border-gray-700 px-6 py-4 flex-shrink-0 flex gap-3">
+          {result.from_bruno && result.bruno_id && (
+            <a
+              href={`/qualificados/bruno/${result.bruno_id}`}
+              className="flex-1 bg-amber-700 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-center text-sm"
+            >
+              Ver no Banco Bruno
+            </a>
+          )}
           <button
             onClick={onClose}
-            className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
           >
             Fechar
           </button>
