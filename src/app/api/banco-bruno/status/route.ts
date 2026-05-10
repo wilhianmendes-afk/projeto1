@@ -13,6 +13,7 @@ async function callBrunoTool(name: string, args: Record<string, unknown> = {}) {
       jsonrpc: "2.0", id: 1, method: "tools/call",
       params: { name, arguments: args },
     }),
+    cache: "no-store",
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) return null;

@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
         method: "tools/call",
         params: { name: "search_text", arguments: { query: q, limit: 20 } },
       }),
+      cache: "no-store",
       signal: AbortSignal.timeout(10000),
     });
 
