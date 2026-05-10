@@ -345,10 +345,13 @@ export default function FaceSearch() {
                   </span>
                 )}
                 <p className="font-semibold text-white truncate">
-                  {r.pessoa?.nome ?? "Desconhecido"}
+                  {r.pessoa?.nome ?? (r.from_bruno ? "Ver dados na foto" : "Desconhecido")}
                 </p>
                 {r.pessoa?.vulgo && <p className="text-gray-400 text-sm">"{r.pessoa.vulgo}"</p>}
                 {r.pessoa?.cpf   && <p className="text-gray-500 text-xs">CPF: {r.pessoa.cpf}</p>}
+                {r.from_bruno && !r.pessoa?.nome && (
+                  <p className="text-amber-500 text-xs">Dados na foto (Drive)</p>
+                )}
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="text-lg font-bold text-white">{(r.similarity * 100).toFixed(0)}%</p>

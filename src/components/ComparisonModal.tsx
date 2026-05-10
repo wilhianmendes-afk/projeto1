@@ -81,6 +81,13 @@ export default function ComparisonModal({
             </div>
           </div>
 
+          {/* Aviso Drive Bruno */}
+          {result.from_bruno && !result.pessoa?.nome && (
+            <div className="mb-4 bg-amber-950 border border-amber-700 rounded-lg px-4 py-3 text-amber-300 text-sm">
+              Este registro está no <strong>Drive do Bruno</strong> — os dados estão visíveis na foto ao lado. Clique em <strong>"Ver no Banco Bruno"</strong> para abrir a ficha completa.
+            </div>
+          )}
+
           {/* Dados do Qualificado */}
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6">
             <h3 className="text-lg font-bold text-white mb-4">Dados do Qualificado</h3>
@@ -88,7 +95,7 @@ export default function ComparisonModal({
               {/* Nome */}
               <div className="col-span-2">
                 <p className="text-gray-500 text-xs uppercase tracking-wide">Nome</p>
-                <p className="text-white font-bold text-lg">{result.pessoa?.nome}</p>
+                <p className="text-white font-bold text-lg">{result.pessoa?.nome ?? "—"}</p>
               </div>
 
               {/* Alcunha */}
