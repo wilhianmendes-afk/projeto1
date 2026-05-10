@@ -23,12 +23,19 @@ async function callBrunoTool(name: string, args: Record<string, unknown> = {}) {
 
 export async function GET() {
   try {
-    const status = await callBrunoTool("get_banco_status");
-    if (status) return NextResponse.json({ ok: true, ...status });
-
-    // Se get_banco_status não existir, faz busca ampla para estimar
-    const sample = await callBrunoTool("search_text", { query: "a", limit: 1 });
-    return NextResponse.json({ ok: true, total_qualificados: sample?.total ?? null, estimado: true });
+    const s = await callBrunoTool("get_banco_status");
+    if (s?.banco) {
+      return NextResponse.json({
+        ok: true,
+        total_qualificados: s.banco.pessoas_unicas ?? null,
+        faces_total: s.banco.faces_buscaveis_total ?? null,
+        faces_banco: s.banco.faces_banco ?? null,
+        faces_drive: s.banco.faces_drive ?? null,
+        ibis_online: s.ibis_scraper?.online ?? false,
+        cadastrados_hoje: s.ibis_scraper?.cadastrados_hoje ?? 0,
+      });
+    }
+    return NextResponse.json({ ok: false });
   } catch {
     return NextResponse.json({ ok: false });
   }

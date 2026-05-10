@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Users } from "lucide-react";
+import { Users, Fingerprint, Wifi } from "lucide-react";
 
 interface BrunoStatus {
   ok: boolean;
   total_qualificados?: number;
-  total_indexados?: number;
-  estimado?: boolean;
+  faces_total?: number;
+  faces_banco?: number;
+  faces_drive?: number;
+  ibis_online?: boolean;
+  cadastrados_hoje?: number;
 }
 
 export default function BancoParceiros() {
@@ -26,35 +29,65 @@ export default function BancoParceiros() {
         Bancos Parceiros
       </h2>
 
-      <div className="bg-gray-900 border border-amber-800/50 rounded-xl p-5 flex items-center gap-4">
-        <div className="bg-amber-950 text-amber-400 w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0">
-          <Users className="w-5 h-5" />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <p className="text-gray-400 text-xs mb-0.5">Banco Bruno</p>
-          {status === null ? (
-            <p className="text-gray-500 text-sm animate-pulse">Consultando...</p>
-          ) : !status.ok ? (
-            <p className="text-gray-500 text-sm">Indisponível</p>
-          ) : status.total_qualificados != null ? (
-            <div className="flex items-baseline gap-2">
-              <p className="text-2xl font-bold text-white">
-                {status.total_qualificados.toLocaleString("pt-BR")}
-              </p>
-              <p className="text-amber-400 text-sm">qualificados</p>
-              {status.estimado && (
-                <span className="text-gray-600 text-xs">(estimado)</span>
-              )}
-            </div>
-          ) : (
-            <p className="text-gray-500 text-sm">Sem dados</p>
+      <div className="bg-gray-900 border border-amber-800/50 rounded-xl p-5">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold bg-amber-700 text-white px-2 py-1 rounded">
+              BANCO BRUNO
+            </span>
+            {status?.ibis_online && (
+              <span className="flex items-center gap-1 text-green-400 text-xs">
+                <Wifi className="w-3 h-3" />
+                IBIS online
+              </span>
+            )}
+          </div>
+          {status?.cadastrados_hoje != null && status.cadastrados_hoje > 0 && (
+            <span className="text-amber-400 text-xs">
+              +{status.cadastrados_hoje} hoje
+            </span>
           )}
         </div>
 
-        <span className="text-[10px] font-bold bg-amber-700 text-white px-2 py-1 rounded flex-shrink-0">
-          PARCEIRO
-        </span>
+        {/* Stats */}
+        {status === null ? (
+          <p className="text-gray-500 text-sm animate-pulse">Consultando...</p>
+        ) : !status.ok ? (
+          <p className="text-gray-500 text-sm">Indisponível</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Users className="w-3.5 h-3.5 text-amber-400" />
+                <p className="text-gray-400 text-xs">Pessoas</p>
+              </div>
+              <p className="text-xl font-bold text-white">
+                {status.total_qualificados?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Fingerprint className="w-3.5 h-3.5 text-amber-400" />
+                <p className="text-gray-400 text-xs">Faces banco</p>
+              </div>
+              <p className="text-xl font-bold text-white">
+                {status.faces_banco?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Fingerprint className="w-3.5 h-3.5 text-blue-400" />
+                <p className="text-gray-400 text-xs">Faces drive</p>
+              </div>
+              <p className="text-xl font-bold text-white">
+                {status.faces_drive?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
