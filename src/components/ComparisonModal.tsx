@@ -85,7 +85,7 @@ export default function ComparisonModal({
           {/* Aviso Drive Bruno */}
           {result.from_bruno && !result.pessoa?.nome && (
             <div className="mb-4 bg-amber-950 border border-amber-700 rounded-lg px-4 py-3 text-amber-300 text-sm">
-              Este registro está no <strong>Drive do Bruno</strong> — os dados estão visíveis na foto ao lado. Clique em <strong>"Ver no Banco Bruno"</strong> para abrir a ficha completa.
+              Este registro está no <strong>Drive do 42º BPM</strong> — os dados estão visíveis na foto ao lado. Clique em <strong>"Ver no Banco 42º BPM"</strong> para abrir a ficha completa.
             </div>
           )}
 
@@ -167,25 +167,13 @@ export default function ComparisonModal({
 
         {/* Footer */}
         <div className="border-t border-gray-700 px-6 py-4 flex-shrink-0 flex gap-3">
-          {result.from_bruno && result.bruno_id && (
-            result.source === "drive"
-              ? (
-                <a
-                  href={`https://drive.google.com/file/d/${result.bruno_id}/view`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-center text-sm"
-                >
-                  Abrir no Drive
-                </a>
-              ) : (
-                <a
-                  href={`/qualificados/bruno/${result.bruno_id}`}
-                  className="flex-1 bg-amber-700 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-center text-sm"
-                >
-                  Ver no Banco Bruno
-                </a>
-              )
+          {result.from_bruno && result.bruno_id && result.source !== "drive" && (
+            <a
+              href={`/qualificados/bruno/${result.bruno_id}`}
+              className="flex-1 bg-amber-700 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-center text-sm"
+            >
+              Ver no Banco 42º BPM
+            </a>
           )}
           <button
             onClick={onClose}

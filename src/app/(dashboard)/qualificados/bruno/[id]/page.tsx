@@ -83,7 +83,7 @@ export default async function BrunoQualificadoPage({
       <div className="flex items-center justify-between mb-6">
         <BackButton />
         <span className="text-xs font-bold bg-amber-700 text-white px-3 py-1 rounded-full">
-          BANCO BRUNO
+          BANCO 42º BPM
         </span>
       </div>
 

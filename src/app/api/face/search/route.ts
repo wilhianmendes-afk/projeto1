@@ -3,6 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 const BRUNO_URL = process.env.BANCO_BRUNO_URL;
 const BRUNO_TOKEN = process.env.BANCO_BRUNO_TOKEN;
 

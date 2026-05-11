@@ -87,7 +87,7 @@ function CardBruno({ m }: { m: BrunoMatch }) {
     >
       {/* Badge */}
       <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#b45309", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
-        BANCO BRUNO
+        BANCO 42º BPM
       </div>
 
       <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "10px 10px 0 0", overflow: "hidden" }}>
@@ -125,7 +125,7 @@ function CardDrive({ f, onClick }: { f: BrunoDriveFile; onClick: () => void }) {
       }}
     >
       <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#1d4ed8", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
-        DRIVE BRUNO
+        DRIVE 42º BPM
       </div>
       <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "10px 10px 0 0", overflow: "hidden" }}>
         {f.thumbnail_url ? (
@@ -156,7 +156,7 @@ function LightboxDrive({ f, onClose }: { f: BrunoDriveFile; onClose: () => void 
       >
         <div className="flex items-center justify-between bg-gray-900 rounded-t-xl px-4 py-3">
           <div>
-            <span className="text-xs font-bold bg-blue-700 text-white px-2 py-0.5 rounded mr-2">DRIVE BRUNO</span>
+            <span className="text-xs font-bold bg-blue-700 text-white px-2 py-0.5 rounded mr-2">DRIVE 42º BPM</span>
             <span className="text-white text-sm font-medium">{f.name}</span>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
@@ -247,9 +247,9 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
             ? "buscando..."
             : `${filteredLocal.length} no banco local`}
           {brunoLoading
-            ? " · buscando no Banco Bruno..."
+            ? " · buscando no Banco 42º BPM..."
             : (brunoResults.length > 0 || brunoDrive.length > 0)
-              ? ` · ${brunoResults.length + brunoDrive.length} no Banco Bruno`
+              ? ` · ${brunoResults.length + brunoDrive.length} no Banco 42º BPM`
               : ""}
         </p>
       ) : (

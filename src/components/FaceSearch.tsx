@@ -352,7 +352,7 @@ export default function FaceSearch() {
               <div className="flex-1 min-w-0">
                 {r.from_bruno && (
                   <span className="inline-block text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded mb-1">
-                    BANCO BRUNO
+                    BANCO 42º BPM
                   </span>
                 )}
                 <p className="font-semibold text-white truncate">

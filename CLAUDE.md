@@ -18,8 +18,11 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
-ANTHROPIC_API_KEY=   # respostas automáticas do Chat do Dev
-IBIS_IMPORT_TOKEN=   # protege /api/ibis/import e /api/face/backfill
+ANTHROPIC_API_KEY=   # Chat do Dev (Claude Haiku). ATENÇÃO: sem créditos = dev-chat para de funcionar
+GEMINI_API_KEY=      # OCR de importação de fotos (Gemini 1.5 Flash — gratuito, 1500 req/dia). Já configurado.
+IBIS_IMPORT_TOKEN=   # protege /api/ibis/import, /api/face/backfill e /api/drive/local-import
+BANCO_BRUNO_URL=     # URL do MCP do Bruno (parceiro)
+BANCO_BRUNO_TOKEN=   # Token Bearer do MCP do Bruno
 ```
 
 ## Variáveis de ambiente (Railway — face-service)
@@ -127,10 +130,15 @@ export const revalidate = 0;
 | `POST /api/ibis/import` | Recebe pessoas do script extrator do IBIS (CORS aberto) |
 | `DELETE /api/qualificados/[id]` | Remove qualificado + embeddings + foto do Storage |
 | `POST /api/qualificados/[id]/foto` | Upload de foto, atualiza foto_url, limpa embeddings anteriores |
-| `POST /api/face/search` | Busca facial por imagem (multipart `file`) |
+| `POST /api/face/search` | Busca facial — local + Banco Bruno em paralelo |
 | `GET/POST /api/face/backfill` | Gera embeddings dos registros pendentes (paralelo, batch 5) |
 | `POST /api/face/index` | Re-indexa um qualificado específico com retry de threshold |
-| `POST /api/drive/import` | Importa fotos do Google Drive com OCR (Claude Haiku) — aceita `{ folderIds: string[], recursive: bool }` |
+| `POST /api/drive/local-import` | Importa foto do computador com OCR (Claude Sonnet) — multipart `file` + `file_hash` + `file_name` |
+| `POST /api/drive/auto-sync` | Sincroniza pastas do Google Drive configuradas (cron diário 4h UTC) |
+| `GET/POST/DELETE /api/drive/sync-folders` | Gerencia pastas do Drive para sync automático |
+| `GET /api/banco-bruno/search?q=` | Proxy para busca textual no Banco Bruno (matches + drive_files) |
+| `GET /api/banco-bruno/status` | Stats do Banco Bruno (pessoas, faces, drives) |
+| `POST /api/mcp/banco` | Servidor MCP do nosso banco — Bruno se conecta aqui para buscar nossos dados |
 | `GET  /api/dev-chat` | Histórico do Chat do Dev |
 | `POST /api/dev-chat` | Envia mensagem + gera resposta automática (Claude Haiku) |
 | `PATCH /api/dev-chat/[id]/read` | Marca mensagem como lida |
@@ -149,6 +157,8 @@ face-service/
 - **`POST /embed-raw`** — binário puro `Content-Type: image/jpeg` (server-to-server)
 - Ambos aceitam `?min_score=0.35` para threshold por requisição
 - `MIN_DET_SCORE=0.6` padrão no Railway
+- **Timeout**: `src/lib/face-service.ts` usa `AbortSignal.timeout(30000)` — 30s para tolerar cold-start do Railway
+- **`/api/face/search`** tem `maxDuration = 60` — necessário no Vercel Hobby para evitar corte em 10s
 
 **Worker de backfill contínuo** (`backfill_worker` em `main.py`):
 - Inicia junto com o FastAPI via `lifespan`
@@ -212,16 +222,6 @@ Usa `get_pending_qualificados(batch_limit)` — RPC que retorna qualificados sem
 
 Dashboard e indexação usam a mesma função `getFaceStats()` que chama `get_face_stats()` via RPC. Números sempre idênticos entre as duas páginas.
 
-## Páginas
-| Rota | Descrição |
-|------|-----------|
-| `/` | Dashboard — stats via RPC: qualificados, indexados, sem rosto, cobertura |
-| `/busca` | Busca facial — detecção automática, botão "Buscar" só ativo após rosto detectado |
-| `/qualificados` | Grade com busca por nome, vulgo, CPF, nascimento, mãe |
-| `/qualificados/[id]` | Detalhe — foto 300px, upload de foto, re-indexação, excluir |
-| `/qualificados/novo` | Formulário para cadastrar manualmente |
-| `/indexacao` | Stats + lista "sem foto" + lista "sem rosto" + botão "Rodar agora" (worker contínuo Railway) |
-| `/login` | Login com usuário (sem @) |
 
 ## Página de Indexação (/indexacao)
 - **Cobertura**: indexados ÷ qualificados com foto (exclui sem foto do denominador)
@@ -271,31 +271,36 @@ Canal interno embarcado no dashboard. **Não expor publicamente.**
 - Tabela: `dev_chat_messages` (migration 006 — já aplicada)
 - Requer `ANTHROPIC_API_KEY` com créditos para respostas automáticas via Claude Haiku
 
-## Integração Google Drive
+## Importação de fotos locais
 
 **Componente:** `src/components/DriveImport.tsx` — na página `/indexacao`
 
 **Como usar:**
-1. Cole links ou IDs do Google Drive na textarea (um por linha) — aceita link de pasta, link de arquivo ou ID puro
-2. Marque "Escanear subpastas automaticamente" para processar subpastas recursivamente (ativado por padrão)
-3. Clique em Importar
+1. Selecionar Pasta — abre seletor de pasta do computador (webkitdirectory)
+2. Selecionar Fotos — abre seletor de arquivos individuais
+3. Drag & drop de arquivos/pastas na zona de drop
 
-**Fluxo de importação (`POST /api/drive/import`):**
-- Recebe `{ folderIds: string[], recursive: boolean }`
-- Detecta automaticamente se cada ID é pasta ou arquivo individual (via `mimeType` da API do Drive)
-- Para cada imagem: Claude Haiku (OCR via visão) extrai `nome`, `vulgo`, `cpf`, `nascimento`, `genitora`
-- Skipa fotos onde Claude não consegue identificar o `nome` (contador `sem_dados`)
-- Faz upload para Storage em `faces/drive/<file_id>/<filename>`
-- Insere em `qualificados` com `fonte: "drive"`, `fonte_id: <file_id>` (evita duplicatas)
-- Gera embedding facial via face-service Railway
-- Retorna `{ imported, skipped, sem_dados }`
+**Fluxo de importação (`POST /api/drive/local-import`):**
+- Autenticado via header `x-import-token: <IBIS_IMPORT_TOKEN>` (hardcoded no componente)
+- Antes do upload: **redimensiona para max 1600px em JPEG 88%** via canvas do browser (resolve fotos de 5MB+ que causavam falha no OCR)
+- Deduplicação por SHA-256 do buffer já redimensionado
+- OCR via **Claude Sonnet 4.6** (modelo: `claude-sonnet-4-6`) — extrai: `nome`, `vulgo`, `cpf`, `rg`, `nascimento`, `genitora`, `cidade`, `uf`, `artigos`, `faccao`, `observacoes`
+- Skipa apenas se não encontrar `nome` (`{ status: "sem_dados" }`)
+- Upload para Storage em `faces/drive/local/<hash>/<filename>`
+- Insere com `fonte: "local_drive"`, `fonte_id: <hash>`
+- Indexa rostos via face-service Railway
 
-**Página `/qualificados/[id]` para fonte `"drive"`:**
-- Campos de dados (nome, CPF, nascimento, mãe, vulgo) **não são exibidos** abaixo da foto
-- A foto já contém o texto sobreposto com esses dados — evita duplicação visual
-- Busca por nome/vulgo/CPF continua funcionando (dados salvos no banco normalmente)
+> **OCR engine**: usa **Gemini 2.0 Flash Exp** (`@google/generative-ai`, modelo `gemini-2.0-flash-exp`) — gratuito. Chave `GEMINI_API_KEY` já configurada no Vercel. NÃO usa mais Anthropic para OCR.
+> **Atenção modelo Gemini**: `gemini-1.5-flash` retorna 404 Not Found na v1beta com essa chave. Usar `gemini-2.0-flash-exp`. Se mudar de chave, verificar quais modelos estão disponíveis.
 
-> **`@anthropic-ai/sdk`** deve estar em `dependencies` do `package.json`. Estava ausente originalmente — já corrigido.
+> **OCR troubleshooting**: se retornar "sem dados", abrir DevTools → Console → a linha `[OCR sem_dados]` mostra o erro real (ex: chave inválida, quota excedida). O Anthropic API foi descartado para OCR pois exige créditos pagos — Gemini é a alternativa gratuita.
+
+**Sync automático do Google Drive** (`/api/drive/auto-sync`):
+- Tabela `drive_sync_folders` armazena IDs de pastas do Drive para sync
+- Cron Vercel dispara diariamente às 4h UTC
+- Requer `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` no Vercel (ainda não configurado)
+
+> **`@anthropic-ai/sdk`** deve estar em `dependencies` do `package.json`. Já corrigido.
 
 ## Integração IBIS (ibis.app.br)
 
@@ -335,7 +340,6 @@ Depois: `node scripts/clear-ibis-storage.js`
 ## Componentes principais
 | Componente | Função |
 |------------|--------|
-| `BackfillButton.tsx` | (legado — substituído por BackfillStatus na página de indexação) |
 | `BackfillStatus.tsx` | Status da indexação + botão "Rodar agora" manual |
 | `SemFotoList.tsx` | Lista expansível de qualificados sem foto |
 | `SemRostoList.tsx` | Lista expansível de qualificados sem rosto + botão Limpar |
@@ -343,10 +347,44 @@ Depois: `node scripts/clear-ibis-storage.js`
 | `IndexButton.tsx` | Re-indexa um qualificado individual |
 | `DeleteButton.tsx` | Remove qualificado + embeddings + foto (confirmação dupla) |
 | `FaceSearch.tsx` | Busca facial com detecção automática e bbox overlay |
-| `ComparisonModal.tsx` | Modal de comparação lado a lado |
-| `QualificadosSearch.tsx` | Filtro client-side em tempo real na grade |
+| `ComparisonModal.tsx` | Modal comparação — "Abrir no Drive" para source=drive, "Ver no Banco Bruno" para qualificados Bruno |
+| `QualificadosSearch.tsx` | Busca local + Banco Bruno simultânea; Drive Bruno abre lightbox ao clicar |
 | `DevChat.tsx` | Chat flutuante de desenvolvimento |
-| `DriveImport.tsx` | Importação Google Drive com OCR — textarea multi-ID, checkbox subpastas |
+| `DriveImport.tsx` | Import de fotos do computador — pasta/individual/drag-drop, resize canvas, OCR Sonnet |
+| `BancoParceiros.tsx` | Dashboard: stats do Banco Bruno (parceiro) — pessoas, faces, drives |
+| `TotalQualificados.tsx` | Contador combinado: "X registros + Y bancos parceiros" na página de qualificados |
+
+## Integração Banco Bruno (MCP)
+
+Bruno é um parceiro que tem seu próprio banco de qualificados + Drive com fotos. A integração é **bidirecional** via MCP (HTTP JSON-RPC).
+
+### Nosso sistema → Banco Bruno
+- URL do MCP Bruno: `BRUNO_MCP_URL` nas env vars da Vercel
+- `/api/banco-bruno/search?q=` — proxy para `search_text` de Bruno; retorna `{ matches, drive_files }`
+- `/api/banco-bruno/status` — proxy para `get_banco_status`; retorna stats do banco dele
+- `/api/face/search` — chama `search_face` de Bruno em paralelo com nossa busca local
+- Página `/qualificados/bruno/[id]` — detalhe de qualificado do banco de Bruno (via `get_qualificado`)
+- Resultados Bruno aparecem na busca de qualificados com badge âmbar **BANCO BRUNO**
+- Resultados Drive de Bruno aparecem com badge azul **DRIVE BRUNO** — clicar abre lightbox (não navega)
+
+### Banco Bruno → Nosso sistema
+- `/api/mcp/banco` — nosso servidor MCP que Bruno acessa
+- Ferramentas expostas: `search_text` (Supabase + Google Drive), `get_qualificado`, `search_face`, `get_banco_status`
+- Autenticado via `IBIS_IMPORT_TOKEN`
+
+> **Cache Vercel**: todas as chamadas fetch para Bruno DEVEM ter `cache: "no-store"`. O Next.js 14 cacheia fetches server-side mesmo com `force-dynamic`.
+
+## Páginas
+| Rota | Descrição |
+|------|-----------|
+| `/` | Dashboard — stats locais + stats Banco Bruno parceiro |
+| `/busca` | Busca facial — local + Bruno em paralelo |
+| `/qualificados` | Grade com busca local + Bruno simultânea; lightbox para Drive Bruno |
+| `/qualificados/[id]` | Detalhe — foto 300px, upload de foto, re-indexação, excluir |
+| `/qualificados/novo` | Formulário para cadastrar manualmente |
+| `/qualificados/bruno/[id]` | Detalhe de qualificado do Banco Bruno (via MCP `get_qualificado`) |
+| `/indexacao` | Stats + import local de fotos + sync Drive + worker status |
+| `/login` | Login com usuário (sem @) |
 
 ## Branch de desenvolvimento
 `claude/check-github-access-v30TG`
