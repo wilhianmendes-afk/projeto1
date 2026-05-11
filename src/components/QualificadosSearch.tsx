@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
 interface Qualificado {
@@ -179,73 +179,51 @@ function LightboxDrive({ f, onClose }: { f: BrunoDriveFile; onClose: () => void 
 
 export default function QualificadosSearch({ initialData, totalCount }: QualificadosSearchProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [localResults, setLocalResults] = useState<Qualificado[] | null>(null);
+  const [localLoading, setLocalLoading] = useState(false);
   const [brunoResults, setBrunoResults] = useState<BrunoMatch[]>([]);
   const [brunoDrive, setBrunoDrive] = useState<BrunoDriveFile[]>([]);
   const [brunoLoading, setBrunoLoading] = useState(false);
   const [lightbox, setLightbox] = useState<BrunoDriveFile | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const filteredLocal = useMemo(() => {
-    if (!searchTerm.trim()) return initialData;
-
-    const term = searchTerm.toLowerCase().trim();
-    let dateSearchVariations: string[] = [];
-
-    if (/^\d+$/.test(term)) {
-      if (term.length === 8) {
-        const dd = term.substring(0, 2);
-        const mm = term.substring(2, 4);
-        const yyyy = term.substring(4, 8);
-        dateSearchVariations = [`${yyyy}-${mm}-${dd}`, `${dd}/${mm}/${yyyy}`];
-      }
-    } else if (term.includes("/")) {
-      const parts = term.split("/");
-      if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
-        const [dd, mm, yyyy] = parts;
-        dateSearchVariations = [`${yyyy}-${mm}-${dd}`, `${dd}/${mm}/${yyyy}`];
-      }
-    }
-
-    return initialData.filter((q) =>
-      q.nome.toLowerCase().includes(term) ||
-      q.vulgo?.toLowerCase().includes(term) ||
-      q.cpf?.includes(term) ||
-      q.genitora?.toLowerCase().includes(term) ||
-      q.nascimento?.includes(term) ||
-      q.observacoes?.toLowerCase().includes(term) ||
-      dateSearchVariations.some((d) => q.nascimento?.includes(d) || q.observacoes?.includes(d))
-    );
-  }, [searchTerm, initialData]);
+  // Sem pesquisa: mostra initialData; com pesquisa: mostra resultado da API (sem limite de 1000)
+  const filteredLocal = searchTerm.trim().length >= 2
+    ? (localResults ?? [])
+    : initialData;
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const term = searchTerm.trim();
 
     if (term.length < 2) {
+      setLocalResults(null);
       setBrunoResults([]);
       setBrunoDrive([]);
       return;
     }
 
     debounceRef.current = setTimeout(async () => {
+      setLocalLoading(true);
       setBrunoLoading(true);
-      try {
-        const res = await fetch(`/api/banco-bruno/search?q=${encodeURIComponent(term)}`);
-        const data = await res.json() as { matches: BrunoMatch[]; drive_files: BrunoDriveFile[] };
 
-        // Deduplica matches: remove quem já está no banco local (por CPF)
-        const localCpfs = new Set(initialData.map((q) => q.cpf).filter(Boolean));
-        const novosDoBruno = (data.matches ?? []).filter(
-          (m) => !m.cpf || !localCpfs.has(m.cpf)
-        );
-        setBrunoResults(novosDoBruno);
-        setBrunoDrive(data.drive_files ?? []);
-      } catch {
-        setBrunoResults([]);
-        setBrunoDrive([]);
-      } finally {
-        setBrunoLoading(false);
-      }
+      // Busca local server-side (sem limite de 1000 do Supabase)
+      fetch(`/api/qualificados/search?q=${encodeURIComponent(term)}`)
+        .then(r => r.json())
+        .then((data: Qualificado[]) => setLocalResults(data ?? []))
+        .catch(() => setLocalResults([]))
+        .finally(() => setLocalLoading(false));
+
+      // Busca Bruno em paralelo
+      fetch(`/api/banco-bruno/search?q=${encodeURIComponent(term)}`)
+        .then(r => r.json())
+        .then((data: { matches: BrunoMatch[]; drive_files: BrunoDriveFile[] }) => {
+          const localCpfs = new Set(initialData.map((q) => q.cpf).filter(Boolean));
+          setBrunoResults((data.matches ?? []).filter(m => !m.cpf || !localCpfs.has(m.cpf)));
+          setBrunoDrive(data.drive_files ?? []);
+        })
+        .catch(() => { setBrunoResults([]); setBrunoDrive([]); })
+        .finally(() => setBrunoLoading(false));
     }, 400);
   }, [searchTerm, initialData]);
 
@@ -265,7 +243,9 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
       {/* Resultados do banco local */}
       {isSearching ? (
         <p className="text-gray-400 text-sm mb-4">
-          {filteredLocal.length} no banco local
+          {localLoading
+            ? "buscando..."
+            : `${filteredLocal.length} no banco local`}
           {brunoLoading
             ? " · buscando no Banco Bruno..."
             : (brunoResults.length > 0 || brunoDrive.length > 0)
