@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -18,45 +18,40 @@ function getAdminClient() {
 
 async function ocr(buffer: Buffer, mimeType: string) {
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const mime = (["image/jpeg","image/png","image/gif","image/webp"].includes(mimeType)
-      ? mimeType : "image/jpeg") as "image/jpeg"|"image/png"|"image/gif"|"image/webp";
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
-    const msg = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mime, data: buffer.toString("base64") } },
-          { type: "text", text: `Extraia os dados pessoais visíveis nesta imagem. Pode ser uma foto com texto sobreposto, legenda, placa ou qualquer texto escrito na imagem com dados de uma pessoa.
+    const validMime = ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)
+      ? mimeType : "image/jpeg";
 
-Retorne APENAS este JSON (use null para campos não encontrados):
-{
-  "nome": "NOME COMPLETO",
-  "vulgo": "apelido/alcunha",
-  "cpf": "000.000.000-00",
-  "rg": "número do RG",
-  "nascimento": "DD/MM/AAAA",
-  "genitora": "NOME DA MÃE (campo GN ou genitora ou mãe)",
-  "cidade": "cidade",
-  "uf": "sigla do estado",
-  "artigos": "artigos penais se mencionados",
-  "faccao": "facção/organização criminosa se mencionada",
-  "observacoes": "demais informações: situação, endereço, passagens, unidade policial etc"
-}
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          data: buffer.toString("base64"),
+          mimeType: validMime,
+        },
+      },
+      `Leia TODO o texto visível nesta imagem, incluindo legendas, rodapé e qualquer área de texto. Extraia dados pessoais de uma pessoa. Pode ser: ficha policial, foto de abordagem/prisão com legenda na parte inferior, documento com foto, ou qualquer imagem com dados escritos.
 
-Se não houver nenhum dado pessoal visível, retorne: {"nome": null}
+Mapeamento dos campos:
+- nome = nome civil completo da pessoa (primeira linha sem prefixo, ou após "NOME:" / "AUTUADO:")
+- vulgo = pode estar como VULGO, ALCUNHA, APELIDO ou como segundo nome popular
+- nascimento = data de nascimento, pode estar como DN, DN:, DATA NASC, NASCIMENTO (formato DD/MM/AAAA)
+- genitora = nome da mãe, pode estar como GN (quando indica genitora), MÃE, GENITORA, NOME DA MÃE
+- vulgo também pode estar como GN (quando indica guerra nome/alcunha) — use o contexto para distinguir
 
-Responda SOMENTE com o JSON, sem markdown nem explicação.` },
-        ],
-      }],
-    });
+Retorne APENAS JSON válido sem markdown:
+{"nome":"NOME COMPLETO","vulgo":null,"cpf":null,"rg":null,"nascimento":null,"genitora":null,"cidade":null,"uf":null,"artigos":null,"faccao":null,"observacoes":null}
 
-    const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "{}";
-    return JSON.parse(text.replace(/```json?\n?|\n?```/g, "").trim());
-  } catch {
-    return { e_qualificado: false };
+Se não houver nenhum nome de pessoa visível, retorne: {"nome":null}`,
+    ]);
+
+    const raw = result.response.text();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return { nome: null, _ocr_raw: raw.slice(0, 300) };
+    return { ...JSON.parse(match[0]), _ocr_raw: raw.slice(0, 300) };
+  } catch (err) {
+    return { nome: null, _ocr_error: String(err) };
   }
 }
 
@@ -92,11 +87,30 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "image/jpeg";
 
-  // OCR + detecção se é qualificado
-  const dados = await ocr(buffer, mimeType);
+  // Dados manuais têm prioridade sobre OCR (bypass quando nome já vem no form)
+  const nomeManual = (formData.get("nome") as string | null)?.trim() || null;
+  const dados = nomeManual
+    ? {
+        nome: nomeManual,
+        vulgo: (formData.get("vulgo") as string | null)?.trim() || null,
+        nascimento: (formData.get("nascimento") as string | null)?.trim() || null,
+        genitora: (formData.get("genitora") as string | null)?.trim() || null,
+        rg: (formData.get("rg") as string | null)?.trim() || null,
+        cpf: (formData.get("cpf") as string | null)?.trim() || null,
+        cidade: null,
+        uf: null,
+        faccao: null,
+        artigos: null,
+        observacoes: (formData.get("observacoes") as string | null)?.trim() || null,
+      }
+    : await ocr(buffer, mimeType);
 
   if (!dados.nome) {
-    return NextResponse.json({ status: "sem_dados", reason: "no_name_found" });
+    return NextResponse.json({
+      status: "sem_dados",
+      reason: dados._ocr_error ?? "no_name_found",
+      ocr_raw: dados._ocr_raw ?? null,
+    });
   }
 
   // Upload para Storage

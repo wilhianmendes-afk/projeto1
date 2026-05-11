@@ -13,6 +13,19 @@ interface Progresso {
   nomeAtual: string;
 }
 
+interface PendenteFoto {
+  blob: Blob;
+  hash: string;
+  fileName: string;
+  previewUrl: string;
+  status: "pendente" | "importando" | "importada" | "erro";
+  nome: string;
+  vulgo: string;
+  nascimento: string;
+  genitora: string;
+  erroMsg?: string;
+}
+
 const EXTENSOES_IMG = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp"]);
 
 function ehImagem(nome: string) {
@@ -24,10 +37,35 @@ async function sha256(buffer: ArrayBuffer) {
   return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
 }
 
+// Redimensiona para max 1600px e converte para JPEG — reduz arquivo de 5MB+ para <600KB
+async function resizeParaOcr(file: File): Promise<Blob> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX = 1600;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
+        else { width = Math.round(width * MAX / height); height = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => resolve(blob ?? file), "image/jpeg", 0.88);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 export default function DriveImport() {
   const [progresso, setProgresso] = useState<Progresso | null>(null);
   const [rodando, setRodando] = useState(false);
   const [concluido, setConcluido] = useState(false);
+  const [pendentes, setPendentes] = useState<PendenteFoto[]>([]);
 
   const pastaRef  = useRef<HTMLInputElement>(null);
   const fotosRef  = useRef<HTMLInputElement>(null);
@@ -46,6 +84,7 @@ export default function DriveImport() {
     setProgresso({ total: imagens.length, atual: 0, importadas: 0, puladas: 0, semDados: 0, erros: 0, nomeAtual: "" });
 
     let importadas = 0, puladas = 0, semDados = 0, erros = 0;
+    const novasPendentes: PendenteFoto[] = [];
 
     for (let i = 0; i < imagens.length; i++) {
       if (abortRef.current) break;
@@ -54,11 +93,12 @@ export default function DriveImport() {
       setProgresso(p => p ? { ...p, atual: i + 1, nomeAtual: file.name } : p);
 
       try {
-        const buffer = await file.arrayBuffer();
+        const blob   = await resizeParaOcr(file);
+        const buffer = await blob.arrayBuffer();
         const hash   = await sha256(buffer);
 
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", new File([blob], file.name, { type: "image/jpeg" }));
         form.append("file_hash", hash);
         form.append("file_name", file.name);
 
@@ -71,7 +111,23 @@ export default function DriveImport() {
 
         if      (data.status === "imported")  importadas++;
         else if (data.status === "skipped")   puladas++;
-        else if (data.status === "sem_dados") semDados++;
+        else if (data.status === "sem_dados") {
+          semDados++;
+          if (data.reason || data.ocr_raw) {
+            console.warn(`[OCR sem_dados] ${file.name}`, { reason: data.reason, ocr_raw: data.ocr_raw });
+          }
+          novasPendentes.push({
+            blob,
+            hash,
+            fileName: file.name,
+            previewUrl: URL.createObjectURL(blob),
+            status: "pendente",
+            nome: "",
+            vulgo: "",
+            nascimento: "",
+            genitora: "",
+          });
+        }
         else                                   erros++;
 
       } catch { erros++; }
@@ -80,6 +136,7 @@ export default function DriveImport() {
       await new Promise(r => setTimeout(r, 300));
     }
 
+    setPendentes(prev => [...prev, ...novasPendentes]);
     setRodando(false);
     setConcluido(true);
   }
@@ -96,11 +153,51 @@ export default function DriveImport() {
   function reiniciar() {
     setConcluido(false);
     setProgresso(null);
+    setPendentes(prev => { prev.forEach(p => URL.revokeObjectURL(p.previewUrl)); return []; });
     if (pastaRef.current) pastaRef.current.value = "";
     if (fotosRef.current) fotosRef.current.value = "";
   }
 
+  function atualizarPendente(index: number, campo: keyof PendenteFoto, valor: string) {
+    setPendentes(prev => prev.map((p, i) => i === index ? { ...p, [campo]: valor } : p));
+  }
+
+  async function importarManual(index: number) {
+    const p = pendentes[index];
+    if (!p.nome.trim()) return;
+
+    setPendentes(prev => prev.map((item, i) => i === index ? { ...item, status: "importando" } : item));
+
+    try {
+      const form = new FormData();
+      form.append("file", new File([p.blob], p.fileName, { type: "image/jpeg" }));
+      form.append("file_hash", p.hash);
+      form.append("file_name", p.fileName);
+      form.append("nome", p.nome.trim());
+      if (p.vulgo.trim())      form.append("vulgo", p.vulgo.trim());
+      if (p.nascimento.trim()) form.append("nascimento", p.nascimento.trim());
+      if (p.genitora.trim())   form.append("genitora", p.genitora.trim());
+
+      const res  = await fetch("/api/drive/local-import", {
+        method: "POST",
+        headers: { "x-import-token": "Z2XTlF4YgnICGN-u_o8jIsFFXX5WpHgvfHiRlfXpebs" },
+        body: form,
+      });
+      const data = await res.json();
+
+      if (data.status === "imported" || data.status === "skipped") {
+        setPendentes(prev => prev.map((item, i) => i === index ? { ...item, status: "importada" } : item));
+        setProgresso(prev => prev ? { ...prev, importadas: prev.importadas + (data.status === "imported" ? 1 : 0), semDados: Math.max(0, prev.semDados - 1) } : prev);
+      } else {
+        setPendentes(prev => prev.map((item, i) => i === index ? { ...item, status: "erro", erroMsg: data.error ?? "Erro desconhecido" } : item));
+      }
+    } catch (err) {
+      setPendentes(prev => prev.map((item, i) => i === index ? { ...item, status: "erro", erroMsg: String(err) } : item));
+    }
+  }
+
   const pct = progresso ? Math.round((progresso.atual / progresso.total) * 100) : 0;
+  const pendentesAtivos = pendentes.filter(p => p.status !== "importada");
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -204,6 +301,86 @@ export default function DriveImport() {
             </button>
           )}
         </>
+      )}
+
+      {/* Fotos sem dados — formulário manual */}
+      {pendentesAtivos.length > 0 && (
+        <div className="mt-5 border-t border-gray-800 pt-4">
+          <p className="text-yellow-400 text-sm font-semibold mb-3">
+            Fotos sem dados extraídos ({pendentesAtivos.length}) — preencha manualmente
+          </p>
+          <div className="space-y-4">
+            {pendentes.map((p, i) => {
+              if (p.status === "importada") return null;
+              return (
+                <div key={p.hash} className="bg-gray-800 rounded-xl p-4 flex gap-4">
+                  {/* Preview da foto */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.previewUrl}
+                    alt={p.fileName}
+                    className="w-24 h-24 object-cover rounded-lg flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-400 text-xs truncate mb-2">{p.fileName}</p>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <div className="col-span-2">
+                        <input
+                          type="text"
+                          placeholder="Nome completo *"
+                          value={p.nome}
+                          onChange={e => atualizarPendente(i, "nome", e.target.value)}
+                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                          disabled={p.status === "importando"}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Vulgo / alcunha"
+                        value={p.vulgo}
+                        onChange={e => atualizarPendente(i, "vulgo", e.target.value)}
+                        className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                        disabled={p.status === "importando"}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Nascimento DD/MM/AAAA"
+                        value={p.nascimento}
+                        onChange={e => atualizarPendente(i, "nascimento", e.target.value)}
+                        className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                        disabled={p.status === "importando"}
+                      />
+                      <div className="col-span-2">
+                        <input
+                          type="text"
+                          placeholder="Genitora / GN"
+                          value={p.genitora}
+                          onChange={e => atualizarPendente(i, "genitora", e.target.value)}
+                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                          disabled={p.status === "importando"}
+                        />
+                      </div>
+                    </div>
+                    {p.status === "erro" && (
+                      <p className="text-red-400 text-xs mb-2">{p.erroMsg}</p>
+                    )}
+                    <button
+                      onClick={() => importarManual(i)}
+                      disabled={!p.nome.trim() || p.status === "importando"}
+                      className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                    >
+                      {p.status === "importando" ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> Importando…</>
+                      ) : (
+                        <><CheckCircle className="w-3 h-3" /> Importar</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );
