@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   const supabase = getAdminClient();
 
   // Tenta obter o nome da pasta no Drive
-  let folderName = null;
+  let folderName: string | null = null;
   if (process.env.GOOGLE_REFRESH_TOKEN) {
     try {
       const auth = new google.auth.OAuth2(
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
       const drive = google.drive({ version: "v3", auth });
       const meta = await drive.files.get({ fileId: folderId, fields: "name, mimeType" });
-      folderName = meta.data.name;
+      folderName = meta.data.name ?? null;
     } catch { /* sem credenciais ou pasta inacessível */ }
   }
 

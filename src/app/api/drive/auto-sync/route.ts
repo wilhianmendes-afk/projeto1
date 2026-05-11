@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, message: "Nenhuma pasta configurada." });
   }
 
-  const results = [];
+  const results: Array<{ folder_id: string; imported?: number; skipped?: number; sem_dados?: number; error?: string }> = [];
 
   for (const folder of folders) {
     const lastSynced = folder.last_synced_at ? new Date(folder.last_synced_at) : null;
