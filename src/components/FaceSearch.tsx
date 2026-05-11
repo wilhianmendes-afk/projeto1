@@ -9,6 +9,7 @@ interface BBox { x: number; y: number; w: number; h: number }
 
 interface SearchResult {
   source_id: string;
+  source?: string;
   photo_url: string;
   similarity: number;
   det_score: number;

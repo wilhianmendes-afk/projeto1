@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 
 interface SearchResult {
   source_id: string;
+  source?: string;
   photo_url: string;
   similarity: number;
   det_score: number;
@@ -167,12 +168,24 @@ export default function ComparisonModal({
         {/* Footer */}
         <div className="border-t border-gray-700 px-6 py-4 flex-shrink-0 flex gap-3">
           {result.from_bruno && result.bruno_id && (
-            <a
-              href={`/qualificados/bruno/${result.bruno_id}`}
-              className="flex-1 bg-amber-700 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-center text-sm"
-            >
-              Ver no Banco Bruno
-            </a>
+            result.source === "drive"
+              ? (
+                <a
+                  href={`https://drive.google.com/file/d/${result.bruno_id}/view`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-center text-sm"
+                >
+                  Abrir no Drive
+                </a>
+              ) : (
+                <a
+                  href={`/qualificados/bruno/${result.bruno_id}`}
+                  className="flex-1 bg-amber-700 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-center text-sm"
+                >
+                  Ver no Banco Bruno
+                </a>
+              )
           )}
           <button
             onClick={onClose}
