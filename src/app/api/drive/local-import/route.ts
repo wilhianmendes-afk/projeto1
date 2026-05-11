@@ -29,7 +29,26 @@ async function ocr(buffer: Buffer, mimeType: string) {
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: mime, data: buffer.toString("base64") } },
-          { type: "text", text: `Esta foto é uma ficha de qualificado policial? Se sim, extraia os dados visíveis. Retorne APENAS um JSON: { "e_qualificado": true/false, "nome": null, "vulgo": null, "cpf": null, "nascimento": null, "genitora": null }. Use null para campos não encontrados. Sem markdown.` },
+          { type: "text", text: `Extraia os dados pessoais visíveis nesta imagem. Pode ser uma foto com texto sobreposto, legenda, placa ou qualquer texto escrito na imagem com dados de uma pessoa.
+
+Retorne APENAS este JSON (use null para campos não encontrados):
+{
+  "nome": "NOME COMPLETO",
+  "vulgo": "apelido/alcunha",
+  "cpf": "000.000.000-00",
+  "rg": "número do RG",
+  "nascimento": "DD/MM/AAAA",
+  "genitora": "NOME DA MÃE (campo GN ou genitora ou mãe)",
+  "cidade": "cidade",
+  "uf": "sigla do estado",
+  "artigos": "artigos penais se mencionados",
+  "faccao": "facção/organização criminosa se mencionada",
+  "observacoes": "demais informações: situação, endereço, passagens, unidade policial etc"
+}
+
+Se não houver nenhum dado pessoal visível, retorne: {"nome": null}
+
+Responda SOMENTE com o JSON, sem markdown nem explicação.` },
         ],
       }],
     });
@@ -76,8 +95,8 @@ export async function POST(req: NextRequest) {
   // OCR + detecção se é qualificado
   const dados = await ocr(buffer, mimeType);
 
-  if (!dados.e_qualificado || !dados.nome) {
-    return NextResponse.json({ status: "sem_dados", reason: "not_a_qualificado_or_no_name" });
+  if (!dados.nome) {
+    return NextResponse.json({ status: "sem_dados", reason: "no_name_found" });
   }
 
   // Upload para Storage
@@ -92,15 +111,26 @@ export async function POST(req: NextRequest) {
 
   const { data: { publicUrl } } = supabase.storage.from("faces").getPublicUrl(storagePath);
 
-  // Insere qualificado
+  // Monta observações completas com facção e artigos se não tiverem campo próprio
+  const obsPartes: string[] = [];
+  if (dados.faccao)     obsPartes.push(`Facção: ${dados.faccao}`);
+  if (dados.artigos)    obsPartes.push(`Artigos: ${dados.artigos}`);
+  if (dados.observacoes) obsPartes.push(dados.observacoes);
+  const observacoesFinal = obsPartes.join("\n") || null;
+
+  // Insere qualificado com todos os campos extraídos
   const { data: qualificado, error: insertError } = await supabase
     .from("qualificados")
     .insert({
       nome: dados.nome,
       vulgo: dados.vulgo ?? null,
       cpf: dados.cpf ?? null,
+      rg: dados.rg ?? null,
       nascimento: dados.nascimento ?? null,
       genitora: dados.genitora ?? null,
+      cidade: dados.cidade ?? null,
+      uf: dados.uf ?? null,
+      observacoes: observacoesFinal,
       foto_url: publicUrl,
       fonte: "local_drive",
       fonte_id: fileHash,
@@ -143,6 +173,9 @@ export async function POST(req: NextRequest) {
     status: "imported",
     id: qualificado.id,
     nome: dados.nome,
-    vulgo: dados.vulgo,
+    vulgo: dados.vulgo ?? null,
+    cpf: dados.cpf ?? null,
+    nascimento: dados.nascimento ?? null,
+    cidade: dados.cidade ?? null,
   });
 }
