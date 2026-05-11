@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Anthropic from "@anthropic-ai/sdk";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -18,35 +18,41 @@ function getAdminClient() {
 
 async function ocr(buffer: Buffer, mimeType: string) {
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const validMime = (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)
+      ? mimeType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
-    const validMime = ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)
-      ? mimeType : "image/jpeg";
+    const msg = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: validMime, data: buffer.toString("base64") },
+          },
+          {
+            type: "text",
+            text: `Leia TODO o texto visível nesta imagem — incluindo legenda, rodapé e qualquer área de texto fora da foto principal. Extraia dados pessoais de uma pessoa.
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          data: buffer.toString("base64"),
-          mimeType: validMime,
-        },
-      },
-      `Leia TODO o texto visível nesta imagem, incluindo legendas, rodapé e qualquer área de texto. Extraia dados pessoais de uma pessoa. Pode ser: ficha policial, foto de abordagem/prisão com legenda na parte inferior, documento com foto, ou qualquer imagem com dados escritos.
-
-Mapeamento dos campos:
-- nome = nome civil completo da pessoa (primeira linha sem prefixo, ou após "NOME:" / "AUTUADO:")
-- vulgo = pode estar como VULGO, ALCUNHA, APELIDO ou como segundo nome popular
-- nascimento = data de nascimento, pode estar como DN, DN:, DATA NASC, NASCIMENTO (formato DD/MM/AAAA)
-- genitora = nome da mãe, pode estar como GN (quando indica genitora), MÃE, GENITORA, NOME DA MÃE
-- vulgo também pode estar como GN (quando indica guerra nome/alcunha) — use o contexto para distinguir
+Regras de mapeamento:
+- nome = nome civil completo (primeira linha sem prefixo, ou após NOME: / AUTUADO:)
+- vulgo = apelido/alcunha (VULGO:, ALCUNHA:, APELIDO:)
+- nascimento = data de nascimento (DN:, DATA NASC:) — formato DD/MM/AAAA
+- genitora = nome da mãe (GN:, MÃE:, GENITORA:)
+- cpf, rg, cidade, uf, artigos, faccao, observacoes = outros dados se presentes
 
 Retorne APENAS JSON válido sem markdown:
-{"nome":"NOME COMPLETO","vulgo":null,"cpf":null,"rg":null,"nascimento":null,"genitora":null,"cidade":null,"uf":null,"artigos":null,"faccao":null,"observacoes":null}
+{"nome":null,"vulgo":null,"cpf":null,"rg":null,"nascimento":null,"genitora":null,"cidade":null,"uf":null,"artigos":null,"faccao":null,"observacoes":null}
 
 Se não houver nenhum nome de pessoa visível, retorne: {"nome":null}`,
-    ]);
+          },
+        ],
+      }],
+    });
 
-    const raw = result.response.text();
+    const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return { nome: null, _ocr_raw: raw.slice(0, 300) };
     return { ...JSON.parse(match[0]), _ocr_raw: raw.slice(0, 300) };
