@@ -1,6 +1,7 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import BackfillStatus from "@/components/BackfillStatus";
 import DriveImport from "@/components/DriveImport";
+import DriveSyncConfig from "@/components/DriveSyncConfig";
 import SemFotoList from "@/components/SemFotoList";
 import SemRostoList from "@/components/SemRostoList";
 import { CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
@@ -58,6 +59,10 @@ export default async function IndexacaoPage() {
         </div>
 
         <DriveImport />
+      </div>
+
+      <div className="mb-6">
+        <DriveSyncConfig />
       </div>
     </div>
   );
