@@ -24,7 +24,7 @@ async function ocr(buffer: Buffer, mimeType: string) {
 
     const msg = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 400,
+      max_tokens: 600,
       messages: [{
         role: "user",
         content: [
@@ -34,19 +34,15 @@ async function ocr(buffer: Buffer, mimeType: string) {
           },
           {
             type: "text",
-            text: `Leia TODO o texto visível nesta imagem — incluindo legenda, rodapé e qualquer área de texto fora da foto principal. Extraia dados pessoais de uma pessoa.
-
-Regras de mapeamento:
-- nome = nome civil completo (primeira linha sem prefixo, ou após NOME: / AUTUADO:)
-- vulgo = apelido/alcunha (VULGO:, ALCUNHA:, APELIDO:)
-- nascimento = data de nascimento (DN:, DATA NASC:) — formato DD/MM/AAAA
-- genitora = nome da mãe (GN:, MÃE:, GENITORA:)
-- cpf, rg, cidade, uf, artigos, faccao, observacoes = outros dados se presentes
+            text: `Transcreva LITERALMENTE todo o texto visível nesta imagem (legendas, rodapé, qualquer área de texto).
 
 Retorne APENAS JSON válido sem markdown:
-{"nome":null,"vulgo":null,"cpf":null,"rg":null,"nascimento":null,"genitora":null,"cidade":null,"uf":null,"artigos":null,"faccao":null,"observacoes":null}
+{
+  "texto_completo": "todo o texto transcrito linha por linha separado por \\n",
+  "nome": "nome completo da pessoa (linha sem prefixo como GN:, DN:, VULGO:, MÃE:)"
+}
 
-Se não houver nenhum nome de pessoa visível, retorne: {"nome":null}`,
+Se não houver texto algum: {"texto_completo": null, "nome": null}`,
           },
         ],
       }],
@@ -54,10 +50,22 @@ Se não houver nenhum nome de pessoa visível, retorne: {"nome":null}`,
 
     const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "";
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return { nome: null, _ocr_raw: raw.slice(0, 300) };
-    return { ...JSON.parse(match[0]), _ocr_raw: raw.slice(0, 300) };
+    if (!match) return { nome: null, texto_completo: null };
+
+    const parsed = JSON.parse(match[0]);
+    const textoCompleto: string | null = parsed.texto_completo ?? null;
+    let nome: string | null = parsed.nome ?? null;
+
+    // Fallback: se não extraiu nome mas tem texto, usa a primeira linha sem prefixo conhecidos
+    if (!nome && textoCompleto) {
+      const linhas = textoCompleto.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 2);
+      const prefixos = /^(GN:|DN:|MÃE:|MAE:|VULGO:|ALCUNHA:|CPF:|RG:|DATA|NASC|ARTIGO|OBS)/i;
+      nome = linhas.find((l: string) => !prefixos.test(l)) ?? linhas[0] ?? null;
+    }
+
+    return { nome, texto_completo: textoCompleto };
   } catch (err) {
-    return { nome: null, _ocr_error: String(err) };
+    return { nome: null, texto_completo: null, _ocr_error: String(err) };
   }
 }
 
@@ -95,28 +103,24 @@ export async function POST(req: NextRequest) {
 
   // Dados manuais têm prioridade sobre OCR (bypass quando nome já vem no form)
   const nomeManual = (formData.get("nome") as string | null)?.trim() || null;
-  const dados = nomeManual
-    ? {
-        nome: nomeManual,
-        vulgo: (formData.get("vulgo") as string | null)?.trim() || null,
-        nascimento: (formData.get("nascimento") as string | null)?.trim() || null,
-        genitora: (formData.get("genitora") as string | null)?.trim() || null,
-        rg: (formData.get("rg") as string | null)?.trim() || null,
-        cpf: (formData.get("cpf") as string | null)?.trim() || null,
-        cidade: null,
-        uf: null,
-        faccao: null,
-        artigos: null,
-        observacoes: (formData.get("observacoes") as string | null)?.trim() || null,
-      }
-    : await ocr(buffer, mimeType);
 
-  if (!dados.nome) {
-    return NextResponse.json({
-      status: "sem_dados",
-      reason: dados._ocr_error ?? "no_name_found",
-      ocr_raw: dados._ocr_raw ?? null,
-    });
+  let nomeFinal: string;
+  let observacoesFinal: string | null = null;
+
+  if (nomeManual) {
+    nomeFinal = nomeManual;
+    const obsManual = (formData.get("observacoes") as string | null)?.trim() || null;
+    const genitora = (formData.get("genitora") as string | null)?.trim() || null;
+    const nascimento = (formData.get("nascimento") as string | null)?.trim() || null;
+    const vulgo = (formData.get("vulgo") as string | null)?.trim() || null;
+    const partes = [nomeManual, vulgo && `VULGO: ${vulgo}`, nascimento && `DN: ${nascimento}`, genitora && `GN: ${genitora}`, obsManual].filter(Boolean);
+    observacoesFinal = partes.join("\n") || null;
+  } else {
+    const dados = await ocr(buffer, mimeType);
+    // texto_completo vai para observacoes — torna todo o texto da foto pesquisável
+    observacoesFinal = dados.texto_completo ?? null;
+    // Se OCR não extraiu nome mas tem algum texto, ainda importa com texto como fallback
+    nomeFinal = dados.nome ?? observacoesFinal?.split("\n")[0]?.trim() ?? fileName ?? "SEM NOME";
   }
 
   // Upload para Storage
@@ -131,25 +135,11 @@ export async function POST(req: NextRequest) {
 
   const { data: { publicUrl } } = supabase.storage.from("faces").getPublicUrl(storagePath);
 
-  // Monta observações completas com facção e artigos se não tiverem campo próprio
-  const obsPartes: string[] = [];
-  if (dados.faccao)     obsPartes.push(`Facção: ${dados.faccao}`);
-  if (dados.artigos)    obsPartes.push(`Artigos: ${dados.artigos}`);
-  if (dados.observacoes) obsPartes.push(dados.observacoes);
-  const observacoesFinal = obsPartes.join("\n") || null;
-
-  // Insere qualificado com todos os campos extraídos
+  // Insere qualificado — observacoes contém TODO o texto OCR da foto (pesquisável)
   const { data: qualificado, error: insertError } = await supabase
     .from("qualificados")
     .insert({
-      nome: dados.nome,
-      vulgo: dados.vulgo ?? null,
-      cpf: dados.cpf ?? null,
-      rg: dados.rg ?? null,
-      nascimento: dados.nascimento ?? null,
-      genitora: dados.genitora ?? null,
-      cidade: dados.cidade ?? null,
-      uf: dados.uf ?? null,
+      nome: nomeFinal,
       observacoes: observacoesFinal,
       foto_url: publicUrl,
       fonte: "local_drive",
@@ -171,7 +161,7 @@ export async function POST(req: NextRequest) {
         await supabase.from("face_embeddings").insert({
           source: "qualificados",
           source_id: qualificado.id,
-          source_label: dados.nome,
+          source_label: nomeFinal,
           photo_url: publicUrl,
           embedding: JSON.stringify(face.embedding),
           bbox: face.bbox,
@@ -183,7 +173,7 @@ export async function POST(req: NextRequest) {
       await supabase.from("face_skipped").upsert({
         source: "qualificados",
         source_id: qualificado.id,
-        source_label: dados.nome,
+        source_label: nomeFinal,
         reason: "no_face_detected",
       }, { onConflict: "source,source_id" });
     }
@@ -192,10 +182,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     status: "imported",
     id: qualificado.id,
-    nome: dados.nome,
-    vulgo: dados.vulgo ?? null,
-    cpf: dados.cpf ?? null,
-    nascimento: dados.nascimento ?? null,
-    cidade: dados.cidade ?? null,
+    nome: nomeFinal,
   });
 }

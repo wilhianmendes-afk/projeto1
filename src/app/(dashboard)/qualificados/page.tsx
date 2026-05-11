@@ -19,7 +19,7 @@ export default async function QualificadosPage() {
 
   const { data: qualificados, count } = await supabase
     .from("qualificados")
-    .select("id, nome, vulgo, cpf, rg, nascimento, genitora, foto_url, fonte, created_at", { count: "exact" })
+    .select("id, nome, vulgo, cpf, rg, nascimento, genitora, foto_url, fonte, observacoes, created_at", { count: "exact" })
     .is("deleted_at", null)
     .order("nome")
     .limit(100000);

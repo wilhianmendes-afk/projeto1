@@ -11,6 +11,7 @@ interface Qualificado {
   nascimento?: string;
   genitora?: string;
   foto_url?: string;
+  observacoes?: string;
 }
 
 interface BrunoMatch {
@@ -110,19 +111,16 @@ function CardBruno({ m }: { m: BrunoMatch }) {
   );
 }
 
-function CardDrive({ f }: { f: BrunoDriveFile }) {
+function CardDrive({ f, onClick }: { f: BrunoDriveFile; onClick: () => void }) {
   return (
-    <a
-      href={f.web_view_url}
-      target="_blank"
-      rel="noopener noreferrer"
+    <div
+      onClick={onClick}
       style={{
         display: "block",
         borderRadius: "12px",
         border: "2px solid #1d4ed8",
         overflow: "visible",
         position: "relative",
-        textDecoration: "none",
         cursor: "pointer",
       }}
     >
@@ -138,11 +136,44 @@ function CardDrive({ f }: { f: BrunoDriveFile }) {
           </div>
         )}
       </div>
-      <div style={{ background: "#dbeafe", borderRadius: "0 0 10px 10px", padding: "4px 6px", color: "#1e3a8a", fontSize: "9px", lineHeight: "1.3", overflowWrap: "break-word", wordBreak: "break-word" }}>
-        <div style={{ fontWeight: "bold" }}>{f.name}</div>
-        <div style={{ opacity: 0.7 }}>Abrir no Drive</div>
+      <div style={{ background: "#dbeafe", borderRadius: "0 0 10px 10px", padding: "4px 6px", color: "#1e3a8a", fontSize: "9px", lineHeight: "1.3" }}>
+        <div style={{ fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+        <div style={{ opacity: 0.7 }}>Clique para ampliar</div>
       </div>
-    </a>
+    </div>
+  );
+}
+
+function LightboxDrive({ f, onClose }: { f: BrunoDriveFile; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-w-2xl w-full flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between bg-gray-900 rounded-t-xl px-4 py-3">
+          <div>
+            <span className="text-xs font-bold bg-blue-700 text-white px-2 py-0.5 rounded mr-2">DRIVE BRUNO</span>
+            <span className="text-white text-sm font-medium">{f.name}</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
+        </div>
+        <div className="bg-black rounded-b-xl overflow-hidden">
+          {f.thumbnail_url ? (
+            <img
+              src={f.thumbnail_url.replace("=s220", "=s1200")}
+              alt={f.name}
+              style={{ display: "block", width: "100%", maxHeight: "calc(90vh - 60px)", objectFit: "contain" }}
+            />
+          ) : (
+            <p className="text-gray-500 p-8 text-center">Sem preview disponível</p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -151,6 +182,7 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
   const [brunoResults, setBrunoResults] = useState<BrunoMatch[]>([]);
   const [brunoDrive, setBrunoDrive] = useState<BrunoDriveFile[]>([]);
   const [brunoLoading, setBrunoLoading] = useState(false);
+  const [lightbox, setLightbox] = useState<BrunoDriveFile | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filteredLocal = useMemo(() => {
@@ -180,7 +212,8 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
       q.cpf?.includes(term) ||
       q.genitora?.toLowerCase().includes(term) ||
       q.nascimento?.includes(term) ||
-      dateSearchVariations.some((d) => q.nascimento?.includes(d))
+      q.observacoes?.toLowerCase().includes(term) ||
+      dateSearchVariations.some((d) => q.nascimento?.includes(d) || q.observacoes?.includes(d))
     );
   }, [searchTerm, initialData]);
 
@@ -220,6 +253,7 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
 
   return (
     <div>
+      {lightbox && <LightboxDrive f={lightbox} onClose={() => setLightbox(null)} />}
       <input
         type="search"
         placeholder="Buscar por nome, alcunha, CPF, mãe ou data (DD/MM/AAAA ou DDMMAAAA)..."
@@ -249,7 +283,9 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
         {isSearching && brunoResults.map((m) => <CardBruno key={`bruno-${m.id}`} m={m} />)}
 
         {/* Resultados do Drive do Bruno */}
-        {isSearching && brunoDrive.map((f, i) => <CardDrive key={`drive-${i}`} f={f} />)}
+        {isSearching && brunoDrive.map((f, i) => (
+          <CardDrive key={`drive-${i}`} f={f} onClick={() => setLightbox(f)} />
+        ))}
 
         {isSearching && !brunoLoading && filteredLocal.length === 0 && brunoResults.length === 0 && brunoDrive.length === 0 && (
           <p className="col-span-full text-center text-gray-500 py-12">
