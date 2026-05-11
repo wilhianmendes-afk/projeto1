@@ -268,25 +268,35 @@ export default function FaceSearch() {
 
           {(() => {
             const faceDetected = !!response?.query_bbox;
-            const canSearch = !!file && !loading && !detecting && faceDetected;
+            const canSearch = !!file && !loading && !detecting;
+            const fotoBaixaQualidade = !!file && !detecting && !faceDetected;
             const label = !file ? "Buscar"
               : detecting ? "Detectando rosto..."
-              : !faceDetected ? "Nenhum rosto detectado"
               : loading ? "Buscando..."
+              : fotoBaixaQualidade ? "Buscar mesmo assim (foto ruim)"
               : "Buscar";
             return (
-              <button
-                onClick={() => file && runSearch(file, threshold)}
-                disabled={!canSearch}
-                className={`w-full py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
-                  canSearch
-                    ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-                    : "bg-gray-700 text-gray-500 cursor-not-allowed"
-                }`}
-              >
-                {(loading || detecting) && <Loader2 className="w-4 h-4 animate-spin" />}
-                {label}
-              </button>
+              <>
+                {fotoBaixaQualidade && (
+                  <p className="text-yellow-500 text-xs bg-yellow-950 border border-yellow-800 rounded-lg px-3 py-2">
+                    Rosto não detectado automaticamente — foto com ângulo, iluminação ruim ou baixa qualidade. O sistema tentará com threshold mínimo.
+                  </p>
+                )}
+                <button
+                  onClick={() => file && runSearch(file, threshold)}
+                  disabled={!canSearch}
+                  className={`w-full py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                    canSearch
+                      ? fotoBaixaQualidade
+                        ? "bg-yellow-700 hover:bg-yellow-600 text-white cursor-pointer"
+                        : "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                      : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                  }`}
+                >
+                  {(loading || detecting) && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {label}
+                </button>
+              </>
             );
           })()}
         </div>

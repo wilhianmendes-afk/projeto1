@@ -31,9 +31,19 @@ export async function POST(req: NextRequest) {
   let embedResponse;
   try {
     embedResponse = await embedImage(buffer, file.name);
-    // Retry com threshold menor se detectou mas abaixo do score
+
+    // Retry progressivo para fotos ruins (ângulo, iluminação, baixa qualidade)
     if (embedResponse.count === 0 && embedResponse.total_detected > 0) {
       embedResponse = await embedImage(buffer, file.name, 0.35);
+    }
+    if (embedResponse.total_detected === 0) {
+      embedResponse = await embedImage(buffer, file.name, 0.20);
+    }
+    if (embedResponse.total_detected === 0) {
+      embedResponse = await embedImage(buffer, file.name, 0.10);
+    }
+    if (embedResponse.total_detected === 0) {
+      embedResponse = await embedImage(buffer, file.name, 0.05);
     }
   } catch (err) {
     return NextResponse.json({ error: "Erro no face-service: " + String(err) }, { status: 502 });
@@ -44,8 +54,8 @@ export async function POST(req: NextRequest) {
       results: [],
       message:
         embedResponse.total_detected === 0
-          ? `Nenhum rosto detectado na imagem. (tamanho: ${embedResponse.image_size?.w}×${embedResponse.image_size?.h}px)`
-          : "Rosto detectado mas com qualidade baixa (det_score < 0.35).",
+          ? `Nenhum rosto detectado mesmo com threshold mínimo. Tente uma foto mais frontal. (tamanho: ${embedResponse.image_size?.w}×${embedResponse.image_size?.h}px)`
+          : "Rosto detectado mas com qualidade muito baixa.",
       image_size: embedResponse.image_size,
       elapsed_ms: embedResponse.elapsed_ms,
     });
