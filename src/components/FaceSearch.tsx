@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Upload, X, Loader2 } from "lucide-react";
+import { Upload, X, Loader2, WifiOff } from "lucide-react";
 import ResultCard from "./ResultCard";
 import ComparisonModal from "./ComparisonModal";
 
@@ -48,9 +48,17 @@ export default function FaceSearch() {
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
   const [imgDisplay, setImgDisplay] = useState<{ w: number; h: number } | null>(null);
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
+  const [serviceOnline, setServiceOnline] = useState<boolean | null>(null);
 
   const fileRef  = useRef<HTMLInputElement>(null);
   const imgRef   = useRef<HTMLImageElement>(null);
+
+  // Verifica se o face service está online ao montar o componente
+  useEffect(() => {
+    fetch("/api/face/health")
+      .then((r) => setServiceOnline(r.ok))
+      .catch(() => setServiceOnline(false));
+  }, []);
 
   function handleFile(f: File) {
     if (!f.type.startsWith("image/")) return;
@@ -77,7 +85,7 @@ export default function FaceSearch() {
 
 
   async function detectFace(f: File) {
-    console.log("🔍 Iniciando detecção automática de rosto...");
+    if (serviceOnline === false) return;
     setDetecting(true);
     const form = new FormData();
     form.append("file", f);
@@ -85,22 +93,25 @@ export default function FaceSearch() {
     try {
       const res = await fetch("/api/face/search", { method: "POST", body: form });
       const data = await res.json();
-      console.log("✅ Resposta da detecção:", data);
       if (res.ok) {
         setResponse(data);
         setError("");
-        console.log("✅ Bbox pronto para exibição:", data.query_bbox);
-      } else {
-        console.log("❌ Erro na detecção:", data);
+      } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+        setServiceOnline(false);
+        setError("Face service offline — Railway fora do ar. Faça redeploy manual no dashboard Railway.");
       }
-    } catch (err) {
-      console.log("❌ Erro na chamada de detecção:", err);
+    } catch {
+      setServiceOnline(false);
     } finally {
       setDetecting(false);
     }
   }
 
   async function runSearch(f: File, t: number) {
+    if (serviceOnline === false) {
+      setError("Face service offline — Railway fora do ar. Faça redeploy manual no dashboard Railway.");
+      return;
+    }
     setLoading(true);
     setError("");
     const form = new FormData();
@@ -109,7 +120,13 @@ export default function FaceSearch() {
     try {
       const res  = await fetch("/api/face/search", { method: "POST", body: form });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Erro desconhecido");
+      if (!res.ok) {
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          setServiceOnline(false);
+          throw new Error("Face service offline — Railway fora do ar. Faça redeploy manual no dashboard Railway.");
+        }
+        throw new Error(data.error ?? "Erro desconhecido");
+      }
       setResponse(data);
     } catch (err) {
       setError(String(err));
@@ -131,8 +148,6 @@ export default function FaceSearch() {
 
     setImgNatural(natural);
     setImgDisplay(display);
-
-    console.log("Image loaded:", { natural, display, bbox: response?.query_bbox });
   }
 
   function clear() {
@@ -165,229 +180,242 @@ export default function FaceSearch() {
       width:  Math.round(bboxNatural.w * sx),
       height: Math.round(bboxNatural.h * sy),
     };
-    console.log("Scaled bbox:", { bbox, processingScale, bboxNatural, sx, sy, scaled, imgNatural, imgDisplay, imageSize: response.image_size });
     return scaled;
   }
 
   const bbox = response?.query_bbox ? scaledBbox(response.query_bbox) : null;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Coluna esquerda */}
-      <div>
-        <div
-          onDrop={onDrop}
-          onDragOver={(e) => e.preventDefault()}
-          onClick={() => !image && fileRef.current?.click()}
-          className={`relative border-2 border-dashed rounded-xl flex items-center justify-center transition-colors ${
-            image ? "border-gray-700 cursor-default" : "border-gray-700 hover:border-blue-600 cursor-pointer"
-          }`}
-          style={{ minHeight: 280 }}
-        >
-          {image ? (
-            <>
-              <div className="relative inline-block">
-                <img
-                  ref={imgRef}
-                  src={image}
-                  alt="Query"
-                  className="max-h-72 max-w-full rounded-xl object-contain"
-                  onLoad={onImgLoad}
-                />
-                {/* Bounding box overlay */}
-                {bbox && (
-                  <div
-                    className="absolute border-2 border-blue-400 pointer-events-none"
-                    style={{ left: bbox.left, top: bbox.top, width: bbox.width, height: bbox.height }}
-                  >
-                    <span className="absolute -top-5 left-0 bg-blue-600 text-white text-xs font-bold px-1.5 py-0.5 rounded">
-                      ROSTO
-                    </span>
-                  </div>
-                )}
-                {/* Indicador de detecção de rosto */}
-                {detecting && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="w-8 h-8 text-white animate-spin" />
-                      <p className="text-white text-sm font-medium">Detectando rosto...</p>
-                    </div>
-                  </div>
-                )}
-                {/* Indicador de loading sobre a foto */}
-                {loading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="w-8 h-8 text-white animate-spin" />
-                      <p className="text-white text-sm font-medium">Buscando...</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={clear}
-                className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-white rounded-full p-1.5"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </>
-          ) : (
-            <div className="flex flex-col items-center gap-3 text-gray-500 p-8 text-center">
-              <Upload className="w-10 h-10" />
-              <div>
-                <p className="font-medium text-gray-300">Arraste ou clique para enviar</p>
-                <p className="text-sm">JPG, PNG, WEBP — detecção automática</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-        />
-
-        <div className="mt-4 space-y-3">
+    <>
+      {/* Banner de serviço offline */}
+      {serviceOnline === false && (
+        <div className="mb-5 flex items-center gap-3 text-red-300 bg-red-950 border border-red-700 rounded-xl px-4 py-3">
+          <WifiOff className="w-5 h-5 flex-shrink-0" />
           <div>
-            <label className="block text-sm text-gray-400 mb-1">
-              Threshold de similaridade: <span className="text-white font-medium">{threshold.toFixed(2)}</span>
-            </label>
-            <input
-              type="range" min={0.20} max={0.90} step={0.05}
-              value={threshold}
-              onChange={(e) => onThresholdChange(parseFloat(e.target.value))}
-              className="w-full accent-blue-600"
-            />
-            <div className="flex justify-between text-xs text-gray-600 mt-0.5">
-              <span>0.20 (mais resultados)</span>
-              <span>0.90 (só certeza)</span>
-            </div>
+            <p className="font-semibold">Face service offline</p>
+            <p className="text-sm text-red-400">O serviço Railway está fora do ar. Faça um redeploy manual no dashboard Railway para restaurar a busca facial.</p>
           </div>
+        </div>
+      )}
 
-          {(() => {
-            const faceDetected = !!response?.query_bbox;
-            const canSearch = !!file && !loading && !detecting;
-            const fotoBaixaQualidade = !!file && !detecting && !faceDetected;
-            const label = !file ? "Buscar"
-              : detecting ? "Detectando rosto..."
-              : loading ? "Buscando..."
-              : fotoBaixaQualidade ? "Buscar mesmo assim (foto ruim)"
-              : "Buscar";
-            return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Coluna esquerda */}
+        <div>
+          <div
+            onDrop={onDrop}
+            onDragOver={(e) => e.preventDefault()}
+            onClick={() => !image && fileRef.current?.click()}
+            className={`relative border-2 border-dashed rounded-xl flex items-center justify-center transition-colors ${
+              image ? "border-gray-700 cursor-default" : "border-gray-700 hover:border-blue-600 cursor-pointer"
+            }`}
+            style={{ minHeight: 280 }}
+          >
+            {image ? (
               <>
-                {fotoBaixaQualidade && (
-                  <p className="text-yellow-500 text-xs bg-yellow-950 border border-yellow-800 rounded-lg px-3 py-2">
-                    Rosto não detectado automaticamente — foto com ângulo, iluminação ruim ou baixa qualidade. O sistema tentará com threshold mínimo.
-                  </p>
-                )}
+                <div className="relative inline-block">
+                  <img
+                    ref={imgRef}
+                    src={image}
+                    alt="Query"
+                    className="max-h-72 max-w-full rounded-xl object-contain"
+                    onLoad={onImgLoad}
+                  />
+                  {/* Bounding box overlay */}
+                  {bbox && (
+                    <div
+                      className="absolute border-2 border-blue-400 pointer-events-none"
+                      style={{ left: bbox.left, top: bbox.top, width: bbox.width, height: bbox.height }}
+                    >
+                      <span className="absolute -top-5 left-0 bg-blue-600 text-white text-xs font-bold px-1.5 py-0.5 rounded">
+                        ROSTO
+                      </span>
+                    </div>
+                  )}
+                  {/* Indicador de detecção de rosto */}
+                  {detecting && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-8 h-8 text-white animate-spin" />
+                        <p className="text-white text-sm font-medium">Detectando rosto...</p>
+                      </div>
+                    </div>
+                  )}
+                  {/* Indicador de loading sobre a foto */}
+                  {loading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-8 h-8 text-white animate-spin" />
+                        <p className="text-white text-sm font-medium">Buscando...</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <button
-                  onClick={() => file && runSearch(file, threshold)}
-                  disabled={!canSearch}
-                  className={`w-full py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
-                    canSearch
-                      ? fotoBaixaQualidade
-                        ? "bg-yellow-700 hover:bg-yellow-600 text-white cursor-pointer"
-                        : "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-                      : "bg-gray-700 text-gray-500 cursor-not-allowed"
-                  }`}
+                  onClick={clear}
+                  className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-white rounded-full p-1.5"
                 >
-                  {(loading || detecting) && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {label}
+                  <X className="w-4 h-4" />
                 </button>
               </>
-            );
-          })()}
-        </div>
-
-        {error && (
-          <p className="mt-3 text-red-400 text-sm bg-red-950 border border-red-800 rounded-lg px-3 py-2">
-            {error}
-          </p>
-        )}
-
-        {response && !loading && (
-          <div className="mt-3 text-xs text-gray-500 space-y-0.5">
-            {response.faces_detected !== undefined && (
-              <p>{response.faces_detected} rosto(s) detectado(s) na imagem</p>
-            )}
-            {response.query_det_score !== undefined && (
-              <p>Det score: {(response.query_det_score * 100).toFixed(0)}%</p>
-            )}
-            {response.elapsed_ms !== undefined && <p>Tempo: {response.elapsed_ms}ms</p>}
-          </div>
-        )}
-      </div>
-
-      {/* Coluna direita — resultados */}
-      <div>
-        <h2 className="text-sm font-medium text-gray-400 mb-3">
-          {loading
-            ? "Buscando no banco de dados..."
-            : response
-            ? response.results.length > 0
-              ? `${response.results.length} resultado(s) encontrado(s)`
-              : response.message ?? "Nenhum resultado"
-            : "Resultados aparecerão aqui"}
-        </h2>
-
-        <div className="space-y-3">
-          {response?.results.map((r, i) => (
-            <div
-              key={i}
-              onClick={() => setSelectedResult(r)}
-              className={`flex items-center gap-4 bg-gray-900 rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-800 ${
-                r.from_bruno
-                  ? "border-2 border-amber-700"
-                  : `border ${confidenceColor[r.confidence]?.split(" ").slice(2).join(" ") ?? "border-gray-800"}`
-              }`}
-            >
-              <img
-                src={r.photo_url}
-                alt=""
-                className="w-16 h-16 rounded-lg object-contain border border-gray-700 flex-shrink-0 bg-black"
-              />
-              <div className="flex-1 min-w-0">
-                {r.from_bruno && (
-                  <span className="inline-block text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded mb-1">
-                    BANCO 42º BPM
-                  </span>
-                )}
-                <p className="font-semibold text-white truncate">
-                  {r.pessoa?.nome ?? (r.from_bruno ? "Ver dados na foto" : "Desconhecido")}
-                </p>
-                {r.pessoa?.vulgo && <p className="text-gray-400 text-sm">"{r.pessoa.vulgo}"</p>}
-                {r.pessoa?.cpf   && <p className="text-gray-500 text-xs">CPF: {r.pessoa.cpf}</p>}
-                {r.from_bruno && !r.pessoa?.nome && (
-                  <p className="text-amber-500 text-xs">Dados na foto (Drive)</p>
-                )}
+            ) : (
+              <div className="flex flex-col items-center gap-3 text-gray-500 p-8 text-center">
+                <Upload className="w-10 h-10" />
+                <div>
+                  <p className="font-medium text-gray-300">Arraste ou clique para enviar</p>
+                  <p className="text-sm">JPG, PNG, WEBP — detecção automática</p>
+                </div>
               </div>
-              <div className="text-right flex-shrink-0">
-                <p className="text-lg font-bold text-white">{(r.similarity * 100).toFixed(0)}%</p>
-                <span className={`text-xs px-2 py-0.5 rounded border font-medium ${confidenceColor[r.confidence] ?? ""}`}>
-                  {r.confidence}
-                </span>
+            )}
+          </div>
+
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+          />
+
+          <div className="mt-4 space-y-3">
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">
+                Threshold de similaridade: <span className="text-white font-medium">{threshold.toFixed(2)}</span>
+              </label>
+              <input
+                type="range" min={0.20} max={0.90} step={0.05}
+                value={threshold}
+                onChange={(e) => onThresholdChange(parseFloat(e.target.value))}
+                className="w-full accent-blue-600"
+              />
+              <div className="flex justify-between text-xs text-gray-600 mt-0.5">
+                <span>0.20 (mais resultados)</span>
+                <span>0.90 (só certeza)</span>
               </div>
             </div>
-          ))}
 
-          {response && response.results.length === 0 && !loading && (
-            <div className="text-center py-12 text-gray-600">
-              <p>{response.message ?? "Nenhum match acima do threshold."}</p>
+            {(() => {
+              const faceDetected = !!response?.query_bbox;
+              const canSearch = !!file && !loading && !detecting;
+              // Só mostra aviso de "foto ruim" quando o serviço está online mas não detectou rosto
+              const fotoBaixaQualidade = !!file && !detecting && !faceDetected && serviceOnline !== false;
+              const label = !file ? "Buscar"
+                : detecting ? "Detectando rosto..."
+                : loading ? "Buscando..."
+                : fotoBaixaQualidade ? "Buscar mesmo assim (foto ruim)"
+                : "Buscar";
+              return (
+                <>
+                  {fotoBaixaQualidade && (
+                    <p className="text-yellow-500 text-xs bg-yellow-950 border border-yellow-800 rounded-lg px-3 py-2">
+                      Rosto não detectado automaticamente — foto com ângulo, iluminação ruim ou baixa qualidade. O sistema tentará com threshold mínimo.
+                    </p>
+                  )}
+                  <button
+                    onClick={() => file && runSearch(file, threshold)}
+                    disabled={!canSearch}
+                    className={`w-full py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                      canSearch
+                        ? fotoBaixaQualidade
+                          ? "bg-yellow-700 hover:bg-yellow-600 text-white cursor-pointer"
+                          : "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                        : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                    }`}
+                  >
+                    {(loading || detecting) && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {label}
+                  </button>
+                </>
+              );
+            })()}
+          </div>
+
+          {error && (
+            <p className="mt-3 text-red-400 text-sm bg-red-950 border border-red-800 rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
+
+          {response && !loading && (
+            <div className="mt-3 text-xs text-gray-500 space-y-0.5">
+              {response.faces_detected !== undefined && (
+                <p>{response.faces_detected} rosto(s) detectado(s) na imagem</p>
+              )}
+              {response.query_det_score !== undefined && (
+                <p>Det score: {(response.query_det_score * 100).toFixed(0)}%</p>
+              )}
+              {response.elapsed_ms !== undefined && <p>Tempo: {response.elapsed_ms}ms</p>}
             </div>
           )}
         </div>
-      </div>
 
-      {/* Modal de Comparação */}
-      <ComparisonModal
-        isOpen={selectedResult !== null}
-        result={selectedResult}
-        queryImage={image}
-        onClose={() => setSelectedResult(null)}
-      />
-    </div>
+        {/* Coluna direita — resultados */}
+        <div>
+          <h2 className="text-sm font-medium text-gray-400 mb-3">
+            {loading
+              ? "Buscando no banco de dados..."
+              : response
+              ? response.results.length > 0
+                ? `${response.results.length} resultado(s) encontrado(s)`
+                : response.message ?? "Nenhum resultado"
+              : "Resultados aparecerão aqui"}
+          </h2>
+
+          <div className="space-y-3">
+            {response?.results.map((r, i) => (
+              <div
+                key={i}
+                onClick={() => setSelectedResult(r)}
+                className={`flex items-center gap-4 bg-gray-900 rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-800 ${
+                  r.from_bruno
+                    ? "border-2 border-amber-700"
+                    : `border ${confidenceColor[r.confidence]?.split(" ").slice(2).join(" ") ?? "border-gray-800"}`
+                }`}
+              >
+                <img
+                  src={r.photo_url}
+                  alt=""
+                  className="w-16 h-16 rounded-lg object-contain border border-gray-700 flex-shrink-0 bg-black"
+                />
+                <div className="flex-1 min-w-0">
+                  {r.from_bruno && (
+                    <span className="inline-block text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded mb-1">
+                      BANCO 42º BPM
+                    </span>
+                  )}
+                  <p className="font-semibold text-white truncate">
+                    {r.pessoa?.nome ?? (r.from_bruno ? "Ver dados na foto" : "Desconhecido")}
+                  </p>
+                  {r.pessoa?.vulgo && <p className="text-gray-400 text-sm">"{r.pessoa.vulgo}"</p>}
+                  {r.pessoa?.cpf   && <p className="text-gray-500 text-xs">CPF: {r.pessoa.cpf}</p>}
+                  {r.from_bruno && !r.pessoa?.nome && (
+                    <p className="text-amber-500 text-xs">Dados na foto (Drive)</p>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-lg font-bold text-white">{(r.similarity * 100).toFixed(0)}%</p>
+                  <span className={`text-xs px-2 py-0.5 rounded border font-medium ${confidenceColor[r.confidence] ?? ""}`}>
+                    {r.confidence}
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            {response && response.results.length === 0 && !loading && (
+              <div className="text-center py-12 text-gray-600">
+                <p>{response.message ?? "Nenhum match acima do threshold."}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Modal de Comparação */}
+        <ComparisonModal
+          isOpen={selectedResult !== null}
+          result={selectedResult}
+          queryImage={image}
+          onClose={() => setSelectedResult(null)}
+        />
+      </div>
+    </>
   );
 }
