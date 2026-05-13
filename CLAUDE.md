@@ -1,6 +1,12 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
+## Estado atual (2026-05-13)
+- **MEU DRIVE integrado**: busca textual na página /qualificados mostra resultados do Drive próprio (badge verde)
+- **Importação gradual em andamento**: GitHub Actions roda a cada 4h, importando ~2.000 fotos/run da pasta `1XzKRnRfmhQi-wFXgHn2dzG9EOwZdGwAF` (~25.802 fotos, ~2 dias para completar)
+- **Busca facial corrigida**: detecção multi-escala no Railway (funciona com fotos grandes de celular); threshold padrão 0.25; mostra "melhores aproximações" quando sem resultado; bbox separado dos resultados
+- **Pendente verificar**: se bbox azul está aparecendo após fix de detecção multi-escala (Railway rebuilding)
+
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
 - **Banco de dados**: Supabase (Postgres + pgvector + Storage + Auth)
@@ -20,15 +26,13 @@ SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
 ANTHROPIC_API_KEY=   # OCR de fotos (Claude Haiku) + Chat do Dev. ATENÇÃO: sem créditos = OCR e chat param.
 IBIS_IMPORT_TOKEN=   # protege /api/ibis/import, /api/face/backfill e /api/drive/local-import
-BANCO_BRUNO_URL=     # URL do MCP do 42º BPM (parceiro Bruno)
-BANCO_BRUNO_TOKEN=   # Token Bearer do MCP do 42º BPM
-GOOGLE_CLIENT_ID=    # OAuth Google Drive — setup em andamento
-GOOGLE_CLIENT_SECRET=# OAuth Google Drive — setup em andamento
-GOOGLE_REDIRECT_URI= # https://developers.google.com/oauthplayground
-GOOGLE_REFRESH_TOKEN=# OAuth Google Drive — setup em andamento
+BANCO_BRUNO_URL=              # URL do MCP do 42º BPM (parceiro Bruno)
+BANCO_BRUNO_TOKEN=            # Token Bearer do MCP do 42º BPM
+GOOGLE_SERVICE_ACCOUNT_KEY=   # JSON completo da Service Account Google (em uma linha)
 ```
 
 > **GEMINI_API_KEY**: não é mais usada. OCR migrou para Claude Haiku (Anthropic). Pode ser removida da Vercel.
+> **GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI / GOOGLE_REFRESH_TOKEN**: removidas. Autenticação Google Drive migrou para Service Account.
 
 ## Variáveis de ambiente (Railway — face-service)
 ```
@@ -98,6 +102,15 @@ Chamadas via `supabase.rpc("get_face_stats")` e `supabase.rpc("get_pending_quali
 
 **`dev_chat_messages`** — Chat do Dev
 - `role` (user/assistant), `content`, `attachments` (jsonb), `read_at`, `created_at`
+
+**`drive_sync_folders`** — Pastas do Google Drive configuradas para sync automático
+- `folder_id`, `folder_name`, `last_synced_at`, `total_imported`, `active`
+- Migration: `008_drive_sync.sql` (já aplicada)
+
+**`drive_import_queue`** — Fila de importação gradual do Drive
+- `file_id` (PK), `file_name`, `mime_type`, `done` (boolean)
+- Populada pelo script `scripts/drive-import-local.js` na 1ª execução
+- Migration: `008_drive_import_queue.sql` (já aplicada)
 
 **Storage buckets**:
 - `faces` — fotos em `ibis/`, `drive/`, `manual/` (upload manual pela UI)
@@ -312,10 +325,24 @@ Canal interno embarcado no dashboard. **Não expor publicamente.**
 
 > **OCR engine**: **Claude Haiku** (`claude-haiku-4-5-20251001`) via `@anthropic-ai/sdk`. Substituiu o Gemini que falhava silenciosamente em fotos de abordagem noturna.
 
+**Google Drive — autenticação via Service Account**
+- Lib: `src/lib/google-drive.ts` — usa `GOOGLE_SERVICE_ACCOUNT_KEY` (JSON completo em uma linha)
+- Service Account: `intel-facial-42@intel-facial-42.iam.gserviceaccount.com`
+- Pasta raiz compartilhada: `1XzKRnRfmhQi-wFXgHn2dzG9EOwZdGwAF` (~25.802 fotos, 45+ subpastas)
+- NÃO usar OAuth (GOOGLE_CLIENT_ID etc.) — foi substituído por Service Account
+
 **Sync automático do Google Drive** (`/api/drive/auto-sync`):
 - Tabela `drive_sync_folders` armazena IDs de pastas do Drive para sync
 - Cron Vercel dispara diariamente às 4h UTC
-- Credenciais Google OAuth **em processo de configuração** — vars `GOOGLE_*` ainda não na Vercel
+- Busca recursiva em subpastas via `listAllImages()` — percorre toda a hierarquia
+
+**Importação gradual — GitHub Actions** (`scripts/drive-import-local.js`):
+- Workflow: `.github/workflows/drive-import.yml` — roda a cada 4h automaticamente
+- Usa fila `drive_import_queue` no Supabase para persistir progresso entre runs
+- Batch de 2.000 fotos por run; retoma de onde parou
+- Fluxo: scan Drive → fila Supabase → download → OCR Claude Haiku → upload Storage → insert qualificado → embed Railway
+- **Status atual**: importação em andamento (~25.802 fotos, ~2 dias para completar)
+- Para disparar manualmente via API: `POST https://api.github.com/repos/wilhianmendes-afk/projeto1/actions/workflows/drive-import.yml/dispatches` com `ref: claude/check-github-access-v30TG`
 
 > **`@anthropic-ai/sdk`** deve estar em `dependencies` do `package.json`. Já corrigido.
 
@@ -334,7 +361,9 @@ Canal interno embarcado no dashboard. **Não expor publicamente.**
 **`QualificadosSearch.tsx`:**
 - Sem pesquisa → mostra `initialData` (até 1000 registros, display inicial)
 - Com pesquisa → chama API server-side (sem limite)
-- Busca local e Banco 42º BPM disparam juntas, resultados aparecem conforme chegam
+- Busca local, MEU DRIVE e Banco 42º BPM disparam juntas, resultados aparecem conforme chegam
+- **MEU DRIVE**: badge verde — busca em `/api/drive/own-search?q=`, thumbnails com lightbox
+- `/api/drive/own-search`: usa Service Account, busca `fullText contains` no Drive, retorna `{ files: [{id, name, thumbnailLink}] }`
 
 ## Integração IBIS (ibis.app.br)
 
@@ -380,7 +409,7 @@ Depois: `node scripts/clear-ibis-storage.js`
 | `FotoUpload.tsx` | Upload de foto na página do qualificado (drag & drop) |
 | `IndexButton.tsx` | Re-indexa um qualificado individual |
 | `DeleteButton.tsx` | Remove qualificado + embeddings + foto (confirmação dupla) |
-| `FaceSearch.tsx` | Busca facial com detecção automática e bbox overlay |
+| `FaceSearch.tsx` | Busca facial — detecção automática (bbox) separada da busca (clique manual) |
 | `ComparisonModal.tsx` | Modal comparação — "Ver no Banco 42º BPM" para qualificados do parceiro |
 | `QualificadosSearch.tsx` | Busca server-side local + Banco 42º BPM simultânea; Drive 42º BPM abre lightbox |
 | `DevChat.tsx` | Chat flutuante de desenvolvimento |
