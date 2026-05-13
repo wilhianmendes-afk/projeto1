@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { google } from "googleapis";
+import { getDriveClient } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
 
@@ -50,15 +50,9 @@ export async function POST(req: NextRequest) {
 
   // Tenta obter o nome da pasta no Drive
   let folderName: string | null = null;
-  if (process.env.GOOGLE_REFRESH_TOKEN) {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
     try {
-      const auth = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_REDIRECT_URI
-      );
-      auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
-      const drive = google.drive({ version: "v3", auth });
+      const drive = getDriveClient();
       const meta = await drive.files.get({ fileId: folderId, fields: "name, mimeType" });
       folderName = meta.data.name ?? null;
     } catch { /* sem credenciais ou pasta inacessível */ }

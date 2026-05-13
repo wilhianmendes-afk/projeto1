@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { google } from "googleapis";
 import { embedImage } from "@/lib/face-service";
+import { getDriveClient } from "@/lib/google-drive";
 import Anthropic from "@anthropic-ai/sdk";
 
 export const dynamic = "force-dynamic";
@@ -15,16 +15,6 @@ function getAdminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
-}
-
-function getDriveClient() {
-  const auth = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
-  auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
-  return google.drive({ version: "v3", auth });
 }
 
 async function extractDataFromPhoto(buffer: Buffer, mimeType: string) {
@@ -172,8 +162,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  if (!process.env.GOOGLE_REFRESH_TOKEN) {
-    return NextResponse.json({ error: "Google Drive não configurado. Configure GOOGLE_REFRESH_TOKEN nas env vars." }, { status: 503 });
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    return NextResponse.json({ error: "Google Drive não configurado. Configure GOOGLE_SERVICE_ACCOUNT_KEY nas env vars." }, { status: 503 });
   }
 
   const supabase = getAdminClient();
