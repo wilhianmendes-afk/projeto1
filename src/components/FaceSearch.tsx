@@ -42,9 +42,10 @@ export default function FaceSearch() {
   const [image, setImage]       = useState<string | null>(null);
   const [file, setFile]         = useState<File | null>(null);
   const [threshold, setThreshold] = useState(0.25);
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading]     = useState(false);
   const [detecting, setDetecting] = useState(false);
-  const [response, setResponse] = useState<SearchResponse | null>(null);
+  const [response, setResponse]   = useState<SearchResponse | null>(null);
+  const [detectResult, setDetectResult] = useState<Pick<SearchResponse, "query_bbox" | "image_size" | "query_det_score" | "faces_detected"> | null>(null);
   const [error, setError]       = useState("");
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
   const [imgDisplay, setImgDisplay] = useState<{ w: number; h: number } | null>(null);
@@ -78,7 +79,6 @@ export default function FaceSearch() {
 
 
   async function detectFace(f: File) {
-    console.log("🔍 Iniciando detecção automática de rosto...");
     setDetecting(true);
     const form = new FormData();
     form.append("file", f);
@@ -86,19 +86,17 @@ export default function FaceSearch() {
     try {
       const res = await fetch("/api/face/search", { method: "POST", body: form });
       const data = await res.json();
-      console.log("✅ Resposta da detecção:", data);
       if (res.ok) {
-        setResponse(data);
+        setDetectResult({
+          query_bbox: data.query_bbox,
+          image_size: data.image_size,
+          query_det_score: data.query_det_score,
+          faces_detected: data.faces_detected,
+        });
         setError("");
-        console.log("✅ Bbox pronto para exibição:", data.query_bbox);
-      } else {
-        console.log("❌ Erro na detecção:", data);
       }
-    } catch (err) {
-      console.log("❌ Erro na chamada de detecção:", err);
-    } finally {
-      setDetecting(false);
-    }
+    } catch { /* silently ignore */ }
+    finally { setDetecting(false); }
   }
 
   async function runSearch(f: File, t: number) {
@@ -137,40 +135,33 @@ export default function FaceSearch() {
   }
 
   function clear() {
-    setImage(null); setFile(null); setResponse(null);
+    setImage(null); setFile(null); setResponse(null); setDetectResult(null);
     setError(""); setImgNatural(null); setImgDisplay(null);
   }
 
-  // Calcula posição do bbox escalado para o tamanho exibido
-  function scaledBbox(bbox: BBox) {
-    if (!imgNatural || !imgDisplay || !imgNatural.w) return null;
-    if (!response?.image_size) return null;
+  const bboxSource = response?.query_bbox ?? detectResult?.query_bbox ?? null;
+  const imageSizeSource = response?.image_size ?? detectResult?.image_size ?? null;
 
-    // O face-service redimensiona a imagem se for < 640px
-    // O bbox vem nas coordenadas da imagem redimensionada
-    // Precisa desescalar de volta para a imagem original
-    const processingScale = response.image_size.w / imgNatural.w;
+  function scaledBboxFrom(bbox: BBox, imageSize: { w: number; h: number } | null) {
+    if (!imgNatural || !imgDisplay || !imgNatural.w || !imageSize) return null;
+    const processingScale = imageSize.w / imgNatural.w;
     const bboxNatural = {
       x: bbox.x / processingScale,
       y: bbox.y / processingScale,
       w: bbox.w / processingScale,
       h: bbox.h / processingScale,
     };
-
-    // Agora escala para o tamanho exibido
     const sx = imgDisplay.w / imgNatural.w;
     const sy = imgDisplay.h / imgNatural.h;
-    const scaled = {
+    return {
       left:   Math.round(bboxNatural.x * sx),
       top:    Math.round(bboxNatural.y * sy),
       width:  Math.round(bboxNatural.w * sx),
       height: Math.round(bboxNatural.h * sy),
     };
-    console.log("Scaled bbox:", { bbox, processingScale, bboxNatural, sx, sy, scaled, imgNatural, imgDisplay, imageSize: response.image_size });
-    return scaled;
   }
 
-  const bbox = response?.query_bbox ? scaledBbox(response.query_bbox) : null;
+  const bbox = bboxSource ? scaledBboxFrom(bboxSource, imageSizeSource) : null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -269,7 +260,7 @@ export default function FaceSearch() {
           </div>
 
           {(() => {
-            const faceDetected = !!response?.query_bbox;
+            const faceDetected = !!detectResult?.query_bbox;
             const canSearch = !!file && !loading && !detecting;
             const fotoBaixaQualidade = !!file && !detecting && !faceDetected;
             const label = !file ? "Buscar"
@@ -309,15 +300,15 @@ export default function FaceSearch() {
           </p>
         )}
 
-        {response && !loading && (
+        {(detectResult || response) && !detecting && (
           <div className="mt-3 text-xs text-gray-500 space-y-0.5">
-            {response.faces_detected !== undefined && (
-              <p>{response.faces_detected} rosto(s) detectado(s) na imagem</p>
+            {(detectResult?.faces_detected ?? response?.faces_detected) !== undefined && (
+              <p>{detectResult?.faces_detected ?? response?.faces_detected} rosto(s) detectado(s)</p>
             )}
-            {response.query_det_score !== undefined && (
-              <p>Det score: {(response.query_det_score * 100).toFixed(0)}%</p>
+            {(detectResult?.query_det_score ?? response?.query_det_score) !== undefined && (
+              <p>Det score: {(((detectResult?.query_det_score ?? response?.query_det_score)!) * 100).toFixed(0)}%</p>
             )}
-            {response.elapsed_ms !== undefined && <p>Tempo: {response.elapsed_ms}ms</p>}
+            {response?.elapsed_ms !== undefined && <p>Tempo: {response.elapsed_ms}ms</p>}
           </div>
         )}
       </div>
