@@ -42,6 +42,44 @@ async function extractDataFromPhoto(buffer: Buffer, mimeType: string) {
   }
 }
 
+async function listAllImages(
+  drive: ReturnType<typeof getDriveClient>,
+  folderId: string,
+  timeFilter: string
+): Promise<Array<{ id: string; name: string; mimeType: string }>> {
+  const files: Array<{ id: string; name: string; mimeType: string }> = [];
+
+  // Imagens diretas nesta pasta
+  let pageToken: string | undefined;
+  do {
+    const { data } = await drive.files.list({
+      q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false${timeFilter}`,
+      fields: "nextPageToken, files(id, name, mimeType)",
+      pageSize: 100,
+      pageToken,
+    });
+    for (const f of data?.files ?? []) {
+      if (f.id && f.name) files.push({ id: f.id, name: f.name, mimeType: f.mimeType ?? "image/jpeg" });
+    }
+    pageToken = data?.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  // Subpastas — recursão
+  const { data: subData } = await drive.files.list({
+    q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: "files(id)",
+    pageSize: 100,
+  });
+  for (const sub of subData?.files ?? []) {
+    if (sub.id) {
+      const subFiles = await listAllImages(drive, sub.id, timeFilter);
+      files.push(...subFiles);
+    }
+  }
+
+  return files;
+}
+
 async function syncFolder(
   drive: ReturnType<typeof getDriveClient>,
   supabase: ReturnType<typeof getAdminClient>,
@@ -50,7 +88,6 @@ async function syncFolder(
 ): Promise<{ imported: number; skipped: number; sem_dados: number }> {
   let imported = 0, skipped = 0, sem_dados = 0;
 
-  // Filtra por arquivos criados depois do último sync
   const timeFilter = lastSyncedAt
     ? ` and createdTime > '${lastSyncedAt.toISOString()}'`
     : "";
@@ -58,98 +95,79 @@ async function syncFolder(
   const { data: { publicUrl: storageBase } } = supabase.storage.from("faces").getPublicUrl("_dummy");
   const bucketBase = storageBase.replace("/_dummy", "");
 
-  let pageToken: string | undefined;
-  do {
-    const { data: listRes } = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false${timeFilter}`,
-      fields: "nextPageToken, files(id, name, mimeType, createdTime)",
-      pageSize: 50,
-      pageToken,
-      orderBy: "createdTime asc",
+  const allFiles = await listAllImages(drive, folderId, timeFilter);
+
+  for (const file of allFiles) {
+    const { data: existing } = await supabase
+      .from("qualificados")
+      .select("id")
+      .eq("fonte", "drive")
+      .eq("fonte_id", file.id)
+      .maybeSingle();
+
+    if (existing) { skipped++; continue; }
+
+    const dlRes = await drive.files.get(
+      { fileId: file.id, alt: "media" },
+      { responseType: "arraybuffer" }
+    );
+    const buffer = Buffer.from(dlRes.data as ArrayBuffer);
+
+    const dados = await extractDataFromPhoto(buffer, file.mimeType);
+    if (!dados.nome) { sem_dados++; continue; }
+
+    const storagePath = `drive/${file.id}/${file.name}`;
+    await supabase.storage.from("faces").upload(storagePath, buffer, {
+      contentType: file.mimeType,
+      upsert: true,
     });
+    const photoUrl = `${bucketBase}/${storagePath}`;
 
-    for (const file of listRes?.files ?? []) {
-      if (!file.id || !file.name) continue;
+    const { data: qualificado } = await supabase
+      .from("qualificados")
+      .insert({
+        nome: dados.nome,
+        vulgo: dados.vulgo ?? null,
+        cpf: dados.cpf ?? null,
+        nascimento: dados.nascimento ?? null,
+        genitora: dados.genitora ?? null,
+        foto_url: photoUrl,
+        fonte: "drive",
+        fonte_id: file.id,
+      })
+      .select("id")
+      .single();
 
-      // Checa se já foi importado
-      const { data: existing } = await supabase
-        .from("qualificados")
-        .select("id")
-        .eq("fonte", "drive")
-        .eq("fonte_id", file.id)
-        .maybeSingle();
+    if (!qualificado) continue;
 
-      if (existing) { skipped++; continue; }
-
-      // Baixa a imagem
-      const dlRes = await drive.files.get(
-        { fileId: file.id, alt: "media" },
-        { responseType: "arraybuffer" }
-      );
-      const buffer = Buffer.from(dlRes.data as ArrayBuffer);
-
-      // OCR via Claude Haiku
-      const dados = await extractDataFromPhoto(buffer, file.mimeType ?? "image/jpeg");
-      if (!dados.nome) { sem_dados++; continue; }
-
-      // Upload para Storage
-      const storagePath = `drive/${file.id}/${file.name}`;
-      await supabase.storage.from("faces").upload(storagePath, buffer, {
-        contentType: file.mimeType ?? "image/jpeg",
-        upsert: true,
-      });
-      const photoUrl = `${bucketBase}/${storagePath}`;
-
-      // Insere qualificado
-      const { data: qualificado } = await supabase
-        .from("qualificados")
-        .insert({
-          nome: dados.nome,
-          vulgo: dados.vulgo ?? null,
-          cpf: dados.cpf ?? null,
-          nascimento: dados.nascimento ?? null,
-          genitora: dados.genitora ?? null,
-          foto_url: photoUrl,
-          fonte: "drive",
-          fonte_id: file.id,
-        })
-        .select("id")
-        .single();
-
-      if (!qualificado) continue;
-
-      // Indexação facial
-      try {
-        const embedResponse = await embedImage(buffer, file.name);
-        if (embedResponse.count > 0) {
-          for (let i = 0; i < embedResponse.faces.length; i++) {
-            const face = embedResponse.faces[i];
-            await supabase.from("face_embeddings").insert({
-              source: "qualificados",
-              source_id: qualificado.id,
-              source_label: dados.nome,
-              photo_url: photoUrl,
-              embedding: JSON.stringify(face.embedding),
-              bbox: face.bbox,
-              det_score: face.det_score,
-              face_index: i,
-            });
-          }
-        } else {
-          await supabase.from("face_skipped").upsert({
+    try {
+      const embedResponse = await embedImage(buffer, file.name);
+      if (embedResponse.count > 0) {
+        for (let i = 0; i < embedResponse.faces.length; i++) {
+          const face = embedResponse.faces[i];
+          await supabase.from("face_embeddings").insert({
             source: "qualificados",
             source_id: qualificado.id,
             source_label: dados.nome,
-            reason: "no_face_detected",
-          }, { onConflict: "source,source_id" });
+            photo_url: photoUrl,
+            embedding: JSON.stringify(face.embedding),
+            bbox: face.bbox,
+            det_score: face.det_score,
+            face_index: i,
+          });
         }
-      } catch { /* face service indisponível, importa sem embedding */ }
+      } else {
+        await supabase.from("face_skipped").upsert({
+          source: "qualificados",
+          source_id: qualificado.id,
+          source_label: dados.nome,
+          reason: "no_face_detected",
+        }, { onConflict: "source,source_id" });
+      }
+    } catch { /* face service indisponível, importa sem embedding */ }
 
-      imported++;
-    }
-
-    pageToken = listRes?.nextPageToken ?? undefined;
-  } while (pageToken);
+    imported++;
+  }
 
   return { imported, skipped, sem_dados };
 }
