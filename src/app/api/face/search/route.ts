@@ -115,6 +115,27 @@ export async function POST(req: NextRequest) {
     confidence: m.similarity >= 0.55 ? "alta" : m.similarity >= 0.42 ? "forte" : m.similarity >= 0.30 ? "incerto" : "baixa",
   }));
 
+  // Top 5 mais próximos sem threshold — para mostrar quando não há resultado
+  let topResults: typeof localResults = [];
+  if (localResults.length === 0) {
+    const { data: topRaw } = await service.rpc("face_search", {
+      query_embedding: JSON.stringify(bestFace.embedding),
+      similarity_threshold: 0.0,
+      match_count: 5,
+    });
+    const topIds = [...new Set((topRaw ?? []).map((m: { source_id: string }) => m.source_id))];
+    let topPessoas: typeof pessoas = {};
+    if (topIds.length > 0) {
+      const { data } = await service.from("qualificados")
+        .select("id, nome, vulgo, cpf, cidade, uf, nascimento, genitora").in("id", topIds);
+      topPessoas = Object.fromEntries((data ?? []).map((p) => [p.id, p]));
+    }
+    topResults = (topRaw ?? []).map((m: { source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object }) => ({
+      ...m, from_bruno: false, pessoa: topPessoas[m.source_id] ?? null,
+      confidence: m.similarity >= 0.55 ? "alta" : m.similarity >= 0.42 ? "forte" : m.similarity >= 0.30 ? "incerto" : "baixa",
+    }));
+  }
+
   // Processa resultado do Bruno
   let brunoResults: unknown[] = [];
   if (brunoSearch.status === "fulfilled" && brunoSearch.value) {
@@ -163,6 +184,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     results: allResults,
+    top_results: topResults,
     query_det_score: bestFace.det_score,
     query_bbox: bestFace.bbox,
     faces_detected: embedResponse.total_detected,

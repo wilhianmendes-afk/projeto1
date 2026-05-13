@@ -22,6 +22,7 @@ interface SearchResult {
 
 interface SearchResponse {
   results: SearchResult[];
+  top_results?: SearchResult[];
   message?: string;
   query_det_score?: number;
   query_bbox?: BBox;
@@ -40,7 +41,7 @@ const confidenceColor: Record<string, string> = {
 export default function FaceSearch() {
   const [image, setImage]       = useState<string | null>(null);
   const [file, setFile]         = useState<File | null>(null);
-  const [threshold, setThreshold] = useState(0.30);
+  const [threshold, setThreshold] = useState(0.25);
   const [loading, setLoading]   = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [response, setResponse] = useState<SearchResponse | null>(null);
@@ -256,13 +257,13 @@ export default function FaceSearch() {
               Threshold de similaridade: <span className="text-white font-medium">{threshold.toFixed(2)}</span>
             </label>
             <input
-              type="range" min={0.20} max={0.90} step={0.05}
+              type="range" min={0.10} max={0.90} step={0.05}
               value={threshold}
               onChange={(e) => onThresholdChange(parseFloat(e.target.value))}
               className="w-full accent-blue-600"
             />
             <div className="flex justify-between text-xs text-gray-600 mt-0.5">
-              <span>0.20 (mais resultados)</span>
+              <span>0.10 (mais resultados)</span>
               <span>0.90 (só certeza)</span>
             </div>
           </div>
@@ -374,8 +375,35 @@ export default function FaceSearch() {
           ))}
 
           {response && response.results.length === 0 && !loading && (
-            <div className="text-center py-12 text-gray-600">
-              <p>{response.message ?? "Nenhum match acima do threshold."}</p>
+            <div>
+              <div className="text-center py-6 text-gray-600">
+                <p>{response.message ?? "Nenhum match acima do threshold."}</p>
+                <p className="text-xs mt-1">Tente reduzir o threshold para ver mais resultados.</p>
+              </div>
+              {response.top_results && response.top_results.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-xs text-yellow-500 font-semibold mb-2 uppercase tracking-wide">
+                    Melhores aproximações encontradas (abaixo do threshold):
+                  </p>
+                  {response.top_results.map((r, i) => (
+                    <div
+                      key={i}
+                      onClick={() => setSelectedResult(r)}
+                      className="flex items-center gap-4 bg-gray-900 rounded-xl p-4 mb-2 cursor-pointer hover:bg-gray-800 border border-gray-700 opacity-75"
+                    >
+                      <img src={r.photo_url} alt="" className="w-16 h-16 rounded-lg object-contain border border-gray-700 flex-shrink-0 bg-black" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-white truncate">{r.pessoa?.nome ?? "Desconhecido"}</p>
+                        {r.pessoa?.vulgo && <p className="text-gray-400 text-sm">"{r.pessoa.vulgo}"</p>}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-lg font-bold text-gray-400">{(r.similarity * 100).toFixed(0)}%</p>
+                        <span className="text-xs text-gray-500">abaixo do threshold</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
