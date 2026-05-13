@@ -12,8 +12,9 @@
  *   SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, FACE_SERVICE_URL
  */
 
-const dotenv = require("dotenv");
-dotenv.config({ path: require("path").join(__dirname, "../.env.local") });
+try {
+  require("dotenv").config({ path: require("path").join(__dirname, "../.env.local") });
+} catch { /* no dotenv in CI — env vars come from GitHub secrets */ }
 
 const { google } = require("googleapis");
 const { createClient } = require("@supabase/supabase-js");
