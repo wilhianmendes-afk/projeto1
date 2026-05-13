@@ -34,6 +34,12 @@ interface BrunoDriveFile {
   thumbnail_url?: string | null;
 }
 
+interface OwnDriveFile {
+  id: string;
+  name: string;
+  thumbnailLink: string | null;
+}
+
 interface QualificadosSearchProps {
   initialData: Qualificado[];
   totalCount: number;
@@ -144,6 +150,72 @@ function CardDrive({ f, onClick }: { f: BrunoDriveFile; onClick: () => void }) {
   );
 }
 
+function CardOwnDrive({ f, onClick }: { f: OwnDriveFile; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: "block",
+        borderRadius: "12px",
+        border: "2px solid #15803d",
+        overflow: "visible",
+        position: "relative",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#15803d", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
+        MEU DRIVE
+      </div>
+      <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "10px 10px 0 0", overflow: "hidden" }}>
+        {f.thumbnailLink ? (
+          <img src={f.thumbnailLink} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }} />
+        ) : (
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: "2rem" }}>
+            📄
+          </div>
+        )}
+      </div>
+      <div style={{ background: "#dcfce7", borderRadius: "0 0 10px 10px", padding: "4px 6px", color: "#14532d", fontSize: "9px", lineHeight: "1.3" }}>
+        <div style={{ fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+        <div style={{ opacity: 0.7 }}>Clique para ampliar</div>
+      </div>
+    </div>
+  );
+}
+
+function LightboxOwnDrive({ f, onClose }: { f: OwnDriveFile; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-w-2xl w-full flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between bg-gray-900 rounded-t-xl px-4 py-3">
+          <div>
+            <span className="text-xs font-bold bg-green-700 text-white px-2 py-0.5 rounded mr-2">MEU DRIVE</span>
+            <span className="text-white text-sm font-medium">{f.name}</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
+        </div>
+        <div className="bg-black rounded-b-xl overflow-hidden">
+          {f.thumbnailLink ? (
+            <img
+              src={f.thumbnailLink.replace(/=s\d+$/, "=s1200")}
+              alt={f.name}
+              style={{ display: "block", width: "100%", maxHeight: "calc(90vh - 60px)", objectFit: "contain" }}
+            />
+          ) : (
+            <p className="text-gray-500 p-8 text-center">Sem preview disponível</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LightboxDrive({ f, onClose }: { f: BrunoDriveFile; onClose: () => void }) {
   return (
     <div
@@ -185,6 +257,9 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
   const [brunoDrive, setBrunoDrive] = useState<BrunoDriveFile[]>([]);
   const [brunoLoading, setBrunoLoading] = useState(false);
   const [lightbox, setLightbox] = useState<BrunoDriveFile | null>(null);
+  const [ownDrive, setOwnDrive] = useState<OwnDriveFile[]>([]);
+  const [ownDriveLoading, setOwnDriveLoading] = useState(false);
+  const [ownDriveLightbox, setOwnDriveLightbox] = useState<OwnDriveFile | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sem pesquisa: mostra initialData; com pesquisa: mostra resultado da API (sem limite de 1000)
@@ -200,12 +275,14 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
       setLocalResults(null);
       setBrunoResults([]);
       setBrunoDrive([]);
+      setOwnDrive([]);
       return;
     }
 
     debounceRef.current = setTimeout(async () => {
       setLocalLoading(true);
       setBrunoLoading(true);
+      setOwnDriveLoading(true);
 
       // Busca local server-side (sem limite de 1000 do Supabase)
       fetch(`/api/qualificados/search?q=${encodeURIComponent(term)}`)
@@ -213,6 +290,13 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
         .then((data: Qualificado[]) => setLocalResults(data ?? []))
         .catch(() => setLocalResults([]))
         .finally(() => setLocalLoading(false));
+
+      // Busca no próprio Drive em paralelo
+      fetch(`/api/drive/own-search?q=${encodeURIComponent(term)}`)
+        .then(r => r.json())
+        .then((data: { files: OwnDriveFile[] }) => setOwnDrive(data.files ?? []))
+        .catch(() => setOwnDrive([]))
+        .finally(() => setOwnDriveLoading(false));
 
       // Busca Bruno em paralelo
       fetch(`/api/banco-bruno/search?q=${encodeURIComponent(term)}`)
@@ -232,6 +316,7 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
   return (
     <div>
       {lightbox && <LightboxDrive f={lightbox} onClose={() => setLightbox(null)} />}
+      {ownDriveLightbox && <LightboxOwnDrive f={ownDriveLightbox} onClose={() => setOwnDriveLightbox(null)} />}
       <input
         type="search"
         placeholder="Buscar por nome, alcunha, CPF, mãe ou data (DD/MM/AAAA ou DDMMAAAA)..."
@@ -246,6 +331,11 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
           {localLoading
             ? "buscando..."
             : `${filteredLocal.length} no banco local`}
+          {ownDriveLoading
+            ? " · buscando no Drive..."
+            : ownDrive.length > 0
+              ? ` · ${ownDrive.length} no Drive`
+              : ""}
           {brunoLoading
             ? " · buscando no Banco 42º BPM..."
             : (brunoResults.length > 0 || brunoDrive.length > 0)
@@ -259,6 +349,11 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
         {filteredLocal.map((p) => <CardLocal key={p.id} p={p} />)}
 
+        {/* Resultados do próprio Drive */}
+        {isSearching && ownDrive.map((f) => (
+          <CardOwnDrive key={`own-${f.id}`} f={f} onClick={() => setOwnDriveLightbox(f)} />
+        ))}
+
         {/* Resultados do banco do Bruno */}
         {isSearching && brunoResults.map((m) => <CardBruno key={`bruno-${m.id}`} m={m} />)}
 
@@ -267,7 +362,7 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
           <CardDrive key={`drive-${i}`} f={f} onClick={() => setLightbox(f)} />
         ))}
 
-        {isSearching && !brunoLoading && filteredLocal.length === 0 && brunoResults.length === 0 && brunoDrive.length === 0 && (
+        {isSearching && !brunoLoading && !ownDriveLoading && filteredLocal.length === 0 && ownDrive.length === 0 && brunoResults.length === 0 && brunoDrive.length === 0 && (
           <p className="col-span-full text-center text-gray-500 py-12">
             Nenhum registro encontrado.
           </p>
