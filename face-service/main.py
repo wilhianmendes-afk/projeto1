@@ -30,18 +30,40 @@ def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE) -> di
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"image decode error: {e}")
 
+    orig_h, orig_w = img.shape[:2]
+
     try:
         faces = fa.get(img)
         bbox_offset = 0
+        scale_factor = 1.0
 
         if len(faces) == 0:
-            # Foto close-up/3x3: rosto ocupa quase todo o frame e fica grande demais
-            # para o SCRFD detectar. Adiciona borda branca para reduzir a proporção.
+            # Tentativa 1: foto muito grande — o rosto fica pequeno demais em 640px
+            # Redimensiona para 1600px mantendo proporção e retenta
+            max_dim = max(orig_h, orig_w)
+            if max_dim > 1000:
+                target = 1600
+                scale_factor = target / max_dim
+                new_w = int(orig_w * scale_factor)
+                new_h = int(orig_h * scale_factor)
+                pil_resized = Image.fromarray(img).resize((new_w, new_h), Image.LANCZOS)
+                img_resized = np.array(pil_resized)
+                faces = fa.get(img_resized)
+                if len(faces) > 0:
+                    # Ajusta bbox de volta para coordenadas da imagem original
+                    img = img_resized
+                    orig_h, orig_w = new_h, new_w
+
+        if len(faces) == 0:
+            scale_factor = 1.0
+            # Tentativa 2: foto close-up — rosto ocupa quase todo o frame
+            # Adiciona borda branca para reduzir a proporção
             pad = max(img.shape[0], img.shape[1])
             padded = np.full((img.shape[0] + pad * 2, img.shape[1] + pad * 2, 3), 255, dtype=np.uint8)
             padded[pad:pad + img.shape[0], pad:pad + img.shape[1]] = img
             faces = fa.get(padded)
             bbox_offset = pad
+
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"face detection error: {e}")
