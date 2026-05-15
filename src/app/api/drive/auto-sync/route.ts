@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
-import { getDriveClient } from "@/lib/google-drive";
+import { getDriveClient, ocrDriveFile } from "@/lib/google-drive";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
@@ -15,55 +15,6 @@ function getAdminClient() {
   );
 }
 
-// OCR via Google Drive: copia a foto como Google Doc, exporta o texto, deleta o doc.
-async function extractDataFromPhoto(
-  drive: ReturnType<typeof getDriveClient>,
-  fileId: string
-): Promise<{ nome: string | null; vulgo: string | null; cpf: string | null; nascimento: string | null; genitora: string | null; observacoes: string | null }> {
-  let docId: string | null = null;
-  try {
-    const { data: doc } = await drive.files.copy({
-      fileId,
-      requestBody: { mimeType: "application/vnd.google-apps.document" },
-    });
-    docId = doc.id ?? null;
-
-    const { data: text } = await drive.files.export({
-      fileId: docId!,
-      mimeType: "text/plain",
-    });
-
-    return parseOcrText(String(text || ""));
-  } catch {
-    return { nome: null, vulgo: null, cpf: null, nascimento: null, genitora: null, observacoes: null };
-  } finally {
-    if (docId) await drive.files.delete({ fileId: docId }).catch(() => {});
-  }
-}
-
-function parseOcrText(text: string) {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
-  let nome: string | null = null, genitora: string | null = null;
-  let nascimento: string | null = null, vulgo: string | null = null, cpf: string | null = null;
-
-  for (const line of lines) {
-    if (/^GN\s*[:\-]/i.test(line)) {
-      genitora = line.replace(/^GN\s*[:\-]\s*/i, "").trim() || null;
-    } else if (/^DN\s*[:\-]/i.test(line)) {
-      nascimento = line.replace(/^DN\s*[:\-]\s*/i, "").trim() || null;
-    } else if (/^(?:VULGO|VG)\s*[:\-]/i.test(line)) {
-      vulgo = line.replace(/^(?:VULGO|VG)\s*[:\-]\s*/i, "").trim() || null;
-    } else if (/^CPF\s*[:\-]/i.test(line)) {
-      cpf = line.replace(/^CPF\s*[:\-]\s*/i, "").trim() || null;
-    } else if (!nome && line.length > 3 && /^[A-ZÁÀÃÂÉÊÍÓÕÔÚÇ][A-ZÁÀÃÂÉÊÍÓÕÔÚÇ\s]+$/.test(line)) {
-      nome = line;
-    }
-  }
-
-  const observacoes = lines.join("\n") || null;
-  return { nome, vulgo, cpf, nascimento, genitora, observacoes };
-}
 
 async function listAllImages(
   drive: ReturnType<typeof getDriveClient>,
@@ -131,7 +82,7 @@ async function syncFolder(
     if (existing) { skipped++; continue; }
 
     // OCR via Google Drive (antes do download — evita baixar fotos sem dados)
-    const dados = await extractDataFromPhoto(drive, file.id);
+    const dados = await ocrDriveFile(drive, file.id);
     if (!dados.nome) { sem_dados++; continue; }
 
     const dlRes = await drive.files.get(
