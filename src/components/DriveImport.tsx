@@ -346,7 +346,7 @@ function CardRevisao({ card, onChange, onImportar, onDescartar }: CardRevisaoPro
           <img
             src={card.previewUrl}
             alt={card.fileName}
-            className="w-28 h-36 object-cover rounded-lg"
+            className="w-28 h-36 object-contain rounded-lg bg-gray-900"
           />
           {isDone && (
             <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-green-900/60">
