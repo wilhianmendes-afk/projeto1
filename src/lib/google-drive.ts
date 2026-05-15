@@ -1,7 +1,5 @@
 import { google } from "googleapis";
-import { Readable } from "stream";
-
-const DRIVE_ROOT_FOLDER = "1XzKRnRfmhQi-wFXgHn2dzG9EOwZdGwAF";
+import { createWorker } from "tesseract.js";
 
 export function getDriveClient() {
   const key = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY!);
@@ -88,55 +86,25 @@ export async function ocrDriveFile(
   }
 }
 
-// OCR de um buffer local: faz upload temporário na pasta compartilhada do Drive
-// (service account precisa ter permissão de Editor na pasta), copia como Google Doc
-// para aplicar OCR automático, exporta o texto e deleta os arquivos temporários.
+// OCR de um buffer local via Tesseract.js (roda no servidor, sem API externa).
+// Modelos em português cacheados em /tmp entre invocações quentes do Vercel.
 export async function ocrImageBuffer(
   buffer: Buffer,
 ): Promise<{ nome: string | null; genitora: string | null; nascimento: string | null; vulgo: string | null; cpf: string | null; observacoes: string | null; _erro?: string }> {
-  const drive = getDriveClient();
-  let uploadedId: string | null = null;
-  let docId: string | null = null;
+  let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
   try {
-    // 1. Stream do buffer (googleapis exige readable stream para media upload)
-    const stream = new Readable({ read() {} });
-    stream.push(buffer);
-    stream.push(null);
-
-    // 2. Upload temporário na pasta compartilhada
-    const { data: uploaded } = await drive.files.create({
-      requestBody: {
-        name: `_ocr_tmp_${Date.now()}`,
-        mimeType: "image/jpeg",
-        parents: [DRIVE_ROOT_FOLDER],
-      },
-      media: { mimeType: "image/jpeg", body: stream },
-      fields: "id",
+    worker = await createWorker("por", 1, {
+      cachePath: "/tmp",
     });
-    uploadedId = uploaded.id ?? null;
-    if (!uploadedId) throw new Error("Upload retornou sem ID");
-
-    // 3. Copia como Google Doc (aplica OCR automaticamente)
-    const { data: doc } = await drive.files.copy({
-      fileId: uploadedId,
-      requestBody: { mimeType: "application/vnd.google-apps.document" },
-    });
-    docId = doc.id ?? null;
-    if (!docId) throw new Error("Copy retornou sem ID");
-
-    // 4. Exporta o texto puro
-    const { data: text } = await drive.files.export({
-      fileId: docId,
-      mimeType: "text/plain",
-    });
-
-    return parseOcrText(String(text || ""));
+    const { data: { text } } = await worker.recognize(buffer);
+    if (!text?.trim()) {
+      return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: "Sem texto detectado na imagem" };
+    }
+    return parseOcrText(text);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: msg };
   } finally {
-    // 5. Limpeza (best-effort — não bloqueia a resposta)
-    if (docId)      await drive.files.delete({ fileId: docId }).catch(() => {});
-    if (uploadedId) await drive.files.delete({ fileId: uploadedId }).catch(() => {});
+    if (worker) await worker.terminate().catch(() => {});
   }
 }
