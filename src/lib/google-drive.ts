@@ -1,5 +1,4 @@
 import { google } from "googleapis";
-import { createWorker } from "tesseract.js";
 
 export function getDriveClient() {
   const key = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY!);
@@ -86,25 +85,51 @@ export async function ocrDriveFile(
   }
 }
 
-// OCR de um buffer local via Tesseract.js (roda no servidor, sem API externa).
-// Modelos em português cacheados em /tmp entre invocações quentes do Vercel.
+// OCR de um buffer local via OCR.space API (gratuito, 25k req/mês).
+// Variável de ambiente: OCR_SPACE_API_KEY (cadastro gratuito em ocr.space/ocrapi)
 export async function ocrImageBuffer(
   buffer: Buffer,
 ): Promise<{ nome: string | null; genitora: string | null; nascimento: string | null; vulgo: string | null; cpf: string | null; observacoes: string | null; _erro?: string }> {
-  let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
+  const apiKey = process.env.OCR_SPACE_API_KEY;
+  if (!apiKey) {
+    return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: "OCR_SPACE_API_KEY não configurada" };
+  }
   try {
-    worker = await createWorker("por", 1, {
-      cachePath: "/tmp",
+    const form = new FormData();
+    form.append("apikey", apiKey);
+    form.append("language", "por");
+    form.append("OCREngine", "2");
+    form.append("detectOrientation", "true");
+    form.append("scale", "true");
+    form.append("isTable", "false");
+    form.append(
+      "base64Image",
+      `data:image/jpeg;base64,${buffer.toString("base64")}`,
+    );
+
+    const res = await fetch("https://api.ocr.space/parse/image", {
+      method: "POST",
+      body: form,
     });
-    const { data: { text } } = await worker.recognize(buffer);
-    if (!text?.trim()) {
+
+    const data = await res.json() as {
+      IsErroredOnProcessing: boolean;
+      ErrorMessage?: string[];
+      ParsedResults?: Array<{ ParsedText: string }>;
+    };
+
+    if (data.IsErroredOnProcessing) {
+      return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: data.ErrorMessage?.[0] ?? "OCR.space retornou erro" };
+    }
+
+    const text = data.ParsedResults?.[0]?.ParsedText ?? "";
+    if (!text.trim()) {
       return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: "Sem texto detectado na imagem" };
     }
+
     return parseOcrText(text);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: msg };
-  } finally {
-    if (worker) await worker.terminate().catch(() => {});
   }
 }
