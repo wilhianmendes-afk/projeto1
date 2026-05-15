@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
 import { getDriveClient } from "@/lib/google-drive";
-import Anthropic from "@anthropic-ai/sdk";
-
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
@@ -17,29 +15,54 @@ function getAdminClient() {
   );
 }
 
-async function extractDataFromPhoto(buffer: Buffer, mimeType: string) {
+// OCR via Google Drive: copia a foto como Google Doc, exporta o texto, deleta o doc.
+async function extractDataFromPhoto(
+  drive: ReturnType<typeof getDriveClient>,
+  fileId: string
+): Promise<{ nome: string | null; vulgo: string | null; cpf: string | null; nascimento: string | null; genitora: string | null; observacoes: string | null }> {
+  let docId: string | null = null;
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const validMime = (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)
-      ? mimeType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+    const { data: doc } = await drive.files.copy({
+      fileId,
+      requestBody: { mimeType: "application/vnd.google-apps.document" },
+    });
+    docId = doc.id ?? null;
 
-    const msg = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 200,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: validMime, data: buffer.toString("base64") } },
-          { type: "text", text: `Extraia os dados pessoais visíveis nesta foto. Retorne APENAS um JSON com os campos encontrados. Campos: nome (nome completo), vulgo (apelido), cpf (xxx.xxx.xxx-xx), nascimento (DD/MM/AAAA), genitora (nome da mãe). Use null para não encontrados. Responda SOMENTE com o JSON, sem markdown.` },
-        ],
-      }],
+    const { data: text } = await drive.files.export({
+      fileId: docId!,
+      mimeType: "text/plain",
     });
 
-    const text = msg.content[0].type === "text" ? msg.content[0].text.trim() : "{}";
-    return JSON.parse(text.replace(/```json\n?|\n?```/g, "").trim());
+    return parseOcrText(String(text || ""));
   } catch {
-    return { nome: null, vulgo: null, cpf: null, nascimento: null, genitora: null };
+    return { nome: null, vulgo: null, cpf: null, nascimento: null, genitora: null, observacoes: null };
+  } finally {
+    if (docId) await drive.files.delete({ fileId: docId }).catch(() => {});
   }
+}
+
+function parseOcrText(text: string) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  let nome: string | null = null, genitora: string | null = null;
+  let nascimento: string | null = null, vulgo: string | null = null, cpf: string | null = null;
+
+  for (const line of lines) {
+    if (/^GN\s*[:\-]/i.test(line)) {
+      genitora = line.replace(/^GN\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^DN\s*[:\-]/i.test(line)) {
+      nascimento = line.replace(/^DN\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^(?:VULGO|VG)\s*[:\-]/i.test(line)) {
+      vulgo = line.replace(/^(?:VULGO|VG)\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^CPF\s*[:\-]/i.test(line)) {
+      cpf = line.replace(/^CPF\s*[:\-]\s*/i, "").trim() || null;
+    } else if (!nome && line.length > 3 && /^[A-ZÁÀÃÂÉÊÍÓÕÔÚÇ][A-ZÁÀÃÂÉÊÍÓÕÔÚÇ\s]+$/.test(line)) {
+      nome = line;
+    }
+  }
+
+  const observacoes = lines.join("\n") || null;
+  return { nome, vulgo, cpf, nascimento, genitora, observacoes };
 }
 
 async function listAllImages(
@@ -107,14 +130,15 @@ async function syncFolder(
 
     if (existing) { skipped++; continue; }
 
+    // OCR via Google Drive (antes do download — evita baixar fotos sem dados)
+    const dados = await extractDataFromPhoto(drive, file.id);
+    if (!dados.nome) { sem_dados++; continue; }
+
     const dlRes = await drive.files.get(
       { fileId: file.id, alt: "media" },
       { responseType: "arraybuffer" }
     );
     const buffer = Buffer.from(dlRes.data as ArrayBuffer);
-
-    const dados = await extractDataFromPhoto(buffer, file.mimeType);
-    if (!dados.nome) { sem_dados++; continue; }
 
     const storagePath = `drive/${file.id}/${file.name}`;
     await supabase.storage.from("faces").upload(storagePath, buffer, {
@@ -131,6 +155,7 @@ async function syncFolder(
         cpf: dados.cpf ?? null,
         nascimento: dados.nascimento ?? null,
         genitora: dados.genitora ?? null,
+        observacoes: dados.observacoes ?? null,
         foto_url: photoUrl,
         fonte: "drive",
         fonte_id: file.id,

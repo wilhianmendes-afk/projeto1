@@ -9,7 +9,7 @@
  *
  * Variáveis de ambiente necessárias (lidas de .env.local ou do ambiente):
  *   GOOGLE_SERVICE_ACCOUNT_KEY, NEXT_PUBLIC_SUPABASE_URL,
- *   SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, FACE_SERVICE_URL
+ *   SUPABASE_SERVICE_ROLE_KEY, FACE_SERVICE_URL
  */
 
 try {
@@ -18,7 +18,6 @@ try {
 
 const { google } = require("googleapis");
 const { createClient } = require("@supabase/supabase-js");
-const Anthropic = require("@anthropic-ai/sdk").default;
 const https = require("https");
 
 const ROOT_FOLDER_ID = "1XzKRnRfmhQi-wFXgHn2dzG9EOwZdGwAF";
@@ -31,10 +30,12 @@ const sb = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const driveAuth = new google.auth.GoogleAuth({
   credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY),
-  scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+  scopes: [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.file", // criar/deletar docs temporários de OCR
+  ],
 });
 const drive = google.drive({ version: "v3", auth: driveAuth });
 
@@ -82,27 +83,58 @@ async function populateQueue() {
   console.log("\nFila populada!");
 }
 
-// ── OCR ───────────────────────────────────────────────────────────────────────
-async function ocr(buffer, mimeType) {
-  const validMime = ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)
-    ? mimeType : "image/jpeg";
+// ── OCR via Google Drive (copia foto como Google Doc → extrai texto → deleta) ──
+async function ocr(fileId) {
+  let docId = null;
   try {
-    const msg = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 200,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: validMime, data: buffer.toString("base64") } },
-          { type: "text", text: "Extraia os dados pessoais visíveis nesta foto. Retorne APENAS um JSON com os campos encontrados. Campos: nome (nome completo), vulgo (apelido), cpf (xxx.xxx.xxx-xx), nascimento (DD/MM/AAAA), genitora (nome da mãe). Use null para não encontrados. Responda SOMENTE com o JSON, sem markdown." },
-        ],
-      }],
+    const { data: doc } = await drive.files.copy({
+      fileId,
+      requestBody: { mimeType: "application/vnd.google-apps.document" },
     });
-    const text = msg.content[0]?.text?.trim() || "{}";
-    return JSON.parse(text.replace(/```json\n?|\n?```/g, "").trim());
+    docId = doc.id;
+
+    const { data: text } = await drive.files.export({
+      fileId: docId,
+      mimeType: "text/plain",
+    });
+
+    return parseOcrText(String(text || ""));
   } catch {
     return { nome: null };
+  } finally {
+    if (docId) await drive.files.delete({ fileId: docId }).catch(() => {});
   }
+}
+
+// Interpreta o texto extraído pelo OCR do Google Drive.
+// Formato esperado (editado na foto):
+//   NOME COMPLETO
+//   GN:NOME DA MÃE
+//   DN:DD/MM/AAAA
+//   VULGO:APELIDO  (opcional)
+function parseOcrText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  let nome = null, genitora = null, nascimento = null, vulgo = null, cpf = null;
+
+  for (const line of lines) {
+    if (/^GN\s*[:\-]/i.test(line)) {
+      genitora = line.replace(/^GN\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^DN\s*[:\-]/i.test(line)) {
+      nascimento = line.replace(/^DN\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^(?:VULGO|VG)\s*[:\-]/i.test(line)) {
+      vulgo = line.replace(/^(?:VULGO|VG)\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^CPF\s*[:\-]/i.test(line)) {
+      cpf = line.replace(/^CPF\s*[:\-]\s*/i, "").trim() || null;
+    } else if (!nome && line.length > 3 && /^[A-ZÁÀÃÂÉÊÍÓÕÔÚÇ][A-ZÁÀÃÂÉÊÍÓÕÔÚÇ\s]+$/.test(line)) {
+      nome = line;
+    }
+  }
+
+  // observacoes guarda o texto bruto completo para busca full-text
+  const observacoes = lines.join("\n") || null;
+
+  return { nome, genitora, nascimento, vulgo, cpf, observacoes };
 }
 
 // ── Embedding facial ──────────────────────────────────────────────────────────
@@ -131,16 +163,16 @@ async function processFile(file) {
     .select("id").eq("fonte", "drive").eq("fonte_id", file.file_id).maybeSingle();
   if (existing) return "skip";
 
-  // Download
+  // OCR via Google Drive (não precisa do buffer ainda — só o fileId)
+  const dados = await ocr(file.file_id);
+  if (!dados.nome) return "sem_dados";
+
+  // Download (necessário para upload no Storage + embedding facial)
   let buffer;
   try {
     const res = await drive.files.get({ fileId: file.file_id, alt: "media" }, { responseType: "arraybuffer" });
     buffer = Buffer.from(res.data);
   } catch { return "erro_download"; }
-
-  // OCR
-  const dados = await ocr(buffer, file.mime_type);
-  if (!dados.nome) return "sem_dados";
 
   // Upload Storage
   const storagePath = `drive/${file.file_id}/${file.file_name}`;
@@ -155,6 +187,7 @@ async function processFile(file) {
   const { data: q, error: insErr } = await sb.from("qualificados").insert({
     nome: dados.nome, vulgo: dados.vulgo ?? null, cpf: dados.cpf ?? null,
     nascimento: dados.nascimento ?? null, genitora: dados.genitora ?? null,
+    observacoes: dados.observacoes ?? null,
     foto_url: publicUrl, fonte: "drive", fonte_id: file.file_id,
   }).select("id").single();
   if (insErr || !q) return "erro_insert";
