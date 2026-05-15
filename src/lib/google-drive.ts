@@ -1,4 +1,7 @@
 import { google } from "googleapis";
+import { Readable } from "stream";
+
+const DRIVE_ROOT_FOLDER = "1XzKRnRfmhQi-wFXgHn2dzG9EOwZdGwAF";
 
 export function getDriveClient() {
   const key = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY!);
@@ -85,35 +88,55 @@ export async function ocrDriveFile(
   }
 }
 
-// OCR de um buffer local via Google Cloud Vision API.
-// Não faz upload para o Drive — envia o buffer diretamente como base64.
-// Requer que a Cloud Vision API esteja habilitada no Google Cloud Console.
+// OCR de um buffer local: faz upload temporário na pasta compartilhada do Drive
+// (service account precisa ter permissão de Editor na pasta), copia como Google Doc
+// para aplicar OCR automático, exporta o texto e deleta os arquivos temporários.
 export async function ocrImageBuffer(
   buffer: Buffer,
 ): Promise<{ nome: string | null; genitora: string | null; nascimento: string | null; vulgo: string | null; cpf: string | null; observacoes: string | null; _erro?: string }> {
+  const drive = getDriveClient();
+  let uploadedId: string | null = null;
+  let docId: string | null = null;
   try {
-    const key = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY!);
-    const auth = new google.auth.GoogleAuth({
-      credentials: key,
-      scopes: ["https://www.googleapis.com/auth/cloud-vision"],
-    });
+    // 1. Stream do buffer (googleapis exige readable stream para media upload)
+    const stream = new Readable({ read() {} });
+    stream.push(buffer);
+    stream.push(null);
 
-    const vision = google.vision({ version: "v1", auth });
-    const { data } = await vision.images.annotate({
+    // 2. Upload temporário na pasta compartilhada
+    const { data: uploaded } = await drive.files.create({
       requestBody: {
-        requests: [{
-          image: { content: buffer.toString("base64") },
-          features: [{ type: "DOCUMENT_TEXT_DETECTION" }],
-        }],
+        name: `_ocr_tmp_${Date.now()}`,
+        mimeType: "image/jpeg",
+        parents: [DRIVE_ROOT_FOLDER],
       },
+      media: { mimeType: "image/jpeg", body: stream },
+      fields: "id",
+    });
+    uploadedId = uploaded.id ?? null;
+    if (!uploadedId) throw new Error("Upload retornou sem ID");
+
+    // 3. Copia como Google Doc (aplica OCR automaticamente)
+    const { data: doc } = await drive.files.copy({
+      fileId: uploadedId,
+      requestBody: { mimeType: "application/vnd.google-apps.document" },
+    });
+    docId = doc.id ?? null;
+    if (!docId) throw new Error("Copy retornou sem ID");
+
+    // 4. Exporta o texto puro
+    const { data: text } = await drive.files.export({
+      fileId: docId,
+      mimeType: "text/plain",
     });
 
-    const text = data.responses?.[0]?.fullTextAnnotation?.text ?? "";
-    if (!text) return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: "Vision API não extraiu texto" };
-
-    return parseOcrText(text);
+    return parseOcrText(String(text || ""));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: msg };
+  } finally {
+    // 5. Limpeza (best-effort — não bloqueia a resposta)
+    if (docId)      await drive.files.delete({ fileId: docId }).catch(() => {});
+    if (uploadedId) await drive.files.delete({ fileId: uploadedId }).catch(() => {});
   }
 }
