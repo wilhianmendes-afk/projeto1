@@ -1,11 +1,12 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-05-13)
-- **MEU DRIVE integrado**: busca textual na página /qualificados mostra resultados do Drive próprio (badge verde)
-- **Importação gradual em andamento**: GitHub Actions roda a cada 4h, importando ~2.000 fotos/run da pasta `1XzKRnRfmhQi-wFXgHn2dzG9EOwZdGwAF` (~25.802 fotos, ~2 dias para completar)
-- **Busca facial corrigida**: detecção multi-escala no Railway (funciona com fotos grandes de celular); threshold padrão 0.25; mostra "melhores aproximações" quando sem resultado; bbox separado dos resultados
-- **Pendente verificar**: se bbox azul está aparecendo após fix de detecção multi-escala (Railway rebuilding)
+## Estado atual (2026-05-15)
+- **OCR do Drive corrigido**: workflow `drive-import.yml` usa Google Drive copy-to-doc com retry (2s→4s→6s) para aguardar OCR assíncrono; só importa fotos com texto extraído
+- **Importação gradual**: fila resetada (25.802 pendentes), rodando a cada 4h — aguardando resultado com novo OCR
+- **Railway fora do ar (502)**: face-service caiu, precisa de redeploy manual pelo dashboard railway.app → projeto → face-service → Deployments → Redeploy
+- **Import local com preview**: novo fluxo — seleciona foto → OCR → card de revisão → Importar ou Descartar
+- **OCR local pendente**: `OCR_SPACE_API_KEY` ainda não configurada na Vercel (cadastro grátis em ocr.space/ocrapi) — sem ela o preview de import local não extrai dados
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
@@ -24,15 +25,17 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
-ANTHROPIC_API_KEY=   # OCR de fotos (Claude Haiku) + Chat do Dev. ATENÇÃO: sem créditos = OCR e chat param.
-IBIS_IMPORT_TOKEN=   # protege /api/ibis/import, /api/face/backfill e /api/drive/local-import
+ANTHROPIC_API_KEY=   # Apenas Chat do Dev. Sem créditos = chat para.
+IBIS_IMPORT_TOKEN=   # protege /api/ibis/import, /api/face/backfill, /api/drive/local-import e /api/drive/local-preview
 BANCO_BRUNO_URL=              # URL do MCP do 42º BPM (parceiro Bruno)
 BANCO_BRUNO_TOKEN=            # Token Bearer do MCP do 42º BPM
 GOOGLE_SERVICE_ACCOUNT_KEY=   # JSON completo da Service Account Google (em uma linha)
+OCR_SPACE_API_KEY=            # ⚠️ PENDENTE — cadastro grátis em ocr.space/ocrapi (25k req/mês free)
 ```
 
-> **GEMINI_API_KEY**: não é mais usada. OCR migrou para Claude Haiku (Anthropic). Pode ser removida da Vercel.
+> **GEMINI_API_KEY**: não é mais usada. Pode ser removida da Vercel.
 > **GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI / GOOGLE_REFRESH_TOKEN**: removidas. Autenticação Google Drive migrou para Service Account.
+> **ANTHROPIC_API_KEY**: OCR de fotos migrou para Google Drive OCR (workflow) e OCR.space (import local). Anthropic só usado para Chat do Dev.
 
 ## Variáveis de ambiente (Railway — face-service)
 ```
@@ -154,7 +157,8 @@ export const revalidate = 0;
 | `POST /api/face/search` | Busca facial — local + Banco 42º BPM em paralelo |
 | `GET/POST /api/face/backfill` | Gera embeddings dos registros pendentes (paralelo, batch 5) |
 | `POST /api/face/index` | Re-indexa um qualificado específico com retry de threshold |
-| `POST /api/drive/local-import` | Importa foto do computador com OCR (Claude Haiku) — multipart `file` + `file_hash` + `file_name` |
+| `POST /api/drive/local-preview` | OCR de foto local via OCR.space — retorna dados sem salvar (pré-visualização) |
+| `POST /api/drive/local-import` | Importa foto local com dados pré-confirmados — multipart `file` + `file_hash` + campos OCR |
 | `POST /api/drive/auto-sync` | Sincroniza pastas do Google Drive configuradas (cron diário 4h UTC) |
 | `GET/POST/DELETE /api/drive/sync-folders` | Gerencia pastas do Drive para sync automático |
 | `GET /api/banco-bruno/search?q=` | Proxy para busca textual no Banco 42º BPM (matches + drive_files) |
@@ -302,28 +306,29 @@ Canal interno embarcado no dashboard. **Não expor publicamente.**
 2. Selecionar Fotos — abre seletor de arquivos individuais
 3. Drag & drop de arquivos/pastas na zona de drop
 
-**Fluxo de importação (`POST /api/drive/local-import`):**
-- Autenticado via header `x-import-token: <IBIS_IMPORT_TOKEN>` (hardcoded no componente)
-- Antes do upload: **redimensiona para max 1600px em JPEG 88%** via canvas do browser
-- Deduplicação por SHA-256 do buffer já redimensionado
-- OCR via **Claude Haiku** (`claude-haiku-4-5-20251001`) — transcreve TODO o texto visível literalmente
-- `observacoes` = transcrição completa do texto da foto (pesquisável por qualquer palavra)
-- `nome` = extraído pelo Claude do campo sem prefixo; fallback para primeira linha do texto
-- **Nunca rejeita** foto com texto visível — se nome não encontrado, usa primeira linha como nome
+**Fluxo de importação (novo — com preview):**
+1. Usuário seleciona foto(s) → browser redimensiona para max 1600px JPEG 88%
+2. `POST /api/drive/local-preview` — OCR via OCR.space API (não salva nada)
+3. Card de revisão exibido com foto + campos pré-preenchidos (editáveis)
+4. Usuário clica **Importar** → `POST /api/drive/local-import` com dados confirmados
+5. Ou clica **Descartar** → foto removida sem salvar
+
+**`POST /api/drive/local-preview`:**
+- Auth: `x-import-token: <IBIS_IMPORT_TOKEN>`
+- OCR via **OCR.space API** (`OCR_SPACE_API_KEY`) — engine 2, português, sem upload para Drive
+- Retorna: `{ nome, genitora, nascimento, vulgo, cpf, observacoes, _erro }`
+- `_erro` visível no console do browser para diagnóstico
+
+**`POST /api/drive/local-import`:**
+- Auth: `x-import-token: <IBIS_IMPORT_TOKEN>`
+- Deduplicação por SHA-256 (`file_hash`)
+- Se `nome` vier no FormData, usa dados fornecidos diretamente (OCR já foi feito no preview)
 - Upload para Storage em `faces/drive/local/<hash>/<filename>`
 - Insere com `fonte: "local_drive"`, `fonte_id: <hash>`
 - Indexa rostos via face-service Railway
 
-**Formulário manual de resgate:**
-- Se OCR falhar completamente (sem texto), foto aparece em seção amarela "Fotos sem dados extraídos"
-- Usuário preenche nome, vulgo, nascimento, genitora manualmente
-- Botão "Importar" envia ao mesmo endpoint com dados manuais no FormData — OCR pulado
-
-**Override manual via FormData:**
-- Se `nome` vier no FormData, o endpoint pula OCR e usa os dados fornecidos diretamente
-- Campos aceitos: `nome`, `vulgo`, `nascimento`, `genitora`, `rg`, `cpf`, `observacoes`
-
-> **OCR engine**: **Claude Haiku** (`claude-haiku-4-5-20251001`) via `@anthropic-ai/sdk`. Substituiu o Gemini que falhava silenciosamente em fotos de abordagem noturna.
+> **OCR engine local**: **OCR.space API** via `OCR_SPACE_API_KEY`. Requer cadastro grátis em ocr.space/ocrapi.
+> Service accounts Google não têm cota de storage no Drive — upload temporário impossível. Cloud Vision exige billing. OCR.space é a alternativa gratuita sem billing.
 
 **Google Drive — autenticação via Service Account**
 - Lib: `src/lib/google-drive.ts` — usa `GOOGLE_SERVICE_ACCOUNT_KEY` (JSON completo em uma linha)
@@ -339,12 +344,20 @@ Canal interno embarcado no dashboard. **Não expor publicamente.**
 **Importação gradual — GitHub Actions** (`scripts/drive-import-local.js`):
 - Workflow: `.github/workflows/drive-import.yml` — roda a cada 4h automaticamente
 - Usa fila `drive_import_queue` no Supabase para persistir progresso entre runs
-- Batch de 2.000 fotos por run; retoma de onde parou
-- Fluxo: scan Drive → fila Supabase → download → OCR Claude Haiku → upload Storage → insert qualificado → embed Railway
-- **Status atual**: importação em andamento (~25.802 fotos, ~2 dias para completar)
+- Batch de 1.000 fotos por run (Supabase max_rows=1000 limita o `.limit(2000)`)
+- Fluxo: OCR Google Drive (copy→export com retry 2s/4s/6s) → se texto extraído → download → upload Storage → insert → embed Railway
+- **Só importa fotos com texto OCR** — sem observacoes = sem_dados, não entra no banco
+- **Status atual**: fila resetada (25.802 pendentes), rodando com OCR corrigido
 - Para disparar manualmente via API: `POST https://api.github.com/repos/wilhianmendes-afk/projeto1/actions/workflows/drive-import.yml/dispatches` com `ref: claude/check-github-access-v30TG`
 
-> **`@anthropic-ai/sdk`** deve estar em `dependencies` do `package.json`. Já corrigido.
+**OCR do workflow (Google Drive copy-to-doc):**
+- `drive.files.copy` com `mimeType: "application/vnd.google-apps.document"` aplica OCR na imagem
+- OCR é assíncrono: tenta exportar até 3x com espera crescente (2s → 4s → 6s)
+- Log inline mostra `[OCR:Xchars]` ou `[OCR-erro:...]` por foto
+- Suporta dois formatos de legenda:
+  - Formato A (abordagem): `NOME\nGN:MÃE\nDN:DD/MM/AAAA`
+  - Formato B (ficha): `Nome NOME\nMãe MÃE\nData Nascimento DD/MM/AAAA`
+- Todo o texto vai para `observacoes` — pesquisável por qualquer palavra da foto
 
 ## Busca textual de qualificados
 
@@ -413,7 +426,7 @@ Depois: `node scripts/clear-ibis-storage.js`
 | `ComparisonModal.tsx` | Modal comparação — "Ver no Banco 42º BPM" para qualificados do parceiro |
 | `QualificadosSearch.tsx` | Busca server-side local + Banco 42º BPM simultânea; Drive 42º BPM abre lightbox |
 | `DevChat.tsx` | Chat flutuante de desenvolvimento |
-| `DriveImport.tsx` | Import de fotos de abordagem — OCR Claude Haiku, texto em observacoes, fallback manual |
+| `DriveImport.tsx` | Import local com preview: seleciona → OCR.space → card revisão → Importar/Descartar |
 | `BancoParceiros.tsx` | Dashboard: stats do Banco 42º BPM (parceiro) — pessoas, faces, drives |
 | `TotalQualificados.tsx` | Contador combinado: "X registros + Y bancos parceiros" na página de qualificados |
 
