@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDriveClient, ocrImageBuffer } from "@/lib/google-drive";
+import { ocrImageBuffer } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,8 +22,7 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "image/jpeg";
 
-  const drive = getDriveClient();
-  const dados = await ocrImageBuffer(drive, buffer, mimeType);
+  const dados = await ocrImageBuffer(buffer);
 
   return NextResponse.json({
     nome: dados.nome,

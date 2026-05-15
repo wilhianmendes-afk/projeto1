@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
-import { getDriveClient, ocrImageBuffer } from "@/lib/google-drive";
+import { ocrImageBuffer } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -64,8 +64,7 @@ export async function POST(req: NextRequest) {
     const partes = [nomeManual, vulgo && `VULGO: ${vulgo}`, nascimento && `DN: ${nascimento}`, genitora && `GN: ${genitora}`, obsManual].filter(Boolean);
     observacoesFinal = partes.join("\n") || null;
   } else {
-    const drive = getDriveClient();
-    const dados = await ocrImageBuffer(drive, buffer, mimeType);
+    const dados = await ocrImageBuffer(buffer);
     observacoesFinal = dados.observacoes ?? null;
     nomeFinal = dados.nome ?? observacoesFinal?.split("\n")[0]?.trim() ?? fileName ?? "SEM NOME";
   }
