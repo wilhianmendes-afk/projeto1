@@ -1,5 +1,4 @@
 import { google } from "googleapis";
-import { Readable } from "stream";
 
 export function getDriveClient() {
   const key = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY!);
@@ -14,11 +13,9 @@ export function getDriveClient() {
 }
 
 // Interpreta o texto extraído pelo OCR do Google Drive.
-// Formato esperado nas fotos (dados editados na imagem):
-//   NOME COMPLETO
-//   GN:NOME DA MÃE
-//   DN:DD/MM/AAAA
-//   VULGO:APELIDO  (opcional)
+// Suporta dois formatos encontrados nas fotos:
+//   Formato A (abordagem): "NOME COMPLETO\nGN:MÃE\nDN:DD/MM/AAAA"
+//   Formato B (ficha):     "Nome NOME\nMãe MÃE\nData Nascimento DD/MM/AAAA"
 export function parseOcrText(text: string) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
@@ -29,14 +26,30 @@ export function parseOcrText(text: string) {
   let cpf: string | null = null;
 
   for (const line of lines) {
+    // Genitora — formato A: "GN:" | formato B: "Mãe " / "Mae "
     if (/^GN\s*[:\-]/i.test(line)) {
       genitora = line.replace(/^GN\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^M(?:ã|a)e\s+/i.test(line)) {
+      genitora = line.replace(/^M(?:ã|a)e\s+/i, "").trim() || null;
+
+    // Nascimento — formato A: "DN:" | formato B: "Data Nascimento " / "Nascimento "
     } else if (/^DN\s*[:\-]/i.test(line)) {
       nascimento = line.replace(/^DN\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^(?:Data\s+)?Nascimento\s*[:\s]/i.test(line)) {
+      nascimento = line.replace(/^(?:Data\s+)?Nascimento\s*[:\s]\s*/i, "").trim() || null;
+
+    // Vulgo
     } else if (/^(?:VULGO|VG)\s*[:\-]/i.test(line)) {
       vulgo = line.replace(/^(?:VULGO|VG)\s*[:\-]\s*/i, "").trim() || null;
+
+    // CPF
     } else if (/^CPF\s*[:\-]/i.test(line)) {
       cpf = line.replace(/^CPF\s*[:\-]\s*/i, "").trim() || null;
+
+    // Nome — formato A: linha toda maiúscula sem prefixo
+    //         formato B: prefixo "Nome "
+    } else if (/^Nome\s+/i.test(line)) {
+      nome = line.replace(/^Nome\s+/i, "").trim() || null;
     } else if (!nome && line.length > 3 && /^[A-ZÁÀÃÂÉÊÍÓÕÔÚÇ][A-ZÁÀÃÂÉÊÍÓÕÔÚÇ\s]+$/.test(line)) {
       nome = line;
     }
@@ -85,7 +98,7 @@ export async function ocrImageBuffer(
     // 1. Faz upload do buffer para o Drive da service account
     const { data: uploaded } = await drive.files.create({
       requestBody: { name: `_ocr_tmp_${Date.now()}`, mimeType },
-      media: { mimeType, body: Readable.from(buffer) },
+      media: { mimeType, body: buffer },
       fields: "id",
     });
     uploadedId = uploaded.id ?? null;
