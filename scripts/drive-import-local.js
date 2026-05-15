@@ -84,6 +84,8 @@ async function populateQueue() {
 }
 
 // ── OCR via Google Drive (copia foto como Google Doc → extrai texto → deleta) ──
+// O OCR do Google é assíncrono: o doc é criado antes do texto aparecer.
+// Tentamos até 3x com espera crescente (2s → 4s → 6s).
 async function ocr(fileId) {
   let docId = null;
   try {
@@ -93,13 +95,23 @@ async function ocr(fileId) {
     });
     docId = doc.id;
 
-    const { data: text } = await drive.files.export({
-      fileId: docId,
-      mimeType: "text/plain",
-    });
+    let text = "";
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+      await new Promise(r => setTimeout(r, tentativa * 2000)); // 2s, 4s, 6s
+      const { data: exported } = await drive.files.export({
+        fileId: docId,
+        mimeType: "text/plain",
+      });
+      text = String(exported || "").trim();
+      if (text.length > 5) break; // texto encontrado, para
+    }
 
-    return parseOcrText(String(text || ""));
-  } catch {
+    if (text.length > 0) {
+      process.stdout.write(` [OCR:${text.length}chars]`);
+    }
+    return parseOcrText(text);
+  } catch (err) {
+    process.stdout.write(` [OCR-erro:${err.message?.slice(0, 40)}]`);
     return { nome: null };
   } finally {
     if (docId) await drive.files.delete({ fileId: docId }).catch(() => {});

@@ -72,12 +72,19 @@ export async function ocrDriveFile(
     });
     docId = doc.id ?? null;
 
-    const { data: text } = await drive.files.export({
-      fileId: docId!,
-      mimeType: "text/plain",
-    });
+    // OCR do Google é assíncrono — tenta até 3x com espera crescente
+    let text = "";
+    for (let t = 1; t <= 3; t++) {
+      await new Promise(r => setTimeout(r, t * 2000)); // 2s, 4s, 6s
+      const { data: exported } = await drive.files.export({
+        fileId: docId!,
+        mimeType: "text/plain",
+      });
+      text = String(exported || "").trim();
+      if (text.length > 5) break;
+    }
 
-    return parseOcrText(String(text || ""));
+    return parseOcrText(text);
   } catch {
     return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null };
   } finally {
