@@ -112,28 +112,45 @@ async function ocr(fileId) {
 //   GN:NOME DA MÃE
 //   DN:DD/MM/AAAA
 //   VULGO:APELIDO  (opcional)
+// Suporta dois formatos encontrados nas fotos:
+//   Formato A (abordagem): "NOME COMPLETO\nGN:MÃE\nDN:DD/MM/AAAA"
+//   Formato B (ficha):     "Nome NOME\nMãe MÃE\nData Nascimento DD/MM/AAAA"
 function parseOcrText(text) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
   let nome = null, genitora = null, nascimento = null, vulgo = null, cpf = null;
 
   for (const line of lines) {
+    // Genitora — formato A: "GN:" | formato B: "Mãe " / "Mae "
     if (/^GN\s*[:\-]/i.test(line)) {
       genitora = line.replace(/^GN\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^M(?:ã|a)e\s+/i.test(line)) {
+      genitora = line.replace(/^M(?:ã|a)e\s+/i, "").trim() || null;
+
+    // Nascimento — formato A: "DN:" | formato B: "Data Nascimento " / "Nascimento "
     } else if (/^DN\s*[:\-]/i.test(line)) {
       nascimento = line.replace(/^DN\s*[:\-]\s*/i, "").trim() || null;
+    } else if (/^(?:Data\s+)?Nascimento\s*[:\s]/i.test(line)) {
+      nascimento = line.replace(/^(?:Data\s+)?Nascimento\s*[:\s]\s*/i, "").trim() || null;
+
+    // Vulgo
     } else if (/^(?:VULGO|VG)\s*[:\-]/i.test(line)) {
       vulgo = line.replace(/^(?:VULGO|VG)\s*[:\-]\s*/i, "").trim() || null;
+
+    // CPF
     } else if (/^CPF\s*[:\-]/i.test(line)) {
       cpf = line.replace(/^CPF\s*[:\-]\s*/i, "").trim() || null;
+
+    // Nome — formato A: linha toda maiúscula sem prefixo
+    //         formato B: prefixo "Nome "
+    } else if (/^Nome\s+/i.test(line)) {
+      nome = line.replace(/^Nome\s+/i, "").trim() || null;
     } else if (!nome && line.length > 3 && /^[A-ZÁÀÃÂÉÊÍÓÕÔÚÇ][A-ZÁÀÃÂÉÊÍÓÕÔÚÇ\s]+$/.test(line)) {
       nome = line;
     }
   }
 
-  // observacoes guarda o texto bruto completo para busca full-text
   const observacoes = lines.join("\n") || null;
-
   return { nome, genitora, nascimento, vulgo, cpf, observacoes };
 }
 
