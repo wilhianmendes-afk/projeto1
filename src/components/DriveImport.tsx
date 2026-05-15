@@ -116,6 +116,8 @@ export default function DriveImport() {
         });
         const dados = await res.json();
 
+        if (dados._erro) console.warn(`[OCR erro] ${file.name}:`, dados._erro);
+
         setCards(prev => prev.map(c => c.id !== id ? c : {
           ...c,
           status: "revisao",
@@ -125,8 +127,10 @@ export default function DriveImport() {
           vulgo: dados.vulgo ?? "",
           cpf: dados.cpf ?? "",
           observacoes: dados.observacoes ?? "",
+          erroMsg: dados._erro ? `OCR falhou: ${dados._erro}` : undefined,
         }));
-      } catch {
+      } catch (e) {
+        console.error(`[OCR falha de rede] ${file.name}:`, e);
         setCards(prev => prev.map(c => c.id !== id ? c : {
           ...c, status: "revisao",
         }));

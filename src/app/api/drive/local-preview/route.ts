@@ -32,5 +32,6 @@ export async function POST(req: NextRequest) {
     vulgo: dados.vulgo,
     cpf: dados.cpf,
     observacoes: dados.observacoes,
+    _erro: dados._erro ?? null,   // visível no console do browser para diagnóstico
   });
 }

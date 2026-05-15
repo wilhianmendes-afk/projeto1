@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { Readable } from "stream";
 
 export function getDriveClient() {
   const key = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY!);
@@ -87,41 +88,49 @@ export async function ocrDriveFile(
 
 // OCR de um buffer local: faz upload temporário no Drive da service account,
 // extrai o texto via Google Doc e limpa os arquivos temporários.
+// Retorna _erro para diagnóstico quando falha.
 export async function ocrImageBuffer(
   drive: ReturnType<typeof getDriveClient>,
   buffer: Buffer,
   mimeType: string
-) {
+): Promise<{ nome: string | null; genitora: string | null; nascimento: string | null; vulgo: string | null; cpf: string | null; observacoes: string | null; _erro?: string }> {
   let uploadedId: string | null = null;
   let docId: string | null = null;
   try {
-    // 1. Faz upload do buffer para o Drive da service account
+    // 1. Upload do buffer como stream legível para o Drive da service account
+    const stream = new Readable({ read() {} });
+    stream.push(buffer);
+    stream.push(null);
+
     const { data: uploaded } = await drive.files.create({
       requestBody: { name: `_ocr_tmp_${Date.now()}`, mimeType },
-      media: { mimeType, body: buffer },
+      media: { mimeType, body: stream },
       fields: "id",
     });
     uploadedId = uploaded.id ?? null;
+    if (!uploadedId) throw new Error("Upload retornou sem ID");
 
     // 2. Copia como Google Doc (aplica OCR automaticamente)
     const { data: doc } = await drive.files.copy({
-      fileId: uploadedId!,
+      fileId: uploadedId,
       requestBody: { mimeType: "application/vnd.google-apps.document" },
     });
     docId = doc.id ?? null;
+    if (!docId) throw new Error("Copy retornou sem ID");
 
     // 3. Exporta o texto puro
     const { data: text } = await drive.files.export({
-      fileId: docId!,
+      fileId: docId,
       mimeType: "text/plain",
     });
 
     return parseOcrText(String(text || ""));
-  } catch {
-    return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null, _erro: msg };
   } finally {
-    // 4. Limpa os dois arquivos temporários
-    if (docId) await drive.files.delete({ fileId: docId }).catch(() => {});
+    // 4. Limpa os dois arquivos temporários (best-effort)
+    if (docId)      await drive.files.delete({ fileId: docId }).catch(() => {});
     if (uploadedId) await drive.files.delete({ fileId: uploadedId }).catch(() => {});
   }
 }
