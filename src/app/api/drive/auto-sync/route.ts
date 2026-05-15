@@ -84,11 +84,11 @@ async function syncFolder(
     // OCR via Google Drive (antes do download — evita baixar fotos sem dados)
     const dados = await ocrDriveFile(drive, file.id);
 
-    const nomeImport = dados.nome
-      ?? dados.observacoes?.split("\n").find(l => l.trim().length > 2)?.trim()
-      ?? file.name.replace(/\.[^.]+$/, "");
+    // Sem texto extraído da foto — não importa
+    if (!dados.observacoes) { sem_dados++; continue; }
 
-    if (!nomeImport) { sem_dados++; continue; }
+    const nomeImport = dados.nome
+      ?? dados.observacoes.split("\n").find((l: string) => l.trim().length > 2)?.trim();
 
     const dlRes = await drive.files.get(
       { fileId: file.id, alt: "media" },

@@ -195,13 +195,12 @@ async function processFile(file) {
   // OCR via Google Drive (não precisa do buffer ainda — só o fileId)
   const dados = await ocr(file.file_id);
 
-  // Fallback: usa primeira linha do texto OCR ou nome do arquivo
-  const nomeImport = dados.nome
-    ?? dados.observacoes?.split("\n").find(l => l.trim().length > 2)?.trim()
-    ?? file.file_name.replace(/\.[^.]+$/, "");
+  // Sem texto extraído da foto — não importa
+  if (!dados.observacoes) return "sem_dados";
 
-  // Sem nenhum texto extraível — descarta
-  if (!nomeImport) return "sem_dados";
+  // Nome: campo detectado pelo parser ou primeira linha do texto
+  const nomeImport = dados.nome
+    ?? dados.observacoes.split("\n").find(l => l.trim().length > 2)?.trim();
 
   // Download (necessário para upload no Storage + embedding facial)
   let buffer;
