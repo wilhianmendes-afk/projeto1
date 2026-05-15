@@ -182,7 +182,14 @@ async function processFile(file) {
 
   // OCR via Google Drive (não precisa do buffer ainda — só o fileId)
   const dados = await ocr(file.file_id);
-  if (!dados.nome) return "sem_dados";
+
+  // Fallback: usa primeira linha do texto OCR ou nome do arquivo
+  const nomeImport = dados.nome
+    ?? dados.observacoes?.split("\n").find(l => l.trim().length > 2)?.trim()
+    ?? file.file_name.replace(/\.[^.]+$/, "");
+
+  // Sem nenhum texto extraível — descarta
+  if (!nomeImport) return "sem_dados";
 
   // Download (necessário para upload no Storage + embedding facial)
   let buffer;
@@ -202,7 +209,7 @@ async function processFile(file) {
 
   // Insert qualificado
   const { data: q, error: insErr } = await sb.from("qualificados").insert({
-    nome: dados.nome, vulgo: dados.vulgo ?? null, cpf: dados.cpf ?? null,
+    nome: nomeImport, vulgo: dados.vulgo ?? null, cpf: dados.cpf ?? null,
     nascimento: dados.nascimento ?? null, genitora: dados.genitora ?? null,
     observacoes: dados.observacoes ?? null,
     foto_url: publicUrl, fonte: "drive", fonte_id: file.file_id,

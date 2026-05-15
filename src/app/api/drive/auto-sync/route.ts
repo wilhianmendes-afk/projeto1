@@ -83,7 +83,12 @@ async function syncFolder(
 
     // OCR via Google Drive (antes do download — evita baixar fotos sem dados)
     const dados = await ocrDriveFile(drive, file.id);
-    if (!dados.nome) { sem_dados++; continue; }
+
+    const nomeImport = dados.nome
+      ?? dados.observacoes?.split("\n").find(l => l.trim().length > 2)?.trim()
+      ?? file.name.replace(/\.[^.]+$/, "");
+
+    if (!nomeImport) { sem_dados++; continue; }
 
     const dlRes = await drive.files.get(
       { fileId: file.id, alt: "media" },
@@ -101,7 +106,7 @@ async function syncFolder(
     const { data: qualificado } = await supabase
       .from("qualificados")
       .insert({
-        nome: dados.nome,
+        nome: nomeImport,
         vulgo: dados.vulgo ?? null,
         cpf: dados.cpf ?? null,
         nascimento: dados.nascimento ?? null,
@@ -124,7 +129,7 @@ async function syncFolder(
           await supabase.from("face_embeddings").insert({
             source: "qualificados",
             source_id: qualificado.id,
-            source_label: dados.nome,
+            source_label: nomeImport,
             photo_url: photoUrl,
             embedding: JSON.stringify(face.embedding),
             bbox: face.bbox,
