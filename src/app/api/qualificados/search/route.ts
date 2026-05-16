@@ -18,17 +18,18 @@ export async function GET(req: NextRequest) {
   const supabase = getAdminClient();
 
   // Busca nos campos de texto + observacoes (que contém todo o texto OCR da foto)
+  // Dentro de .or() o PostgREST usa * como wildcard (não %)
   const { data, error } = await supabase
     .from("qualificados")
     .select("id, nome, vulgo, cpf, nascimento, genitora, foto_url, observacoes")
     .is("deleted_at", null)
     .or(
-      `nome.ilike.%${q}%,` +
-      `vulgo.ilike.%${q}%,` +
-      `genitora.ilike.%${q}%,` +
-      `cpf.ilike.%${q}%,` +
-      `nascimento.ilike.%${q}%,` +
-      `observacoes.ilike.%${q}%`
+      `nome.ilike.*${q}*,` +
+      `vulgo.ilike.*${q}*,` +
+      `genitora.ilike.*${q}*,` +
+      `cpf.ilike.*${q}*,` +
+      `nascimento.ilike.*${q}*,` +
+      `observacoes.ilike.*${q}*`
     )
     .order("nome")
     .limit(100);
