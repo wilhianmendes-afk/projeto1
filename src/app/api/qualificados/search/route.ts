@@ -1,39 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
-
-function getAdminClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
 
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q")?.trim() ?? "";
   if (q.length < 2) return NextResponse.json([]);
 
-  const supabase = getAdminClient();
+  // Usa fetch direto ao PostgREST — o cliente Supabase JS tem bug com .or()+ilike
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-  // Busca nos campos de texto + observacoes (que contém todo o texto OCR da foto)
-  // Dentro de .or() o PostgREST usa * como wildcard (não %)
-  const { data, error } = await supabase
-    .from("qualificados")
-    .select("id, nome, vulgo, cpf, nascimento, genitora, foto_url, observacoes, fonte")
-    .is("deleted_at", null)
-    .or(
-      `nome.ilike.*${q}*,` +
-      `vulgo.ilike.*${q}*,` +
-      `genitora.ilike.*${q}*,` +
-      `cpf.ilike.*${q}*,` +
-      `nascimento.ilike.*${q}*,` +
-      `observacoes.ilike.*${q}*`
-    )
-    .order("nome")
-    .limit(100);
+  const url = new URL(`${base}/rest/v1/qualificados`);
+  url.searchParams.set("select", "id,nome,vulgo,cpf,nascimento,genitora,foto_url,observacoes,fonte");
+  url.searchParams.set("deleted_at", "is.null");
+  url.searchParams.set("or", `(nome.ilike.*${q}*,vulgo.ilike.*${q}*,genitora.ilike.*${q}*,cpf.ilike.*${q}*,nascimento.ilike.*${q}*,observacoes.ilike.*${q}*)`);
+  url.searchParams.set("order", "nome");
+  url.searchParams.set("limit", "100");
 
-  if (error) return NextResponse.json([], { status: 500 });
-  return NextResponse.json(data ?? []);
+  const res = await fetch(url.toString(), {
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) return NextResponse.json([], { status: res.status });
+  return NextResponse.json(await res.json());
 }
