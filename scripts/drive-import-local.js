@@ -83,39 +83,49 @@ async function populateQueue() {
   console.log("\nFila populada!");
 }
 
-// ── OCR via Google Drive (copia foto como Google Doc → extrai texto → deleta) ──
-// O OCR do Google é assíncrono: o doc é criado antes do texto aparecer.
-// Tentamos até 3x com espera crescente (2s → 4s → 6s).
-async function ocr(fileId) {
-  let docId = null;
-  try {
-    const { data: doc } = await drive.files.copy({
-      fileId,
-      requestBody: { mimeType: "application/vnd.google-apps.document" },
-    });
-    docId = doc.id;
+// ── OCR via OCR.space API (sem tocar no Drive, sem quota) ────────────────────
+function ocr(buffer) {
+  return new Promise((resolve) => {
+    const apiKey = process.env.OCR_SPACE_API_KEY;
+    if (!apiKey) { resolve({ nome: null, observacoes: null }); return; }
 
-    let text = "";
-    for (let tentativa = 1; tentativa <= 3; tentativa++) {
-      await new Promise(r => setTimeout(r, tentativa * 2000)); // 2s, 4s, 6s
-      const { data: exported } = await drive.files.export({
-        fileId: docId,
-        mimeType: "text/plain",
+    const body = new URLSearchParams({
+      apikey:            apiKey,
+      language:          "por",
+      OCREngine:         "2",
+      detectOrientation: "true",
+      scale:             "true",
+      isTable:           "false",
+      base64Image:       `data:image/jpeg;base64,${buffer.toString("base64")}`,
+    }).toString();
+
+    const req = https.request({
+      hostname: "api.ocr.space",
+      path:     "/parse/image",
+      method:   "POST",
+      headers:  { "Content-Type": "application/x-www-form-urlencoded", "Content-Length": Buffer.byteLength(body) },
+      timeout:  30000,
+    }, (res) => {
+      let data = "";
+      res.on("data", d => data += d);
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.IsErroredOnProcessing) {
+            process.stdout.write(` [OCR-erro:${String(json.ErrorMessage?.[0]).slice(0, 30)}]`);
+            resolve({ nome: null, observacoes: null }); return;
+          }
+          const text = (json.ParsedResults?.[0]?.ParsedText ?? "").trim();
+          if (text.length > 0) process.stdout.write(` [OCR:${text.length}c]`);
+          resolve(parseOcrText(text));
+        } catch { resolve({ nome: null, observacoes: null }); }
       });
-      text = String(exported || "").trim();
-      if (text.length > 5) break; // texto encontrado, para
-    }
-
-    if (text.length > 0) {
-      process.stdout.write(` [OCR:${text.length}chars]`);
-    }
-    return parseOcrText(text);
-  } catch (err) {
-    process.stdout.write(` [OCR-erro:${err.message?.slice(0, 40)}]`);
-    return { nome: null };
-  } finally {
-    if (docId) await drive.files.delete({ fileId: docId }).catch(() => {});
-  }
+    });
+    req.on("error",   () => resolve({ nome: null, observacoes: null }));
+    req.on("timeout", () => { req.destroy(); resolve({ nome: null, observacoes: null }); });
+    req.write(body);
+    req.end();
+  });
 }
 
 // Interpreta o texto extraído pelo OCR do Google Drive.
@@ -192,8 +202,15 @@ async function processFile(file) {
     .select("id").eq("fonte", "drive").eq("fonte_id", file.file_id).maybeSingle();
   if (existing) return "skip";
 
-  // OCR via Google Drive (não precisa do buffer ainda — só o fileId)
-  const dados = await ocr(file.file_id);
+  // Download (necessário para OCR + Storage + embedding)
+  let buffer;
+  try {
+    const res = await drive.files.get({ fileId: file.file_id, alt: "media" }, { responseType: "arraybuffer" });
+    buffer = Buffer.from(res.data);
+  } catch { return "erro_download"; }
+
+  // OCR via OCR.space — envia buffer como base64, sem criar nada no Drive
+  const dados = await ocr(buffer);
 
   // Sem texto extraído da foto — não importa
   if (!dados.observacoes) return "sem_dados";
@@ -201,13 +218,6 @@ async function processFile(file) {
   // Nome: campo detectado pelo parser ou primeira linha do texto
   const nomeImport = dados.nome
     ?? dados.observacoes.split("\n").find(l => l.trim().length > 2)?.trim();
-
-  // Download (necessário para upload no Storage + embedding facial)
-  let buffer;
-  try {
-    const res = await drive.files.get({ fileId: file.file_id, alt: "media" }, { responseType: "arraybuffer" });
-    buffer = Buffer.from(res.data);
-  } catch { return "erro_download"; }
 
   // Upload Storage
   const storagePath = `drive/${file.file_id}/${file.file_name}`;

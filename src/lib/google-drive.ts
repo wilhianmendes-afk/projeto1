@@ -60,35 +60,21 @@ export function parseOcrText(text: string) {
 }
 
 // OCR de um fileId já existente no Drive (usado pelo auto-sync).
+// OCR de um fileId já existente no Drive via OCR.space:
+// baixa o buffer e envia como base64 — sem criar nada no Drive.
 export async function ocrDriveFile(
   drive: ReturnType<typeof getDriveClient>,
   fileId: string
 ) {
-  let docId: string | null = null;
   try {
-    const { data: doc } = await drive.files.copy({
-      fileId,
-      requestBody: { mimeType: "application/vnd.google-apps.document" },
-    });
-    docId = doc.id ?? null;
-
-    // OCR do Google é assíncrono — tenta até 3x com espera crescente
-    let text = "";
-    for (let t = 1; t <= 3; t++) {
-      await new Promise(r => setTimeout(r, t * 2000)); // 2s, 4s, 6s
-      const { data: exported } = await drive.files.export({
-        fileId: docId!,
-        mimeType: "text/plain",
-      });
-      text = String(exported || "").trim();
-      if (text.length > 5) break;
-    }
-
-    return parseOcrText(text);
+    const res = await drive.files.get(
+      { fileId, alt: "media" },
+      { responseType: "arraybuffer" }
+    );
+    const buffer = Buffer.from(res.data as ArrayBuffer);
+    return await ocrImageBuffer(buffer);
   } catch {
     return { nome: null, genitora: null, nascimento: null, vulgo: null, cpf: null, observacoes: null };
-  } finally {
-    if (docId) await drive.files.delete({ fileId: docId }).catch(() => {});
   }
 }
 
