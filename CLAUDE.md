@@ -1,12 +1,19 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-05-15)
-- **OCR do Drive corrigido**: workflow `drive-import.yml` usa Google Drive copy-to-doc com retry (2s→4s→6s) para aguardar OCR assíncrono; só importa fotos com texto extraído
-- **Importação gradual**: fila resetada (25.802 pendentes), rodando a cada 4h — aguardando resultado com novo OCR
-- **Railway fora do ar (502)**: face-service caiu, precisa de redeploy manual pelo dashboard railway.app → projeto → face-service → Deployments → Redeploy
-- **Import local com preview**: novo fluxo — seleciona foto → OCR → card de revisão → Importar ou Descartar
-- **OCR local pendente**: `OCR_SPACE_API_KEY` ainda não configurada na Vercel (cadastro grátis em ocr.space/ocrapi) — sem ela o preview de import local não extrai dados
+## Estado atual (2026-05-16)
+
+### Funcionando
+- **OCR via OCR.space**: workflow (`drive-import.yml`) e import local usam OCR.space API (key `K82066688888957` configurada em GitHub Secrets e Vercel)
+- **Import local com preview**: seleciona foto → OCR.space extrai texto → card de revisão com campos editáveis → Importar ou Descartar
+- **Importação gradual rodando**: fila com 25.802 fotos, workflow a cada 4h, só importa fotos com texto OCR extraído
+- **Badges de fonte na busca**: DRIVE 42º BPM (workflow), DRIVE DO BRUNO (parceiro), BANCO DO BRUNO (parceiro), MEU DRIVE (drive direto)
+- **Busca corrigida**: endpoint usa fetch direto ao PostgREST (cliente Supabase JS tinha bug com `.or()+ilike`)
+
+### Pendente
+- **Railway fora do ar (502)**: face-service caiu — redeploy manual em railway.app → projeto → face-service → Deployments → Redeploy. Sem Railway: nenhum rosto é indexado (vai para face_skipped)
+- **Fotos sem texto OCR não são importadas**: comportamento correto — só entra no banco quem tem dado extraído
+- **Algumas fotos importadas com nome errado**: OCR pegou primeira linha (ex: `••••• VIVO 3G`). Corrigir manualmente na página do qualificado ou aguardar o workflow processar fotos melhores
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
