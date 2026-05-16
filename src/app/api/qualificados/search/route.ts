@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   // Dentro de .or() o PostgREST usa * como wildcard (não %)
   const { data, error } = await supabase
     .from("qualificados")
-    .select("id, nome, vulgo, cpf, nascimento, genitora, foto_url, observacoes")
+    .select("id, nome, vulgo, cpf, nascimento, genitora, foto_url, observacoes, fonte")
     .is("deleted_at", null)
     .or(
       `nome.ilike.*${q}*,` +

@@ -12,6 +12,7 @@ interface Qualificado {
   genitora?: string;
   foto_url?: string;
   observacoes?: string;
+  fonte?: string;
 }
 
 interface BrunoMatch {
@@ -46,17 +47,24 @@ interface QualificadosSearchProps {
 }
 
 function CardLocal({ p }: { p: Qualificado }) {
+  const isDrive = p.fonte === "drive";
   return (
     <Link
       href={`/qualificados/${p.id}`}
       style={{
         display: "block",
         borderRadius: "12px",
-        border: "1px solid #374151",
+        border: isDrive ? "2px solid #1d4ed8" : "1px solid #374151",
         overflow: "visible",
+        position: "relative",
         textDecoration: "none",
       }}
     >
+      {isDrive && (
+        <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#1d4ed8", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
+          DRIVE DO BRUNO
+        </div>
+      )}
       <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "12px 12px 0 0", overflow: "hidden" }}>
         {p.foto_url ? (
           <img src={p.foto_url} alt={p.nome} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }} />
@@ -93,7 +101,7 @@ function CardBruno({ m }: { m: BrunoMatch }) {
     >
       {/* Badge */}
       <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#b45309", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
-        BANCO 42º BPM
+        BANCO DO BRUNO
       </div>
 
       <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "10px 10px 0 0", overflow: "hidden" }}>
@@ -131,7 +139,7 @@ function CardDrive({ f, onClick }: { f: BrunoDriveFile; onClick: () => void }) {
       }}
     >
       <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#1d4ed8", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
-        DRIVE 42º BPM
+        DRIVE DO BRUNO
       </div>
       <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "10px 10px 0 0", overflow: "hidden" }}>
         {f.thumbnail_url ? (
@@ -337,9 +345,9 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
               ? ` · ${ownDrive.length} no Drive`
               : ""}
           {brunoLoading
-            ? " · buscando no Banco 42º BPM..."
+            ? " · buscando no Banco do Bruno..."
             : (brunoResults.length > 0 || brunoDrive.length > 0)
-              ? ` · ${brunoResults.length + brunoDrive.length} no Banco 42º BPM`
+              ? ` · ${brunoResults.length + brunoDrive.length} no Banco do Bruno`
               : ""}
         </p>
       ) : (
