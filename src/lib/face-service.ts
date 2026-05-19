@@ -23,19 +23,31 @@ export async function embedImage(imageBuffer: Buffer, filename = "photo.jpg", mi
   const headers: Record<string, string> = { "Content-Type": "image/jpeg" };
   if (FACE_SERVICE_TOKEN) headers["Authorization"] = `Bearer ${FACE_SERVICE_TOKEN}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: new Uint8Array(imageBuffer),
-    signal: AbortSignal.timeout(30000),
-  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 5000));
+    }
 
-  if (!res.ok) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: new Uint8Array(imageBuffer),
+      signal: AbortSignal.timeout(25000),
+    });
+
+    if (res.ok) return res.json() as Promise<EmbedResponse>;
+
+    // Retry em 502/503: Railway acordando do sleep ou reiniciando após crash
+    if ((res.status === 502 || res.status === 503) && attempt === 0) {
+      console.warn(`[face-service] ${res.status} na tentativa 1, retentando em 5s...`);
+      continue;
+    }
+
     const text = await res.text();
     throw new Error(`face-service error ${res.status}: ${text}`);
   }
 
-  return res.json() as Promise<EmbedResponse>;
+  throw new Error("face-service: falhou após 2 tentativas (502/503)");
 }
 
 export async function healthCheck(): Promise<boolean> {

@@ -1,0 +1,66 @@
+name: Face Service Keep-Alive
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # a cada 5 minutos
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Verificar health do face service
+        id: health
+        env:
+          FACE_URL: https://projeto1-production-b575.up.railway.app
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 35 "$FACE_URL/health" || echo "000")
+          echo "HTTP status: $status"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" = "200" ]; then
+            echo "Face service OK"
+          else
+            echo "Face service DOWN (HTTP $status) — iniciando auto-recovery"
+          fi
+
+      - name: Auto-recovery via Railway API
+        if: steps.health.outputs.status != '200'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          echo "Buscando último deployment..."
+          RESPONSE=$(curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"{ deployments(first: 1, input: { serviceId: \\\"$RAILWAY_SERVICE_ID\\\" }) { edges { node { id status } } } }\"}")
+
+          echo "Railway API response: $RESPONSE"
+
+          DEPLOY_ID=$(echo "$RESPONSE" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+edges = d.get('data', {}).get('deployments', {}).get('edges', [])
+if edges:
+    node = edges[0]['node']
+    print(node['id'])
+    print(f'[railway] status anterior: {node[\"status\"]}', file=sys.stderr)
+else:
+    print('', end='')
+" 2>&1 | head -1)
+
+          if [ -z "$DEPLOY_ID" ]; then
+            echo "Erro: não foi possível obter deployment ID do Railway"
+            exit 1
+          fi
+
+          echo "Redeployando deployment: $DEPLOY_ID"
+          REDEPLOY=$(curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { deploymentRedeploy(id: \\\"$DEPLOY_ID\\\") { id status } }\"}")
+
+          echo "Redeploy disparado: $REDEPLOY"
+          echo "O face service voltará em ~2-3 minutos."
