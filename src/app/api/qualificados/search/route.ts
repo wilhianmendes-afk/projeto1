@@ -13,7 +13,8 @@ export async function GET(req: NextRequest) {
   const url = new URL(`${base}/rest/v1/qualificados`);
   url.searchParams.set("select", "id,nome,vulgo,cpf,nascimento,genitora,foto_url,observacoes,fonte");
   url.searchParams.set("deleted_at", "is.null");
-  url.searchParams.set("or", `(nome.ilike.*${q}*,vulgo.ilike.*${q}*,genitora.ilike.*${q}*,cpf.ilike.*${q}*,nascimento.ilike.*${q}*,observacoes.ilike.*${q}*)`);
+  // nascimento é tipo date no Postgres — ilike não funciona em date, removido do or
+  url.searchParams.set("or", `(nome.ilike.*${q}*,vulgo.ilike.*${q}*,genitora.ilike.*${q}*,cpf.ilike.*${q}*,observacoes.ilike.*${q}*)`);
   url.searchParams.set("order", "nome");
   url.searchParams.set("limit", "100");
 
