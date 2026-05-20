@@ -1,19 +1,28 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-05-16)
+## Estado atual (2026-05-20)
 
 ### Funcionando
-- **OCR via OCR.space**: workflow (`drive-import.yml`) e import local usam OCR.space API (key `K82066688888957` configurada em GitHub Secrets e Vercel)
-- **Import local com preview**: seleciona foto → OCR.space extrai texto → card de revisão com campos editáveis → Importar ou Descartar
-- **Importação gradual rodando**: fila com 25.802 fotos, workflow a cada 4h, só importa fotos com texto OCR extraído
-- **Badges de fonte na busca**: DRIVE 42º BPM (workflow), DRIVE DO BRUNO (parceiro), BANCO DO BRUNO (parceiro), MEU DRIVE (drive direto)
-- **Busca corrigida**: endpoint usa fetch direto ao PostgREST (cliente Supabase JS tinha bug com `.or()+ilike`)
+- **Banco contém apenas IBIS**: limpeza completa — 1.322 qualificados drive/local_drive removidos + ~496k arquivos Storage deletados
+- **Busca de qualificados corrigida**: bug `nascimento` tipo `date` com `ilike` quebrava toda busca — removido do filtro or
+- **Drive de Abordados**: pasta "Abordados 42BPM" criada no Drive da service account — ID `1P3Ia1kZyS_avafn1UyldiC_y_EbRv-2t`; `DRIVE_ABORDADOS_FOLDER_ID` configurado no Vercel
+- **Busca OCR no Drive**: `own-search` corrigido (era bloqueado por `GOOGLE_REFRESH_TOKEN` ausente); busca `fullText contains` no Google Drive com OCR nativo
+- **Indexação facial do Drive**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (a cada 6h); embeddings com `source = "drive_abordados"`
+- **Proxy de fotos do Drive**: `/api/drive/photo/[id]` serve imagens via Service Account (sem URL pública)
+- **Busca facial integrada**: resultados `drive_abordados` aparecem com badge verde "DRIVE 42º BPM" + lightbox ao clicar
+- **Migration 010 aplicada**: `face_embeddings.source_id` migrado de `uuid` para `text`; `face_search` RPC atualizado
+- **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API se cair
+- **GitHub Secrets**: `RAILWAY_TOKEN` e `RAILWAY_SERVICE_ID` adicionados
 
-### Pendente
-- **Railway fora do ar (502)**: face-service caiu — redeploy manual em railway.app → projeto → face-service → Deployments → Redeploy. Sem Railway: nenhum rosto é indexado (vai para face_skipped)
-- **Fotos sem texto OCR não são importadas**: comportamento correto — só entra no banco quem tem dado extraído
-- **Algumas fotos importadas com nome errado**: OCR pegou primeira linha (ex: `••••• VIVO 3G`). Corrigir manualmente na página do qualificado ou aguardar o workflow processar fotos melhores
+### Pendente — CRÍTICO
+- **Face service suspenso no Railway**: crédito esgotado — URL retorna 404 "Application not found". Sem face service: busca facial e indexação de rostos não funcionam. **Duas opções:**
+  - Opção A: Adicionar cartão em railway.app/account/billing (Hobby $5/mês) e redeploiar
+  - Opção B: Migrar face service para Render.com (gratuito, 512MB RAM — Claude faz a migração)
+
+### Pendente — Normal
+- **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno, não no nosso sistema
+- **Drive de Abordados com 1 foto**: 1 foto de teste foi subida mas não foi indexada (face service estava down). Quando face service voltar, disparar workflow `drive-index-faces` manualmente
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
@@ -32,12 +41,13 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
-ANTHROPIC_API_KEY=   # Apenas Chat do Dev. Sem créditos = chat para.
-IBIS_IMPORT_TOKEN=   # protege /api/ibis/import, /api/face/backfill, /api/drive/local-import e /api/drive/local-preview
-BANCO_BRUNO_URL=              # URL do MCP do 42º BPM (parceiro Bruno)
-BANCO_BRUNO_TOKEN=            # Token Bearer do MCP do 42º BPM
-GOOGLE_SERVICE_ACCOUNT_KEY=   # JSON completo da Service Account Google (em uma linha)
-OCR_SPACE_API_KEY=            # ⚠️ PENDENTE — cadastro grátis em ocr.space/ocrapi (25k req/mês free)
+ANTHROPIC_API_KEY=         # Apenas Chat do Dev. Sem créditos = chat para.
+IBIS_IMPORT_TOKEN=         # protege /api/ibis/import, /api/face/backfill, /api/drive/local-import, /api/drive/index-faces
+BANCO_BRUNO_URL=           # URL do MCP do Bruno (parceiro) — atualmente 404
+BANCO_BRUNO_TOKEN=         # Token Bearer do MCP do Bruno
+GOOGLE_SERVICE_ACCOUNT_KEY=  # JSON completo da Service Account Google (em uma linha)
+OCR_SPACE_API_KEY=         # ocr.space API key (25k req/mês free)
+DRIVE_ABORDADOS_FOLDER_ID=1P3Ia1kZyS_avafn1UyldiC_y_EbRv-2t  # pasta "Abordados 42BPM" no Drive da service account
 ```
 
 > **GEMINI_API_KEY**: não é mais usada. Pode ser removida da Vercel.
