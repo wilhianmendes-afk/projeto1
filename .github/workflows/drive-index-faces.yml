@@ -1,0 +1,49 @@
+name: Drive — Indexação Facial de Abordados
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # a cada 6 horas
+  workflow_dispatch:         # disparo manual
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Indexar rostos do Drive de Abordados
+        env:
+          INDEX_URL: https://projeto1-liard-one.vercel.app/api/drive/index-faces
+          IMPORT_TOKEN: ${{ secrets.IBIS_IMPORT_TOKEN }}
+        run: |
+          remaining=1
+          rounds=0
+          max_rounds=30   # até 30 × 30 = 900 rostos por execução
+
+          while [ "$remaining" -gt 0 ] && [ "$rounds" -lt "$max_rounds" ]; do
+            response=$(curl -s -X POST "$INDEX_URL" \
+              -H "Content-Type: application/json" \
+              -H "x-import-token: $IMPORT_TOKEN" \
+              -d '{"limit":30}' \
+              --max-time 58)
+
+            ok=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ok',''))" 2>/dev/null)
+            embedded=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('embedded',0))" 2>/dev/null)
+            skipped=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('skipped',0))" 2>/dev/null)
+            remaining=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('remaining',0))" 2>/dev/null)
+
+            rounds=$((rounds + 1))
+            echo "Rodada $rounds: embedded=$embedded skipped=$skipped remaining=$remaining"
+
+            if [ "$ok" != "True" ] && [ "$ok" != "true" ]; then
+              echo "Erro ou face service offline — abortando."
+              echo "Resposta: $response"
+              break
+            fi
+
+            if [ "$remaining" -gt 0 ]; then
+              sleep 3
+            fi
+          done
+
+          echo "Concluído: $rounds rodadas."

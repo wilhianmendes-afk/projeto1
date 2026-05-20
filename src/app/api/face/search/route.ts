@@ -98,22 +98,40 @@ export async function POST(req: NextRequest) {
   }
   const matches = localSearch.value?.data ?? [];
 
-  const sourceIds = [...new Set(matches.map((m: { source_id: string }) => m.source_id))];
+  // Separa matches por fonte: qualificados (lookup no banco) vs drive_abordados (proxy de foto)
+  type RawMatch = { source: string; source_id: string; source_label?: string; photo_url: string; similarity: number; det_score: number; bbox: object };
+  const qualificadosMatches = (matches as RawMatch[]).filter((m) => m.source === "qualificados");
+  const driveMatches        = (matches as RawMatch[]).filter((m) => m.source === "drive_abordados");
+
+  const qualIds = [...new Set(qualificadosMatches.map((m) => m.source_id))];
   let pessoas: Record<string, { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string; nascimento?: string; genitora?: string }> = {};
-  if (sourceIds.length > 0) {
+  if (qualIds.length > 0) {
     const { data } = await service
       .from("qualificados")
       .select("id, nome, vulgo, cpf, cidade, uf, nascimento, genitora")
-      .in("id", sourceIds);
+      .in("id", qualIds);
     pessoas = Object.fromEntries((data ?? []).map((p) => [p.id, p]));
   }
 
-  const localResults = matches.map((m: { source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object }) => ({
-    ...m,
-    from_bruno: false,
-    pessoa: pessoas[m.source_id] ?? null,
-    confidence: m.similarity >= 0.55 ? "alta" : m.similarity >= 0.42 ? "forte" : m.similarity >= 0.30 ? "incerto" : "baixa",
-  }));
+  const confidence = (s: number) => s >= 0.55 ? "alta" : s >= 0.42 ? "forte" : s >= 0.30 ? "incerto" : "baixa";
+
+  const localResults = [
+    ...qualificadosMatches.map((m) => ({
+      ...m,
+      from_bruno: false,
+      from_drive: false,
+      pessoa: pessoas[m.source_id] ?? null,
+      confidence: confidence(m.similarity),
+    })),
+    ...driveMatches.map((m) => ({
+      ...m,
+      from_bruno: false,
+      from_drive: true,
+      photo_url:  `/api/drive/photo/${m.source_id}`,
+      pessoa: { nome: m.source_label ?? "Abordado" } as { nome: string },
+      confidence: confidence(m.similarity),
+    })),
+  ];
 
   // Top 5 mais próximos sem threshold — para mostrar quando não há resultado
   let topResults: typeof localResults = [];
