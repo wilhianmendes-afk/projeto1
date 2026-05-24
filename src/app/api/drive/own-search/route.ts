@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   try {
     const drive = getBQDriveClient();
     const { data } = await drive.files.list({
-      q: `fullText contains '${safeQ}' and mimeType contains 'image/' and trashed = false${folderFilter}`,
+      q: `fullText contains '${safeQ}' and trashed = false`,
       fields: "files(id, name, thumbnailLink)",
       pageSize: 20,
       orderBy: "relevance",
