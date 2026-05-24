@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { getDriveClient } from "@/lib/google-drive";
+import { getBQDriveClient, hasBQDriveConfig } from "@/lib/google-drive";
 import { embedImage } from "@/lib/face-service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const SOURCE = "drive_abordados";
+const SOURCE = "drive_bq";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -18,7 +18,7 @@ function getAdminClient() {
 
 // Lista todas as imagens de uma pasta e subpastas (BFS, máx 500 arquivos por chamada)
 async function listAllImages(folderId: string): Promise<{ id: string; name: string }[]> {
-  const drive = getDriveClient();
+  const drive = getBQDriveClient();
   const images: { id: string; name: string }[] = [];
   const queue = [folderId];
 
@@ -58,9 +58,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const folderId = process.env.DRIVE_ABORDADOS_FOLDER_ID;
+  if (!hasBQDriveConfig()) {
+    return NextResponse.json({ error: "Credenciais OAuth2 do BQ não configuradas" }, { status: 400 });
+  }
+
+  const folderId = process.env.DRIVE_BQ_FOLDER_ID;
   if (!folderId) {
-    return NextResponse.json({ error: "DRIVE_ABORDADOS_FOLDER_ID não configurado" }, { status: 400 });
+    return NextResponse.json({ error: "DRIVE_BQ_FOLDER_ID não configurado" }, { status: 400 });
   }
 
   const body = await req.json().catch(() => ({}));
@@ -92,7 +96,7 @@ export async function POST(req: NextRequest) {
   for (const file of pending) {
     try {
       // Download do Drive
-      const drive = getDriveClient();
+      const drive = getBQDriveClient();
       const res = await drive.files.get(
         { fileId: file.id, alt: "media" },
         { responseType: "arraybuffer" }

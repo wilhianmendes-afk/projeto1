@@ -98,10 +98,10 @@ export async function POST(req: NextRequest) {
   }
   const matches = localSearch.value?.data ?? [];
 
-  // Separa matches por fonte: qualificados (lookup no banco) vs drive_abordados (proxy de foto)
+  // Separa matches por fonte: qualificados (lookup no banco) vs drive_bq / drive_abordados (proxy de foto)
   type RawMatch = { source: string; source_id: string; source_label?: string; photo_url: string; similarity: number; det_score: number; bbox: object };
   const qualificadosMatches = (matches as RawMatch[]).filter((m) => m.source === "qualificados");
-  const driveMatches        = (matches as RawMatch[]).filter((m) => m.source === "drive_abordados");
+  const driveMatches        = (matches as RawMatch[]).filter((m) => m.source === "drive_bq" || m.source === "drive_abordados");
 
   const qualIds = [...new Set(qualificadosMatches.map((m) => m.source_id))];
   let pessoas: Record<string, { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string; nascimento?: string; genitora?: string }> = {};

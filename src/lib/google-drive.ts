@@ -12,6 +12,24 @@ export function getDriveClient() {
   return google.drive({ version: "v3", auth });
 }
 
+// Cliente OAuth2 para o Drive de bancodequalificados@gmail.com
+export function getBQDriveClient() {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_OAUTH_CLIENT_ID,
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+  );
+  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
+  return google.drive({ version: "v3", auth: oauth2Client });
+}
+
+export function hasBQDriveConfig() {
+  return !!(
+    process.env.GOOGLE_OAUTH_CLIENT_ID &&
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET &&
+    process.env.GOOGLE_OAUTH_REFRESH_TOKEN
+  );
+}
+
 // Interpreta o texto extraído pelo OCR do Google Drive.
 // Suporta dois formatos encontrados nas fotos:
 //   Formato A (abordagem): "NOME COMPLETO\nGN:MÃE\nDN:DD/MM/AAAA"

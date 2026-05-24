@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getDriveClient } from "@/lib/google-drive";
+import { getDriveClient, getBQDriveClient, hasBQDriveConfig } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
 
@@ -15,21 +15,28 @@ export async function GET(
   const { id } = params;
   if (!id) return new NextResponse(null, { status: 400 });
 
-  try {
-    const drive = getDriveClient();
-    const res = await drive.files.get(
-      { fileId: id, alt: "media" },
-      { responseType: "arraybuffer" }
-    );
-    const contentType = (res.headers["content-type"] as string) ?? "image/jpeg";
-    return new NextResponse(res.data as ArrayBuffer, {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "private, max-age=3600",
-      },
-    });
-  } catch (err) {
-    console.error("[drive/photo]", err);
-    return new NextResponse(null, { status: 404 });
+  // Tenta service account (drive_abordados legacy), depois BQ OAuth2 (drive_bq)
+  const clients = [getDriveClient()];
+  if (hasBQDriveConfig()) clients.push(getBQDriveClient());
+
+  for (const drive of clients) {
+    try {
+      const res = await drive.files.get(
+        { fileId: id, alt: "media" },
+        { responseType: "arraybuffer" }
+      );
+      const contentType = (res.headers["content-type"] as string) ?? "image/jpeg";
+      return new NextResponse(res.data as ArrayBuffer, {
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "private, max-age=3600",
+        },
+      });
+    } catch {
+      // tenta próximo cliente
+    }
   }
+
+  console.error("[drive/photo] arquivo não encontrado em nenhum cliente:", id);
+  return new NextResponse(null, { status: 404 });
 }
