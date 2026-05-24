@@ -26,7 +26,6 @@ export async function GET(req: NextRequest) {
       q: `fullText contains '${safeQ}' and trashed = false`,
       fields: "files(id, name, thumbnailLink)",
       pageSize: 20,
-      orderBy: "relevance",
     });
 
     const files = (data.files ?? []).map((f) => ({
