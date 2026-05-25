@@ -1,33 +1,32 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-05-20)
+## Estado atual (2026-05-24)
 
 ### Funcionando
-- **Banco contém apenas IBIS**: limpeza completa — 1.322 qualificados drive/local_drive removidos + ~496k arquivos Storage deletados
-- **Busca de qualificados corrigida**: bug `nascimento` tipo `date` com `ilike` quebrava toda busca — removido do filtro or
-- **Drive de Abordados**: pasta "Abordados 42BPM" criada no Drive da service account — ID `1P3Ia1kZyS_avafn1UyldiC_y_EbRv-2t`; `DRIVE_ABORDADOS_FOLDER_ID` configurado no Vercel
-- **Busca OCR no Drive**: `own-search` corrigido (era bloqueado por `GOOGLE_REFRESH_TOKEN` ausente); busca `fullText contains` no Google Drive com OCR nativo
-- **Indexação facial do Drive**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (a cada 6h); embeddings com `source = "drive_abordados"`
-- **Proxy de fotos do Drive**: `/api/drive/photo/[id]` serve imagens via Service Account (sem URL pública)
-- **Busca facial integrada**: resultados `drive_abordados` aparecem com badge verde "DRIVE 42º BPM" + lightbox ao clicar
-- **Migration 010 aplicada**: `face_embeddings.source_id` migrado de `uuid` para `text`; `face_search` RPC atualizado
-- **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API se cair
-- **GitHub Secrets**: `RAILWAY_TOKEN` e `RAILWAY_SERVICE_ID` adicionados
+- **Banco IBIS**: 1.322 qualificados importados via extrator IBIS
+- **Drive Banco Qualificados**: `bancodequalificados@gmail.com` — autenticação OAuth2; fotos aparecem na busca via OCR do Google Drive (sem criar ficha no banco)
+- **Busca de qualificados**: server-side via `/api/qualificados/search`; em paralelo busca no Drive BQ (`own-search`) e Banco Bruno
+- **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account primeiro, depois OAuth2 BQ (compatibilidade)
+- **Exclusão de fotos do Drive**: botão no lightbox apaga permanentemente do Google Drive + remove embeddings do banco
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (a cada 6h); fonte `drive_bq`
+- **Dashboard**: cards IBIS / Meu Drive / Total + BancoParceiros (Banco Bruno)
+- **Cobertura calculada corretamente**: inclui arquivos do Drive BQ no denominador e numerador
+- **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid)
+- **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API
 
 ### Pendente — CRÍTICO
-- **Face service suspenso no Railway**: crédito esgotado — URL retorna 404 "Application not found". Sem face service: busca facial e indexação de rostos não funcionam. **Duas opções:**
-  - Opção A: Adicionar cartão em railway.app/account/billing (Hobby $5/mês) e redeploiar
-  - Opção B: Migrar face service para Render.com (gratuito, 512MB RAM — Claude faz a migração)
+- **Face service suspenso no Railway**: crédito esgotado — URL retorna 502. Sem face service: busca facial e indexação de rostos não funcionam.
+  - Opção A: Adicionar cartão em railway.app/account/billing (Hobby $5/mês)
+  - Opção B: Migrar para Render.com (gratuito)
 
 ### Pendente — Normal
-- **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno, não no nosso sistema
-- **Drive de Abordados com 1 foto**: 1 foto de teste foi subida mas não foi indexada (face service estava down). Quando face service voltar, disparar workflow `drive-index-faces` manualmente
+- **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
 - **Banco de dados**: Supabase (Postgres + pgvector + Storage + Auth)
-- **Face service**: FastAPI + InsightFace buffalo_l — deploy no Railway
+- **Face service**: FastAPI + InsightFace buffalo_l — deploy no Railway ⚠️ SUSPENSO
 - **URL produção**: https://projeto1-liard-one.vercel.app
 - **Face service**: https://projeto1-production-b575.up.railway.app
 
@@ -41,443 +40,197 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
-ANTHROPIC_API_KEY=         # Apenas Chat do Dev. Sem créditos = chat para.
-IBIS_IMPORT_TOKEN=         # protege /api/ibis/import, /api/face/backfill, /api/drive/local-import, /api/drive/index-faces
-BANCO_BRUNO_URL=           # URL do MCP do Bruno (parceiro) — atualmente 404
-BANCO_BRUNO_TOKEN=         # Token Bearer do MCP do Bruno
-GOOGLE_SERVICE_ACCOUNT_KEY=  # JSON completo da Service Account Google (em uma linha)
-OCR_SPACE_API_KEY=         # ocr.space API key (25k req/mês free)
-DRIVE_ABORDADOS_FOLDER_ID=1P3Ia1kZyS_avafn1UyldiC_y_EbRv-2t  # pasta "Abordados 42BPM" no Drive da service account
+ANTHROPIC_API_KEY=           # Apenas Chat do Dev
+IBIS_IMPORT_TOKEN=           # protege /api/ibis/import, /api/face/backfill, /api/drive/index-faces
+BANCO_BRUNO_URL=             # URL do MCP do Bruno — atualmente 404
+BANCO_BRUNO_TOKEN=           # Token Bearer do MCP do Bruno
+GOOGLE_SERVICE_ACCOUNT_KEY=  # JSON completo da Service Account (em uma linha)
+GOOGLE_OAUTH_CLIENT_ID=      # OAuth2 para bancodequalificados@gmail.com
+GOOGLE_OAUTH_CLIENT_SECRET=  # OAuth2 para bancodequalificados@gmail.com
+GOOGLE_OAUTH_REFRESH_TOKEN=  # OAuth2 para bancodequalificados@gmail.com
+DRIVE_BQ_FOLDER_ID=1SJCMYf2DcTgEAFUhIR4edK9TnTY3J2QQ  # pasta do Drive BQ
+OCR_SPACE_API_KEY=           # ocr.space API key (25k req/mês free)
 ```
 
-> **GEMINI_API_KEY**: não é mais usada. Pode ser removida da Vercel.
-> **GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI / GOOGLE_REFRESH_TOKEN**: removidas. Autenticação Google Drive migrou para Service Account.
-> **ANTHROPIC_API_KEY**: OCR de fotos migrou para Google Drive OCR (workflow) e OCR.space (import local). Anthropic só usado para Chat do Dev.
+> **DRIVE_ABORDADOS_FOLDER_ID**: descontinuada. Substituída por DRIVE_BQ_FOLDER_ID.
+> **GEMINI_API_KEY**: não usada. Pode ser removida.
 
 ## Variáveis de ambiente (Railway — face-service)
 ```
-MIN_DET_SCORE=0.6          # threshold padrão de detecção
-SUPABASE_URL=              # https://avtbwrkjqaepbawvxyvf.supabase.co
-SUPABASE_SERVICE_KEY=      # service role key do Supabase
-WORKER_BATCH=10            # pessoas por lote (default 10)
-WORKER_SLEEP=60            # segundos de espera quando fila vazia (default 60)
+MIN_DET_SCORE=0.6
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+WORKER_BATCH=10
+WORKER_SLEEP=60
 ```
+
+## Google Drive — autenticação dupla
+
+### Service Account (`getDriveClient`)
+- `src/lib/google-drive.ts` — usa `GOOGLE_SERVICE_ACCOUNT_KEY`
+- Service Account: `intel-facial-42@intel-facial-42.iam.gserviceaccount.com`
+- Usada apenas pelo proxy de fotos como fallback (registros legados `drive_abordados`)
+
+### OAuth2 BQ (`getBQDriveClient`)
+- Conta: `bancodequalificados@gmail.com`
+- Projeto GCP: `banco-qualificados` (criado em bancodequalificados@gmail.com)
+- Vars: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`
+- Usada por: `own-search`, `index-faces`, `DELETE /api/drive/file/[id]`
+- Script de setup: `scripts/google-oauth-setup.js`
+
+### Limitações críticas da Google Drive API (descobertas em produção)
+> `fullText contains` **NÃO aceita** `orderBy` — retorna "Invalid Value"
+> `fullText contains` **NÃO aceita** `mimeType contains 'image/'` — usar `mimeType = 'image/jpeg'` ou omitir
+> `fullText contains` **NÃO combina** com `in parents` — não é possível filtrar pasta + texto ao mesmo tempo
+
+## Drive Banco Qualificados (`drive_bq`)
+
+Fotos enviadas para o Drive de `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_FOLDER_ID`) aparecem automaticamente na busca de qualificados via OCR do Google Drive — **sem criar ficha no banco**.
+
+**Fluxo:**
+1. Foto é enviada para a pasta do Drive BQ
+2. Google Drive OCR indexa automaticamente o texto da imagem
+3. Usuário pesquisa nome → `own-search` chama `fullText contains` → retorna thumbnail
+4. Clique abre lightbox com foto em tamanho maior + botão **Excluir**
+5. Botão Excluir (2 cliques): apaga permanentemente do Drive + remove embeddings do banco
+
+**Indexação facial** (quando face service voltar):
+- Workflow `drive-index-faces.yml` (a cada 6h) varre a pasta e indexa rostos
+- Fonte: `source = "drive_bq"` em `face_embeddings`
+- Aparecem na busca facial com badge verde "DRIVE 42º BPM"
+
+**Registros legados `drive_abordados`**: ainda existem no banco; proxy de foto tenta service account primeiro, depois OAuth2 BQ.
 
 ## Supabase — regras críticas
 
-> **max_rows = 1000**: o projeto tem limite de 1000 linhas por query REST. Queries que precisam de todos os registros DEVEM usar funções RPC (SQL server-side), não queries REST com `.limit()`.
+> **max_rows = 1000**: Queries que precisam de todos os registros DEVEM usar funções RPC.
 
-> **Admin client**: `createClient()` SSR não retorna dados nem faz INSERT mesmo com RLS desabilitado. Usar `getAdminClient()` em TODAS as páginas e endpoints de dados.
+> **Admin client**: usar `getAdminClient()` com service role em TODAS as páginas/endpoints de dados. `createClient()` SSR não retorna dados.
 
 ### Funções RPC criadas
 ```sql
--- Retorna stats completos sem limite de linhas + lista de skipped
 get_face_stats() → {
   total_qualificados, total_com_foto, total_sem_foto,
   total_indexados, total_skipped,
-  skipped_list: [{source_id, source_label}]  -- só qualificados não deletados
+  skipped_list: [{source_id, source_label}]
 }
-
--- Retorna próximo batch para indexação (sem repetir já indexados/skipped)
 get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_extras)
 ```
 
-Chamadas via `supabase.rpc("get_face_stats")` e `supabase.rpc("get_pending_qualificados", { batch_limit: N })`.
-
-> **CRÍTICO — divergência de stats**: `total_skipped` e `skipped_list` DEVEM usar o mesmo filtro `source_id IN (SELECT id FROM qualificados WHERE deleted_at IS NULL)`. Se diferirem, stat card e lista ficam inconsistentes. A função `getFaceStats()` em `src/lib/face-stats.ts` retorna `skippedList` — a página de indexação usa esse campo diretamente, nunca query REST separada.
-
 ## Estrutura do banco
 
-**`qualificados`** — cadastro de pessoas
+**`qualificados`** — cadastro IBIS
 | Coluna | Tipo | Obs |
 |--------|------|-----|
 | id | uuid PK | |
-| nome | text | obrigatório |
-| vulgo | text | alcunha |
-| rg | text | |
-| cpf | text | |
-| nascimento | text | data como string DD/MM/AAAA |
-| genitora | text | nome da mãe |
-| cidade | text | |
-| uf | text | |
-| observacoes | text | **contém TODO o texto OCR da foto** — campo principal de busca full-text |
+| nome | text | |
+| vulgo | text | |
+| rg / cpf | text | |
+| nascimento | text | DD/MM/AAAA (string, não date) |
+| genitora | text | |
+| cidade / uf | text | |
+| observacoes | text | texto OCR completo — campo principal de busca |
 | foto_url | text | URL pública no Storage |
-| fotos_extras | jsonb | URLs adicionais |
-| fonte | text | `"ibis"`, `"drive"` ou `"local_drive"` |
-| fonte_id | text | ID único na fonte (evita duplicata) |
+| fotos_extras | jsonb | |
+| fonte | text | `"ibis"` |
+| fonte_id | text | ID único na fonte |
 | deleted_at | timestamptz | soft delete |
-| created_at | timestamptz | |
 
-> **CRÍTICO — campo `observacoes`**: para registros importados via `local_drive`, este campo contém a transcrição literal de todo o texto visível na foto (nome, GN, DN, vulgo, artigos, etc.). É o campo que torna a busca por qualquer texto da foto possível. NÃO sobrescrever sem preservar o conteúdo OCR.
+> `nascimento` é **string**, não `date`. Nunca incluir em filtros `ilike` — quebra toda busca.
 
 **`face_embeddings`** — vetores 512d
-- `source`, `source_id`, `source_label` — referência ao qualificado
+- `source` (`"qualificados"` ou `"drive_bq"`), `source_id` (text), `source_label`
 - `photo_url`, `embedding` (vector 512), `bbox`, `det_score`, `face_index`
-- Índice HNSW para busca por similaridade
-- **UNIQUE INDEX** em `(source, source_id, photo_url, face_index)` — obrigatório para o upsert funcionar
+- **UNIQUE INDEX** em `(source, source_id, photo_url, face_index)`
 
-**`face_skipped`** — registros sem rosto detectado
+**`face_skipped`** — registros sem rosto
 - `source`, `source_id`, `source_label`, `reason`
-- Um registro por qualificado (upsert com `onConflict: "source,source_id"`)
 
 **`dev_chat_messages`** — Chat do Dev
-- `role` (user/assistant), `content`, `attachments` (jsonb), `read_at`, `created_at`
 
-**`drive_sync_folders`** — Pastas do Google Drive configuradas para sync automático
-- `folder_id`, `folder_name`, `last_synced_at`, `total_imported`, `active`
-- Migration: `008_drive_sync.sql` (já aplicada)
-
-**`drive_import_queue`** — Fila de importação gradual do Drive
-- `file_id` (PK), `file_name`, `mime_type`, `done` (boolean)
-- Populada pelo script `scripts/drive-import-local.js` na 1ª execução
-- Migration: `008_drive_import_queue.sql` (já aplicada)
-
-**Storage buckets**:
-- `faces` — fotos em `ibis/`, `drive/`, `manual/` (upload manual pela UI)
-- `dev-chat` — anexos do Chat do Dev
+**Storage buckets**: `faces` (`ibis/`, `drive/`, `manual/`), `dev-chat`
 
 **RLS**: Desabilitado em todas as tabelas.
-
-## Clientes Supabase
-
-```typescript
-// Admin direto com service role — usar em TODAS as páginas e endpoints
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-function getAdminClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
-
-// SSR com anon key — usar APENAS em login/middleware para auth
-import { createClient } from "@/lib/supabase/server";
-const supabase = await createClient();
-```
-
-## Cache Next.js / Vercel
-
-Todas as páginas do dashboard devem ter:
-```typescript
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-```
 
 ## Endpoints principais
 | Rota | Descrição |
 |------|-----------|
-| `POST /api/ibis/import` | Recebe pessoas do script extrator do IBIS (CORS aberto) |
-| `GET /api/qualificados/search?q=` | Busca server-side em nome, vulgo, genitora, cpf, nascimento, observacoes |
-| `DELETE /api/qualificados/[id]` | Remove qualificado + embeddings + foto do Storage |
-| `POST /api/qualificados/[id]/foto` | Upload de foto, atualiza foto_url, limpa embeddings anteriores |
-| `POST /api/face/search` | Busca facial — local + Banco 42º BPM em paralelo |
-| `GET/POST /api/face/backfill` | Gera embeddings dos registros pendentes (paralelo, batch 5) |
-| `POST /api/face/index` | Re-indexa um qualificado específico com retry de threshold |
-| `POST /api/drive/local-preview` | OCR de foto local via OCR.space — retorna dados sem salvar (pré-visualização) |
-| `POST /api/drive/local-import` | Importa foto local com dados pré-confirmados — multipart `file` + `file_hash` + campos OCR |
-| `POST /api/drive/auto-sync` | Sincroniza pastas do Google Drive configuradas (cron diário 4h UTC) |
-| `GET/POST/DELETE /api/drive/sync-folders` | Gerencia pastas do Drive para sync automático |
-| `GET /api/banco-bruno/search?q=` | Proxy para busca textual no Banco 42º BPM (matches + drive_files) |
-| `GET /api/banco-bruno/status` | Stats do Banco 42º BPM (pessoas, faces, drives) |
-| `POST /api/mcp/banco` | Servidor MCP do nosso banco — parceiro se conecta aqui para buscar nossos dados |
-| `GET  /api/dev-chat` | Histórico do Chat do Dev |
-| `POST /api/dev-chat` | Envia mensagem + gera resposta automática (Claude Haiku) |
+| `POST /api/ibis/import` | Recebe pessoas do extrator IBIS (CORS aberto) |
+| `GET /api/qualificados/search?q=` | Busca server-side: nome, vulgo, genitora, cpf, observacoes |
+| `DELETE /api/qualificados/[id]` | Remove qualificado + embeddings + foto Storage |
+| `POST /api/qualificados/[id]/foto` | Upload foto manual, limpa embeddings anteriores |
+| `POST /api/face/search` | Busca facial — local + Banco Bruno em paralelo |
+| `GET/POST /api/face/backfill` | Gera embeddings dos registros pendentes |
+| `GET /api/drive/own-search?q=` | Busca OCR no Drive BQ via OAuth2 |
+| `GET /api/drive/photo/[id]` | Proxy de foto: tenta service account, depois OAuth2 |
+| `POST /api/drive/index-faces` | Indexa rostos do Drive BQ (fonte drive_bq) |
+| `DELETE /api/drive/file/[id]` | Apaga arquivo do Drive BQ + remove embeddings |
+| `GET /api/banco-bruno/search?q=` | Proxy para busca textual no Banco Bruno |
+| `GET /api/banco-bruno/status` | Stats do Banco Bruno |
+| `POST /api/mcp/banco` | Servidor MCP — Bruno acessa nosso banco aqui |
+| `GET/POST /api/dev-chat` | Chat do Dev — histórico e envio |
 | `PATCH /api/dev-chat/[id]/read` | Marca mensagem como lida |
 
-## Face Service (Railway)
+## Dashboard (`/`)
+- **3 cards**: IBIS (qualificados no banco) / Meu Drive (arquivos na pasta BQ) / Total geral
+- **BancoParceiros**: stats do Banco Bruno (badge âmbar "BANCO BRUNO")
+- Drive BQ é contado em tempo real via API — reflete o número atual de arquivos na pasta
+
+## Página de Indexação (`/indexacao`)
+- **Cobertura**: (IBIS indexados + Drive BQ indexados) ÷ (IBIS com foto + Drive BQ total) × 100
+- **Pendentes**: inclui IBIS pendentes + Drive BQ pendentes
+- **Sem rosto**: inclui IBIS skipped + Drive BQ skipped
+- **BackfillStatus**: status do worker Railway + botão "Rodar agora"
+- **Painel de contato** (direita): instrução para contactar Adm. do Sistema ou ALI/42º BPM
+- Cadastro de novos qualificados é feito exclusivamente via IBIS ou Drive BQ — sem formulário manual
+
+## Busca de qualificados (`/qualificados`)
+- Sem botão "Novo" — cadastro somente via IBIS ou Drive
+- Busca local (Supabase) + Drive BQ (`own-search`) + Banco Bruno — em paralelo
+- **MEU DRIVE**: badge verde — thumbnail da foto + lightbox ao clicar + botão Excluir
+- **BANCO BRUNO**: badge âmbar
+
+## Face Service (Railway) ⚠️ SUSPENSO
 
 ```
 face-service/
-├── main.py          # FastAPI: GET /health, POST /embed, POST /embed-raw + backfill worker
-├── Dockerfile       # buffalo_l pré-baixado no build — sem download em runtime
-├── railway.json     # watchPatterns: face-service/** — não redeploya em push de frontend
-└── requirements.txt # inclui httpx para o worker
+├── main.py       # FastAPI + worker de backfill contínuo
+├── Dockerfile    # buffalo_l pré-baixado no build
+└── railway.json  # watchPatterns: face-service/**
 ```
 
-- **`POST /embed`** — multipart/form-data (browser)
-- **`POST /embed-raw`** — binário puro `Content-Type: image/jpeg` (server-to-server)
-- Ambos aceitam `?min_score=0.35` para threshold por requisição
-- `MIN_DET_SCORE=0.6` padrão no Railway
-- **Timeout**: `src/lib/face-service.ts` usa `AbortSignal.timeout(30000)` — 30s para tolerar cold-start do Railway
-- **`/api/face/search`** tem `maxDuration = 60` — necessário no Vercel Hobby para evitar corte em 10s
-
-**Worker de backfill contínuo** (`backfill_worker` em `main.py`):
-- Inicia junto com o FastAPI via `lifespan`
-- Chama `get_pending_qualificados` diretamente no Supabase (sem HTTP round-trip)
-- Roda `process_image()` no thread pool (`run_in_executor`) — não bloqueia endpoints HTTP
-- Quando fila vazia: dorme `WORKER_SLEEP` segundos e verifica novamente
-- Requer `SUPABASE_URL` e `SUPABASE_SERVICE_KEY` no Railway — se ausentes, worker fica desabilitado sem erro
-- HTTP calls do worker usam **`urllib.request` (stdlib)** — NÃO usar httpx. httpx adicionado ao requirements.txt causa crash silencioso no Railway (ImportError antes do uvicorn inicializar, sem output nos logs de runtime)
-
-> **CRÍTICO**: chamadas Vercel → Railway **devem usar `/embed-raw`**. FormData/Blob não serializa corretamente no runtime serverless do Vercel (retorna 502).
-
-> **Upscaling removido**: causava segfault no ONNX Runtime. InsightFace redimensiona internamente.
-
-> **Se o Railway cair**: forçar redeploy via API Railway ou pelo dashboard. O `watchPatterns` no railway.json impede auto-redeploy por push de frontend — se o serviço travar, precisa de redeploy manual.
-
-### Redeploy manual Railway (via API)
-```bash
-# Buscar ID do último deployment SUCCESS e redeployar
-curl -s "https://backboard.railway.app/graphql/v2" \
-  -H "Authorization: Bearer <RAILWAY_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"mutation { deploymentRedeploy(id: \"<DEPLOY_ID>\") { id status } }"}'
-```
-
-## Backfill de embeddings
-
-Usa `get_pending_qualificados(batch_limit)` — RPC que retorna qualificados sem embedding e sem face_skipped, sem limite de linhas.
-
-**Primário — Worker contínuo no Railway** (`face-service/main.py`):
-- Processa embeddings em loop contínuo, sem intervalo fixo
-- Batch de 10 pessoas por vez; quando fila vazia dorme 60s e tenta de novo
-- Sem custo adicional — roda no mesmo container do face-service
-- Logs visíveis no dashboard Railway
-
-**Backup — GitHub Actions** (`.github/workflows/backfill.yml`):
-- Executa a cada **15 minutos** via cron
-- Processa até 20 lotes × 5 registros = **100 embeddings por rodada**
-- Para automaticamente quando `remaining = 0`
-- Mantido como redundância — se worker Railway cair, GH Actions assume
-- Pode ser disparado manualmente em: https://github.com/wilhianmendes-afk/projeto1/actions/workflows/backfill.yml
-
-**Funcionamento do endpoint `/api/face/backfill`:**
-- **Paralelo**: todos os registros do batch processados com `Promise.all`
-- **Batch padrão**: 5 registros
-- **Retry automático**: se `total_detected > 0` mas `count == 0`, tenta com `min_score=0.35`
-- **Sem healthCheck**: se o face service falhar, registro fica pendente para próxima rodada
-- **Vercel Cron** (`vercel.json`): backup diário às 3h UTC
-
-**Auth do backfill:**
-- Header `x-backfill-token: <IBIS_IMPORT_TOKEN>`
-- Header `x-vercel-cron: 1`
-- Usuário logado (sessão SSR)
-
-**Página /indexacao:**
-- Exibe apenas status (stats + listas) — sem loop client-side
-- Botão "Rodar agora" para execução manual pontual
-- Stats atualizam automaticamente a cada 60s
-- Badge: "Contínuo — worker ativo no Railway"
-
-## Estatísticas compartilhadas — `src/lib/face-stats.ts`
-
-Dashboard e indexação usam a mesma função `getFaceStats()` que chama `get_face_stats()` via RPC. Números sempre idênticos entre as duas páginas.
-
-## Página de Indexação (/indexacao)
-- **Cobertura**: indexados ÷ qualificados com foto (exclui sem foto do denominador)
-- **Sem foto**: lista expansível `SemFotoList` — link para cada qualificado, pode adicionar foto
-- **Sem rosto**: lista expansível `SemRostoList` — link para cada qualificado + botão Limpar
-- **BackfillStatus**: exibe status + botão "Rodar agora"; indexação real feita pelo worker contínuo no Railway (GH Actions como backup)
-
-## Upload de foto manual
-`POST /api/qualificados/[id]/foto` — campo `foto` em multipart.
-- Upload para `faces/manual/<id>_<timestamp>.jpg`
-- Atualiza `foto_url` no banco
-- Remove embeddings e face_skipped anteriores (força re-indexação)
-
-## IBIS Import — sanitização de filename
-`fonte_id` do IBIS pode conter espaços, `%20` ou extensão `.jpg` embutida. O import aplica:
-```typescript
-const safeId = decodeURIComponent(rawId)
-  .replace(/[^a-zA-Z0-9._-]/g, "_")
-  .replace(/\.(jpe?g|png|gif|webp|bmp)$/i, "");  // remove extensão já existente
-const filename = `ibis/${safeId}.jpg`;
-```
-Evita double-encoding `%2520` e extensão dupla `.jpg.jpg`. Os 27 registros com `%2520` foram corrigidos via:
-```sql
-UPDATE qualificados SET foto_url = REPLACE(foto_url, '%2520', '%20') WHERE foto_url LIKE '%2520%';
-```
-
-## Fotos sem rosto detectado (`face_skipped`)
-
-`total_detected: 0` significa que o InsightFace não encontrou geometria facial. Causas:
-
-| Causa | Solução |
-|-------|---------|
-| Foto muito comprimida (< 25KB) | Upload de foto de melhor qualidade |
-| Rosto muito pequeno na imagem | Upload de foto com rosto maior |
-| **Rosto grande demais no frame** (foto 3×3/close-up > 70%) | **Corrigido no `process_image` — padding automático** |
-| Ângulo extremo ou iluminação ruim | Upload de foto melhor |
-
-**Fix de close-up implementado em `face-service/main.py`**: quando `total_detected == 0`, o `process_image` adiciona borda branca de tamanho `max(h, w)` ao redor da imagem antes de retentar. Isso reduz o rosto de ~90% do frame para ~33%, dentro do range do detector SCRFD. O bbox é ajustado de volta ao espaço da imagem original.
-
-O retry com `min_score=0.35` só ajuda quando `total_detected > 0` mas `count == 0` (rosto detectado mas abaixo do threshold).
-
-**Solução para casos sem solução automática**: fazer upload de foto de melhor qualidade na página do qualificado. O upload limpa embeddings e face_skipped anteriores, forçando re-indexação.
-
-## Chat do Dev
-Canal interno embarcado no dashboard. **Não expor publicamente.**
-- Componente: `src/components/DevChat.tsx` (flutuante, canto inferior direito)
-- Tabela: `dev_chat_messages` (migration 006 — já aplicada)
-- Requer `ANTHROPIC_API_KEY` com créditos para respostas automáticas via Claude Haiku
-
-## Importação de fotos locais (fotos de abordagem)
-
-**Componente:** `src/components/DriveImport.tsx` — na página `/indexacao`
-
-**Conceito:** as fotos importadas são "fotos de abordagem" — a foto É a ficha. Os dados do abordado (nome, GN, DN, vulgo) estão escritos na própria imagem como legenda. O OCR transcreve tudo literalmente e guarda em `observacoes`, tornando qualquer palavra da foto pesquisável.
-
-**Como usar:**
-1. Selecionar Pasta — abre seletor de pasta do computador (webkitdirectory)
-2. Selecionar Fotos — abre seletor de arquivos individuais
-3. Drag & drop de arquivos/pastas na zona de drop
-
-**Fluxo de importação (novo — com preview):**
-1. Usuário seleciona foto(s) → browser redimensiona para max 1600px JPEG 88%
-2. `POST /api/drive/local-preview` — OCR via OCR.space API (não salva nada)
-3. Card de revisão exibido com foto + campos pré-preenchidos (editáveis)
-4. Usuário clica **Importar** → `POST /api/drive/local-import` com dados confirmados
-5. Ou clica **Descartar** → foto removida sem salvar
-
-**`POST /api/drive/local-preview`:**
-- Auth: `x-import-token: <IBIS_IMPORT_TOKEN>`
-- OCR via **OCR.space API** (`OCR_SPACE_API_KEY`) — engine 2, português, sem upload para Drive
-- Retorna: `{ nome, genitora, nascimento, vulgo, cpf, observacoes, _erro }`
-- `_erro` visível no console do browser para diagnóstico
-
-**`POST /api/drive/local-import`:**
-- Auth: `x-import-token: <IBIS_IMPORT_TOKEN>`
-- Deduplicação por SHA-256 (`file_hash`)
-- Se `nome` vier no FormData, usa dados fornecidos diretamente (OCR já foi feito no preview)
-- Upload para Storage em `faces/drive/local/<hash>/<filename>`
-- Insere com `fonte: "local_drive"`, `fonte_id: <hash>`
-- Indexa rostos via face-service Railway
-
-> **OCR engine local**: **OCR.space API** via `OCR_SPACE_API_KEY`. Requer cadastro grátis em ocr.space/ocrapi.
-> Service accounts Google não têm cota de storage no Drive — upload temporário impossível. Cloud Vision exige billing. OCR.space é a alternativa gratuita sem billing.
-
-**Google Drive — autenticação via Service Account**
-- Lib: `src/lib/google-drive.ts` — usa `GOOGLE_SERVICE_ACCOUNT_KEY` (JSON completo em uma linha)
-- Service Account: `intel-facial-42@intel-facial-42.iam.gserviceaccount.com`
-- Pasta raiz compartilhada: `1XzKRnRfmhQi-wFXgHn2dzG9EOwZdGwAF` (~25.802 fotos, 45+ subpastas)
-- NÃO usar OAuth (GOOGLE_CLIENT_ID etc.) — foi substituído por Service Account
-
-**Sync automático do Google Drive** (`/api/drive/auto-sync`):
-- Tabela `drive_sync_folders` armazena IDs de pastas do Drive para sync
-- Cron Vercel dispara diariamente às 4h UTC
-- Busca recursiva em subpastas via `listAllImages()` — percorre toda a hierarquia
-
-**Importação gradual — GitHub Actions** (`scripts/drive-import-local.js`):
-- Workflow: `.github/workflows/drive-import.yml` — roda a cada 4h automaticamente
-- Usa fila `drive_import_queue` no Supabase para persistir progresso entre runs
-- Batch de 1.000 fotos por run (Supabase max_rows=1000 limita o `.limit(2000)`)
-- Fluxo: OCR Google Drive (copy→export com retry 2s/4s/6s) → se texto extraído → download → upload Storage → insert → embed Railway
-- **Só importa fotos com texto OCR** — sem observacoes = sem_dados, não entra no banco
-- **Status atual**: fila resetada (25.802 pendentes), rodando com OCR corrigido
-- Para disparar manualmente via API: `POST https://api.github.com/repos/wilhianmendes-afk/projeto1/actions/workflows/drive-import.yml/dispatches` com `ref: claude/check-github-access-v30TG`
-
-**OCR do workflow (Google Drive copy-to-doc):**
-- `drive.files.copy` com `mimeType: "application/vnd.google-apps.document"` aplica OCR na imagem
-- OCR é assíncrono: tenta exportar até 3x com espera crescente (2s → 4s → 6s)
-- Log inline mostra `[OCR:Xchars]` ou `[OCR-erro:...]` por foto
-- Suporta dois formatos de legenda:
-  - Formato A (abordagem): `NOME\nGN:MÃE\nDN:DD/MM/AAAA`
-  - Formato B (ficha): `Nome NOME\nMãe MÃE\nData Nascimento DD/MM/AAAA`
-- Todo o texto vai para `observacoes` — pesquisável por qualquer palavra da foto
-
-## Busca textual de qualificados
-
-**Arquitetura**: busca **server-side** via `/api/qualificados/search?q=`, não client-side sobre initialData.
-
-**Por quê**: Supabase tem `max_rows=1000` — filtrar client-side perdia registros além do 1000º alfabético.
-
-**Endpoint `GET /api/qualificados/search?q=`:**
-- Usa `.ilike('%term%')` em: `nome`, `vulgo`, `genitora`, `cpf`, `nascimento`, `observacoes`
-- `observacoes` contém o texto OCR completo → buscar "08/05/1988" ou "GN:ERONE" funciona
-- Retorna até 100 resultados ordenados por nome
-- Roda em paralelo com a busca no Banco 42º BPM (debounce 400ms)
-
-**`QualificadosSearch.tsx`:**
-- Sem pesquisa → mostra `initialData` (até 1000 registros, display inicial)
-- Com pesquisa → chama API server-side (sem limite)
-- Busca local, MEU DRIVE e Banco 42º BPM disparam juntas, resultados aparecem conforme chegam
-- **MEU DRIVE**: badge verde — busca em `/api/drive/own-search?q=`, thumbnails com lightbox
-- `/api/drive/own-search`: usa Service Account, busca `fullText contains` no Drive, retorna `{ files: [{id, name, thumbnailLink}] }`
-
-## Integração IBIS (ibis.app.br)
-
-Scripts:
-- `scripts/ibis-extractor-manual.js` — **uso principal**: cole no console após pesquisar
-- `scripts/clear-ibis-storage.js` — limpa pasta `ibis/` do Storage em lote
-
-**Como usar:**
-1. Abra o IBIS logado e pesquise qualquer termo
-2. Abra o console (`F12`) e cole o conteúdo do arquivo (nunca do chat)
-3. Processa a página atual e navega automaticamente pelas seguintes
-4. Ao finalizar, dispara o backfill de embeddings automaticamente
-
-> **Token**: o script já inclui `IBIS_IMPORT_TOKEN` no header `X-Ibis-Token`. Se o token mudar, atualizar a constante `IBIS_TOKEN` no topo do script (`scripts/ibis-extractor-manual.js` linha 3).
-
-**Limpar banco do zero:**
-```sql
-TRUNCATE face_embeddings, face_skipped, qualificados RESTART IDENTITY CASCADE;
-```
-Depois: `node scripts/clear-ibis-storage.js`
-
-## Deploy (Vercel)
-- Branch: `claude/check-github-access-v30TG`
-- GitHub Action (`.github/workflows/deploy.yml`): deploy automático a cada push
-- Requer secret `VERCEL_DEPLOY_HOOK` no GitHub
+- Chamadas Vercel → Railway usam `/embed-raw` (binário puro) — NÃO multipart
+- Worker de backfill roda no mesmo container via `lifespan`
+- NÃO usar httpx no requirements.txt — causa crash silencioso no Railway
 
 ## GitHub Actions — workflows
 | Arquivo | Trigger | Função |
 |---------|---------|--------|
-| `.github/workflows/deploy.yml` | push no branch | Deploy na Vercel |
-| `.github/workflows/backfill.yml` | a cada 15min + manual | Indexação automática de embeddings |
+| `deploy.yml` | push no branch | Deploy na Vercel |
+| `backfill.yml` | a cada 15min + manual | Indexação embeddings IBIS |
+| `drive-index-faces.yml` | a cada 6h + manual | Indexação rostos Drive BQ |
+| `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway |
 
-**Secrets necessários no repositório:**
-- `VERCEL_DEPLOY_HOOK` — URL do deploy hook da Vercel
-- `IBIS_IMPORT_TOKEN` — token de autenticação do backfill (já configurado)
+## Integração Banco Bruno (MCP bidirecional)
+- Bruno mantém banco próprio + Drive; sistema offline (404 no MCP)
+- Nosso sistema → Bruno: `/api/banco-bruno/search`, `/api/banco-bruno/status`, `/api/face/search`
+- Bruno → Nosso sistema: `/api/mcp/banco` (autenticado via `IBIS_IMPORT_TOKEN`)
+- Todas as chamadas fetch ao Bruno precisam de `cache: "no-store"`
 
 ## Componentes principais
 | Componente | Função |
 |------------|--------|
-| `BackfillStatus.tsx` | Status da indexação + botão "Rodar agora" manual |
-| `SemFotoList.tsx` | Lista expansível de qualificados sem foto |
-| `SemRostoList.tsx` | Lista expansível de qualificados sem rosto + botão Limpar |
-| `FotoUpload.tsx` | Upload de foto na página do qualificado (drag & drop) |
-| `IndexButton.tsx` | Re-indexa um qualificado individual |
-| `DeleteButton.tsx` | Remove qualificado + embeddings + foto (confirmação dupla) |
-| `FaceSearch.tsx` | Busca facial — detecção automática (bbox) separada da busca (clique manual) |
-| `ComparisonModal.tsx` | Modal comparação — "Ver no Banco 42º BPM" para qualificados do parceiro |
-| `QualificadosSearch.tsx` | Busca server-side local + Banco 42º BPM simultânea; Drive 42º BPM abre lightbox |
+| `BackfillStatus.tsx` | Status indexação + botão "Rodar agora" |
+| `SemFotoList.tsx` | Lista qualificados sem foto |
+| `SemRostoList.tsx` | Lista qualificados sem rosto + botão Limpar |
+| `FotoUpload.tsx` | Upload foto na página do qualificado |
+| `FaceSearch.tsx` | Busca facial com detecção automática |
+| `QualificadosSearch.tsx` | Busca local + Drive BQ + Bruno simultânea; lightbox com botão Excluir no Drive BQ |
+| `BancoParceiros.tsx` | Stats do Banco Bruno (badge "BANCO BRUNO") |
+| `TotalQualificados.tsx` | Contador de registros na página de qualificados |
 | `DevChat.tsx` | Chat flutuante de desenvolvimento |
-| `DriveImport.tsx` | Import local com preview: seleciona → OCR.space → card revisão → Importar/Descartar |
-| `BancoParceiros.tsx` | Dashboard: stats do Banco 42º BPM (parceiro) — pessoas, faces, drives |
-| `TotalQualificados.tsx` | Contador combinado: "X registros + Y bancos parceiros" na página de qualificados |
 
-## Integração Banco 42º BPM — parceiro Bruno (MCP)
-
-Bruno é o operador parceiro que mantém banco próprio + Drive com fotos do 42º BPM. A integração é **bidirecional** via MCP (HTTP JSON-RPC). O Drive é do batalhão (compartilhado).
-
-### Nosso sistema → Banco 42º BPM
-- URL do MCP: variável `BANCO_BRUNO_URL` na Vercel
-- `/api/banco-bruno/search?q=` — proxy para `search_text`; retorna `{ matches, drive_files }`
-- `/api/banco-bruno/status` — proxy para `get_banco_status`; retorna stats
-- `/api/face/search` — chama `search_face` em paralelo com nossa busca local
-- Página `/qualificados/bruno/[id]` — detalhe de qualificado do banco parceiro
-- Resultados aparecem com badge âmbar **BANCO 42º BPM**
-- Resultados do Drive aparecem com badge azul **DRIVE 42º BPM** — clicar abre lightbox (não navega)
-
-### Banco 42º BPM → Nosso sistema
-- `/api/mcp/banco` — nosso servidor MCP que o parceiro acessa
-- Ferramentas expostas: `search_text` (Supabase + Google Drive), `get_qualificado`, `search_face`, `get_banco_status`
-- Autenticado via `IBIS_IMPORT_TOKEN`
-
-> **Cache Vercel**: todas as chamadas fetch para o parceiro DEVEM ter `cache: "no-store"`. O Next.js 14 cacheia fetches server-side mesmo com `force-dynamic`.
-
-## Páginas
-| Rota | Descrição |
-|------|-----------|
-| `/` | Dashboard — stats locais + stats Banco 42º BPM parceiro |
-| `/busca` | Busca facial — local + 42º BPM em paralelo |
-| `/qualificados` | Grade com busca server-side local + 42º BPM simultânea |
-| `/qualificados/[id]` | Detalhe — foto 300px, upload de foto, re-indexação, excluir |
-| `/qualificados/novo` | Formulário para cadastrar manualmente |
-| `/qualificados/bruno/[id]` | Detalhe de qualificado do Banco 42º BPM (via MCP `get_qualificado`) |
-| `/indexacao` | Stats + import local de fotos + sync Drive + worker status |
-| `/login` | Login com usuário (sem @) |
-
-## Branch de desenvolvimento
-`claude/check-github-access-v30TG`
+## Deploy
+- Branch: `claude/check-github-access-v30TG`
+- Deploy automático via `deploy.yml` a cada push
+- Secrets GitHub: `VERCEL_DEPLOY_HOOK`, `IBIS_IMPORT_TOKEN`, `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID`
