@@ -19,4 +19,6 @@ ENV MIN_DET_SCORE=0.6
 # Pre-download buffalo_l during build so the container starts without network dependency
 RUN python -c "from insightface.app import FaceAnalysis; fa = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); fa.prepare(ctx_id=0, det_size=(640,640)); print('buffalo_l cached')"
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+EXPOSE 8080
+
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
