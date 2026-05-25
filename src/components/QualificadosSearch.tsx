@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
 interface Qualificado {
@@ -191,7 +191,20 @@ function CardOwnDrive({ f, onClick }: { f: OwnDriveFile; onClick: () => void }) 
   );
 }
 
-function LightboxOwnDrive({ f, onClose }: { f: OwnDriveFile; onClose: () => void }) {
+function LightboxOwnDrive({ f, onClose, onDeleted }: { f: OwnDriveFile; onClose: () => void; onDeleted: (id: string) => void }) {
+  const [deleting, setDeleting] = React.useState(false);
+  const [confirm, setConfirm] = React.useState(false);
+
+  async function handleDelete() {
+    if (!confirm) { setConfirm(true); return; }
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/drive/file/${f.id}`, { method: "DELETE" });
+      if (res.ok) { onDeleted(f.id); onClose(); }
+      else { alert("Erro ao excluir. Tente novamente."); setDeleting(false); setConfirm(false); }
+    } catch { setDeleting(false); setConfirm(false); }
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
@@ -206,7 +219,25 @@ function LightboxOwnDrive({ f, onClose }: { f: OwnDriveFile; onClose: () => void
             <span className="text-xs font-bold bg-green-700 text-white px-2 py-0.5 rounded mr-2">MEU DRIVE</span>
             <span className="text-white text-sm font-medium">{f.name}</span>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className={`text-xs font-semibold px-3 py-1.5 rounded transition-colors ${
+                confirm
+                  ? "bg-red-600 hover:bg-red-500 text-white"
+                  : "bg-gray-700 hover:bg-red-700 text-gray-200"
+              }`}
+            >
+              {deleting ? "Excluindo..." : confirm ? "Confirmar exclusão" : "Excluir"}
+            </button>
+            {confirm && !deleting && (
+              <button onClick={() => setConfirm(false)} className="text-gray-400 hover:text-white text-xs px-2 py-1.5">
+                Cancelar
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none ml-1">✕</button>
+          </div>
         </div>
         <div className="bg-black rounded-b-xl overflow-hidden">
           {f.thumbnailLink ? (
@@ -324,7 +355,13 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
   return (
     <div>
       {lightbox && <LightboxDrive f={lightbox} onClose={() => setLightbox(null)} />}
-      {ownDriveLightbox && <LightboxOwnDrive f={ownDriveLightbox} onClose={() => setOwnDriveLightbox(null)} />}
+      {ownDriveLightbox && (
+        <LightboxOwnDrive
+          f={ownDriveLightbox}
+          onClose={() => setOwnDriveLightbox(null)}
+          onDeleted={(id) => setOwnDrive((prev) => prev.filter((f) => f.id !== id))}
+        />
+      )}
       <input
         type="search"
         placeholder="Buscar por nome, alcunha, CPF, mãe ou data (DD/MM/AAAA ou DDMMAAAA)..."
