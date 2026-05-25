@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 ENV MIN_DET_SCORE=0.6
+ENV PORT=8080
 # Caminho explícito para o cache do modelo — garante que build e runtime usam o mesmo local
 ENV INSIGHTFACE_HOME=/app/.insightface
 
