@@ -1,5 +1,4 @@
-import { Search, Database, FolderOpen, BookUser, LayoutList } from "lucide-react";
-import Link from "next/link";
+import { FolderOpen, BookUser, LayoutList } from "lucide-react";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getBQDriveClient, hasBQDriveConfig } from "@/lib/google-drive";
 import BancoParceiros from "@/components/BancoParceiros";
@@ -85,30 +84,6 @@ export default async function DashboardPage() {
       </div>
 
       <BancoParceiros />
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
-        <Link
-          href="/busca"
-          className="bg-blue-900 hover:bg-blue-800 border border-blue-700 rounded-xl p-6 flex items-center gap-4 transition-colors"
-        >
-          <Search className="w-8 h-8 text-blue-300" />
-          <div>
-            <p className="font-semibold text-white text-lg">Busca Facial</p>
-            <p className="text-blue-300 text-sm">Enviar foto e buscar no banco</p>
-          </div>
-        </Link>
-
-        <Link
-          href="/indexacao"
-          className="bg-gray-900 hover:bg-gray-800 border border-gray-700 rounded-xl p-6 flex items-center gap-4 transition-colors"
-        >
-          <Database className="w-8 h-8 text-gray-300" />
-          <div>
-            <p className="font-semibold text-white text-lg">Indexação</p>
-            <p className="text-gray-400 text-sm">Status dos embeddings faciais</p>
-          </div>
-        </Link>
-      </div>
     </div>
   );
 }
