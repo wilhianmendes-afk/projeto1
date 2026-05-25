@@ -11,17 +11,45 @@ from typing import Optional
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("worker")
 
-fa = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
-fa.prepare(ctx_id=0, det_size=(640, 640))
-
 MIN_DET_SCORE = float(os.getenv("MIN_DET_SCORE", "0.45"))
 SUPABASE_URL  = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY  = os.getenv("SUPABASE_SERVICE_KEY", "")
 WORKER_BATCH  = int(os.getenv("WORKER_BATCH", "10"))
 WORKER_SLEEP  = int(os.getenv("WORKER_SLEEP", "60"))
 
+# Carregado em background — não bloqueia o uvicorn na inicialização
+_fa = None
+_fa_ready = asyncio.Event()
 
-def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE) -> dict:
+
+def _load_model_sync():
+    fa = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+    fa.prepare(ctx_id=0, det_size=(640, 640))
+    return fa
+
+
+async def _load_model_bg():
+    global _fa
+    try:
+        log.info("Carregando buffalo_l...")
+        loop = asyncio.get_running_loop()
+        _fa = await loop.run_in_executor(None, _load_model_sync)
+        _fa_ready.set()
+        log.info("buffalo_l pronto")
+    except Exception as e:
+        log.error("Falha ao carregar buffalo_l: %s", e)
+        raise
+
+
+async def get_fa() -> FaceAnalysis:
+    if not _fa_ready.is_set():
+        await asyncio.wait_for(_fa_ready.wait(), timeout=300)
+    return _fa
+
+
+def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE, fa: FaceAnalysis = None) -> dict:
+    if fa is None:
+        raise HTTPException(status_code=503, detail="Model not ready")
     try:
         pil_img = Image.open(io.BytesIO(raw))
         pil_img = ImageOps.exif_transpose(pil_img)
@@ -38,8 +66,6 @@ def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE) -> di
         scale_factor = 1.0
 
         if len(faces) == 0:
-            # Tentativa 1: foto muito grande — o rosto fica pequeno demais em 640px
-            # Redimensiona para 1600px mantendo proporção e retenta
             max_dim = max(orig_h, orig_w)
             if max_dim > 1000:
                 target = 1600
@@ -50,14 +76,11 @@ def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE) -> di
                 img_resized = np.array(pil_resized)
                 faces = fa.get(img_resized)
                 if len(faces) > 0:
-                    # Ajusta bbox de volta para coordenadas da imagem original
                     img = img_resized
                     orig_h, orig_w = new_h, new_w
 
         if len(faces) == 0:
             scale_factor = 1.0
-            # Tentativa 2: foto close-up — rosto ocupa quase todo o frame
-            # Adiciona borda branca para reduzir a proporção
             pad = max(img.shape[0], img.shape[1])
             padded = np.full((img.shape[0] + pad * 2, img.shape[1] + pad * 2, 3), 255, dtype=np.uint8)
             padded[pad:pad + img.shape[0], pad:pad + img.shape[1]] = img
@@ -129,7 +152,7 @@ def _fetch_pending(batch: int) -> list:
         return result if isinstance(result, list) else []
 
 
-def _process_pessoa_sync(pessoa: dict) -> int:
+def _process_pessoa_sync(pessoa: dict, fa: FaceAnalysis) -> int:
     extras = pessoa.get("fotos_extras") or []
     urls = [u for u in [pessoa["foto_url"]] + (extras if isinstance(extras, list) else []) if u]
     embedded = 0
@@ -142,9 +165,9 @@ def _process_pessoa_sync(pessoa: dict) -> int:
             continue
 
         try:
-            result = process_image(raw, time.time(), MIN_DET_SCORE)
+            result = process_image(raw, time.time(), MIN_DET_SCORE, fa)
             if result["count"] == 0 and result["total_detected"] > 0:
-                result = process_image(raw, time.time(), 0.35)
+                result = process_image(raw, time.time(), 0.35, fa)
         except Exception:
             service_error = True
             continue
@@ -188,6 +211,11 @@ async def backfill_worker():
         log.info("Worker desabilitado: SUPABASE_URL ou SUPABASE_SERVICE_KEY ausente")
         return
 
+    # Aguarda modelo estar pronto antes de iniciar o worker
+    log.info("Worker aguardando modelo...")
+    await _fa_ready.wait()
+    fa = _fa
+
     log.info("Backfill worker iniciado (batch=%d, sleep=%ds)", WORKER_BATCH, WORKER_SLEEP)
     loop = asyncio.get_running_loop()
 
@@ -202,7 +230,7 @@ async def backfill_worker():
 
             log.info("Processando lote de %d", len(queue))
             for pessoa in queue:
-                n = await loop.run_in_executor(None, _process_pessoa_sync, pessoa)
+                n = await loop.run_in_executor(None, _process_pessoa_sync, pessoa, fa)
                 log.info("  %s → %d face(s)", pessoa.get("nome", pessoa.get("id")), n)
 
         except asyncio.CancelledError:
@@ -217,13 +245,15 @@ async def backfill_worker():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(backfill_worker())
+    model_task = asyncio.create_task(_load_model_bg())
+    worker_task = asyncio.create_task(backfill_worker())
     yield
-    task.cancel()
+    worker_task.cancel()
     try:
-        await task
+        await worker_task
     except asyncio.CancelledError:
         pass
+    model_task.cancel()
 
 
 app = FastAPI(title="Face Service — 42 BPM Intel", lifespan=lifespan)
@@ -238,14 +268,21 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "buffalo_l", "min_det_score": MIN_DET_SCORE}
+    ready = _fa_ready.is_set()
+    return {
+        "status": "ok" if ready else "loading",
+        "model": "buffalo_l",
+        "model_ready": ready,
+        "min_det_score": MIN_DET_SCORE,
+    }
 
 
 @app.post("/embed")
 async def embed(file: UploadFile, min_score: Optional[float] = Query(default=None)):
     t0 = time.time()
+    fa = await get_fa()
     raw = await file.read()
-    return process_image(raw, t0, min_score if min_score is not None else MIN_DET_SCORE)
+    return process_image(raw, t0, min_score if min_score is not None else MIN_DET_SCORE, fa)
 
 
 @app.post("/embed-raw")
@@ -256,4 +293,5 @@ async def embed_raw(request: Request, min_score: Optional[float] = Query(default
     raw = await request.body()
     if not raw:
         raise HTTPException(status_code=400, detail="Empty body")
-    return process_image(raw, t0, min_score if min_score is not None else MIN_DET_SCORE)
+    fa = await get_fa()
+    return process_image(raw, t0, min_score if min_score is not None else MIN_DET_SCORE, fa)

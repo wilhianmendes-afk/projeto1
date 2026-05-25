@@ -15,6 +15,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 ENV MIN_DET_SCORE=0.6
+# Caminho explícito para o cache do modelo — garante que build e runtime usam o mesmo local
+ENV INSIGHTFACE_HOME=/app/.insightface
 
 # Pre-download buffalo_l during build so the container starts without network dependency
 RUN python -c "from insightface.app import FaceAnalysis; fa = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); fa.prepare(ctx_id=0, det_size=(640,640)); print('buffalo_l cached')"
