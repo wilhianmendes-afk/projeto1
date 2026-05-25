@@ -34,7 +34,7 @@ export default function BancoParceiros() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold bg-amber-700 text-white px-2 py-1 rounded">
-              BANCO 42º BPM
+              BANCO BRUNO
             </span>
             {status?.ibis_online && (
               <span className="flex items-center gap-1 text-green-400 text-xs">
