@@ -332,7 +332,9 @@ export default function FaceSearch() {
               key={i}
               onClick={() => setSelectedResult(r)}
               className={`flex items-center gap-4 bg-gray-900 rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-800 ${
-                r.from_bruno
+                r.from_bruno && r.source === "drive"
+                  ? "border-2 border-blue-700"
+                  : r.from_bruno
                   ? "border-2 border-amber-700"
                   : r.from_drive
                   ? "border-2 border-green-700"
@@ -345,14 +347,19 @@ export default function FaceSearch() {
                 className="w-16 h-16 rounded-lg object-contain border border-gray-700 flex-shrink-0 bg-black"
               />
               <div className="flex-1 min-w-0">
-                {r.from_bruno && (
+                {r.from_bruno && r.source === "drive" && (
+                  <span className="inline-block text-[9px] font-bold bg-blue-700 text-white px-1.5 py-0.5 rounded mb-1">
+                    DRIVE DO BRUNO
+                  </span>
+                )}
+                {r.from_bruno && r.source !== "drive" && (
                   <span className="inline-block text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded mb-1">
-                    BANCO BRUNO
+                    BANCO DO BRUNO
                   </span>
                 )}
                 {r.from_drive && (
                   <span className="inline-block text-[9px] font-bold bg-green-700 text-white px-1.5 py-0.5 rounded mb-1">
-                    DRIVE 42º BPM
+                    MEU DRIVE
                   </span>
                 )}
                 <p className="font-semibold text-white truncate">
@@ -361,7 +368,7 @@ export default function FaceSearch() {
                 {r.pessoa?.vulgo && <p className="text-gray-400 text-sm">"{r.pessoa.vulgo}"</p>}
                 {r.pessoa?.cpf   && <p className="text-gray-500 text-xs">CPF: {r.pessoa.cpf}</p>}
                 {r.from_bruno && !r.pessoa?.nome && (
-                  <p className="text-amber-500 text-xs">Dados na foto (Drive)</p>
+                  <p className={`text-xs ${r.source === "drive" ? "text-blue-400" : "text-amber-500"}`}>Dados na foto</p>
                 )}
                 {r.from_drive && (
                   <p className="text-green-500 text-xs">Clique para comparar</p>

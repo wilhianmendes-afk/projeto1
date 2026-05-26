@@ -43,8 +43,11 @@ export default function ComparisonModal({
               {result.from_drive && (
                 <span className="text-[9px] font-bold bg-green-700 text-white px-1.5 py-0.5 rounded">MEU DRIVE</span>
               )}
-              {result.from_bruno && (
-                <span className="text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded">BANCO BRUNO</span>
+              {result.from_bruno && result.source === "drive" && (
+                <span className="text-[9px] font-bold bg-blue-700 text-white px-1.5 py-0.5 rounded">DRIVE DO BRUNO</span>
+              )}
+              {result.from_bruno && result.source !== "drive" && (
+                <span className="text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded">BANCO DO BRUNO</span>
               )}
             </div>
             <h2 className="text-2xl font-bold text-white">
@@ -81,7 +84,7 @@ export default function ComparisonModal({
             {/* Foto do Qualificado */}
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-3 font-bold">
-                {result.from_drive ? "Foto — Meu Drive" : result.from_bruno ? "Foto — Banco Bruno" : "Foto do Qualificado"}
+                {result.from_drive ? "Foto — Meu Drive" : result.from_bruno && result.source === "drive" ? "Foto — Drive do Bruno" : result.from_bruno ? "Foto — Banco do Bruno" : "Foto do Qualificado"}
               </p>
               <img
                 src={result.photo_url}
@@ -98,10 +101,17 @@ export default function ComparisonModal({
             </div>
           )}
 
-          {/* Aviso Banco Bruno */}
-          {result.from_bruno && !result.pessoa?.nome && (
+          {/* Aviso Banco do Bruno */}
+          {result.from_bruno && !result.pessoa?.nome && result.source !== "drive" && (
             <div className="mb-4 bg-amber-950 border border-amber-700 rounded-lg px-4 py-3 text-amber-300 text-sm">
-              Este registro está no <strong>Banco Bruno</strong> — os dados estão visíveis na foto ao lado. Clique em <strong>"Ver no Banco Bruno"</strong> para abrir a ficha completa.
+              Este registro está no <strong>Banco do Bruno</strong> — os dados estão visíveis na foto ao lado.
+            </div>
+          )}
+
+          {/* Aviso Drive do Bruno */}
+          {result.from_bruno && result.source === "drive" && (
+            <div className="mb-4 bg-blue-950 border border-blue-800 rounded-lg px-4 py-3 text-blue-300 text-sm">
+              Esta foto está no <strong>Drive do Bruno</strong> — os dados do identificado estão visíveis na foto ao lado.
             </div>
           )}
 
