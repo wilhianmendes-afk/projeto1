@@ -41,7 +41,7 @@ export default function ComparisonModal({
           <div>
             <div className="flex items-center gap-2 mb-1">
               {result.from_drive && (
-                <span className="text-[9px] font-bold bg-green-700 text-white px-1.5 py-0.5 rounded">DRIVE 42º BPM</span>
+                <span className="text-[9px] font-bold bg-green-700 text-white px-1.5 py-0.5 rounded">MEU DRIVE</span>
               )}
               {result.from_bruno && (
                 <span className="text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded">BANCO BRUNO</span>
@@ -81,7 +81,7 @@ export default function ComparisonModal({
             {/* Foto do Qualificado */}
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-3 font-bold">
-                {result.from_drive ? "Foto do Drive 42º BPM" : result.from_bruno ? "Foto — Banco Bruno" : "Foto do Qualificado"}
+                {result.from_drive ? "Foto — Meu Drive" : result.from_bruno ? "Foto — Banco Bruno" : "Foto do Qualificado"}
               </p>
               <img
                 src={result.photo_url}
@@ -94,7 +94,7 @@ export default function ComparisonModal({
           {/* Aviso Drive BQ */}
           {result.from_drive && (
             <div className="mb-4 bg-green-950 border border-green-800 rounded-lg px-4 py-3 text-green-300 text-sm">
-              Esta foto está no <strong>Drive 42º BPM</strong> — os dados do identificado estão visíveis na foto ao lado.
+              Esta foto está no <strong>Meu Drive</strong> — os dados do identificado estão visíveis na foto ao lado.
             </div>
           )}
 
