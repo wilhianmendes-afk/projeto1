@@ -1,7 +1,7 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-05-24)
+## Estado atual (2026-05-26)
 
 ### Funcionando
 - **Banco IBIS**: 1.322 qualificados importados via extrator IBIS
@@ -14,19 +14,16 @@ Sistema de reconhecimento facial para inteligência policial.
 - **Cobertura calculada corretamente**: inclui arquivos do Drive BQ no denominador e numerador
 - **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid)
 - **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API
-
-### Pendente — CRÍTICO
-- **Face service suspenso no Railway**: crédito esgotado — URL retorna 502. Sem face service: busca facial e indexação de rostos não funcionam.
-  - Opção A: Adicionar cartão em railway.app/account/billing (Hobby $5/mês)
-  - Opção B: Migrar para Render.com (gratuito)
+- **Railway Hobby ativo**: plano $5/mês ativado em 2026-05-25 — face service online
 
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
+- **IBIS Auto-Scraper**: script de teste criado em `scripts/ibis-scraper-test.py` — login e navegação validados, falta capturar HTML dos resultados para finalizar o extrator
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
 - **Banco de dados**: Supabase (Postgres + pgvector + Storage + Auth)
-- **Face service**: FastAPI + InsightFace buffalo_l — deploy no Railway ⚠️ SUSPENSO
+- **Face service**: FastAPI + InsightFace buffalo_l — deploy no Railway (Hobby $5/mês)
 - **URL produção**: https://projeto1-liard-one.vercel.app
 - **Face service**: https://projeto1-production-b575.up.railway.app
 
@@ -94,10 +91,12 @@ Fotos enviadas para o Drive de `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_
 4. Clique abre lightbox com foto em tamanho maior + botão **Excluir**
 5. Botão Excluir (2 cliques): apaga permanentemente do Drive + remove embeddings do banco
 
-**Indexação facial** (quando face service voltar):
+**Indexação facial:**
 - Workflow `drive-index-faces.yml` (a cada 6h) varre a pasta e indexa rostos
 - Fonte: `source = "drive_bq"` em `face_embeddings`
 - Aparecem na busca facial com badge verde "DRIVE 42º BPM"
+- Batch de **10 fotos por chamada** (limite Vercel 60s — 30 causava timeout)
+- `/api/drive/index-faces` exclui tanto `face_embeddings` quanto `face_skipped` do cálculo de pendentes (arquivos sem rosto não ficam em loop eterno)
 
 **Registros legados `drive_abordados`**: ainda existem no banco; proxy de foto tenta service account primeiro, depois OAuth2 BQ.
 
@@ -190,7 +189,7 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 - **MEU DRIVE**: badge verde — thumbnail da foto + lightbox ao clicar + botão Excluir
 - **BANCO BRUNO**: badge âmbar
 
-## Face Service (Railway) ⚠️ SUSPENSO
+## Face Service (Railway)
 
 ```
 face-service/
