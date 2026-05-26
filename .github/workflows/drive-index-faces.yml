@@ -18,14 +18,14 @@ jobs:
         run: |
           remaining=1
           rounds=0
-          max_rounds=30   # até 30 × 30 = 900 rostos por execução
+          max_rounds=60   # até 60 × 10 = 600 rostos por execução
 
           while [ "$remaining" -gt 0 ] && [ "$rounds" -lt "$max_rounds" ]; do
             response=$(curl -s -X POST "$INDEX_URL" \
               -H "Content-Type: application/json" \
               -H "x-import-token: $IMPORT_TOKEN" \
-              -d '{"limit":30}' \
-              --max-time 58)
+              -d '{"limit":10}' \
+              --max-time 55) || true
 
             ok=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ok',''))" 2>/dev/null)
             embedded=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('embedded',0))" 2>/dev/null)
