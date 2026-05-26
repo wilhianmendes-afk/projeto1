@@ -53,7 +53,7 @@ export default function Sidebar() {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-20 bg-black/60" onClick={() => setMobileOpen(false)}>
           <div
-            className="absolute top-14 left-0 bottom-0 w-64 bg-gray-900 border-r border-gray-800 flex flex-col p-3"
+            className="absolute top-14 left-0 bottom-16 w-64 bg-gray-900 border-r border-gray-800 flex flex-col p-3"
             onClick={(e) => e.stopPropagation()}
           >
             <nav className="flex-1 space-y-1 mt-2">

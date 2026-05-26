@@ -11,7 +11,7 @@ interface Stats {
   remaining: number;
 }
 
-export default function BackfillStatus({ initialRemaining }: { initialRemaining: number }) {
+export default function BackfillStatus({ initialRemaining, isViewer = false }: { initialRemaining: number; isViewer?: boolean }) {
   const router = useRouter();
   const [running, setRunning]   = useState(false);
   const [lastRun, setLastRun]   = useState<Stats | null>(null);
@@ -68,25 +68,27 @@ export default function BackfillStatus({ initialRemaining }: { initialRemaining:
       )}
 
       {/* Botões */}
-      <div className="flex gap-2">
-        <button
-          onClick={triggerOne}
-          disabled={running}
-          className="flex items-center gap-2 text-sm bg-blue-700 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
-        >
-          {running
-            ? <><Loader2 className="w-4 h-4 animate-spin" /> Processando...</>
-            : <><Play className="w-4 h-4" /> Rodar agora</>}
-        </button>
+      {!isViewer && (
+        <div className="flex gap-2">
+          <button
+            onClick={triggerOne}
+            disabled={running}
+            className="flex items-center gap-2 text-sm bg-blue-700 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            {running
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Processando...</>
+              : <><Play className="w-4 h-4" /> Rodar agora</>}
+          </button>
 
-        <button
-          onClick={() => router.refresh()}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-2 rounded-lg transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Atualizar
-        </button>
-      </div>
+          <button
+            onClick={() => router.refresh()}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-2 rounded-lg transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Atualizar
+          </button>
+        </div>
+      )}
 
       {remaining === 0 && (
         <p className="text-green-400 text-sm font-medium">
