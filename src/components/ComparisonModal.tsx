@@ -11,6 +11,7 @@ interface SearchResult {
   bbox: object;
   confidence: string;
   from_bruno?: boolean;
+  from_drive?: boolean;
   bruno_id?: string;
   pessoa: { nome: string; vulgo?: string; cpf?: string; cidade?: string; uf?: string; nascimento?: string; genitora?: string } | null;
 }
@@ -38,8 +39,16 @@ export default function ComparisonModal({
         {/* Header */}
         <div className="border-b border-gray-700 px-6 py-4 flex items-center justify-between flex-shrink-0">
           <div>
+            <div className="flex items-center gap-2 mb-1">
+              {result.from_drive && (
+                <span className="text-[9px] font-bold bg-green-700 text-white px-1.5 py-0.5 rounded">DRIVE 42º BPM</span>
+              )}
+              {result.from_bruno && (
+                <span className="text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded">BANCO BRUNO</span>
+              )}
+            </div>
             <h2 className="text-2xl font-bold text-white">
-              {result.pessoa?.nome ?? "Desconhecido"}
+              {result.pessoa?.nome ?? (result.from_drive ? "Foto do Drive" : "Desconhecido")}
             </h2>
             <p className="text-gray-400 text-sm mt-1">
               Similaridade: <span className="text-blue-400 font-bold text-lg">{similarity}%</span>
@@ -72,7 +81,7 @@ export default function ComparisonModal({
             {/* Foto do Qualificado */}
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-3 font-bold">
-                Foto do Qualificado
+                {result.from_drive ? "Foto do Drive 42º BPM" : result.from_bruno ? "Foto — Banco Bruno" : "Foto do Qualificado"}
               </p>
               <img
                 src={result.photo_url}
@@ -82,10 +91,17 @@ export default function ComparisonModal({
             </div>
           </div>
 
-          {/* Aviso Drive Bruno */}
+          {/* Aviso Drive BQ */}
+          {result.from_drive && (
+            <div className="mb-4 bg-green-950 border border-green-800 rounded-lg px-4 py-3 text-green-300 text-sm">
+              Esta foto está no <strong>Drive 42º BPM</strong> — os dados do identificado estão visíveis na foto ao lado.
+            </div>
+          )}
+
+          {/* Aviso Banco Bruno */}
           {result.from_bruno && !result.pessoa?.nome && (
             <div className="mb-4 bg-amber-950 border border-amber-700 rounded-lg px-4 py-3 text-amber-300 text-sm">
-              Este registro está no <strong>Drive do 42º BPM</strong> — os dados estão visíveis na foto ao lado. Clique em <strong>"Ver no Banco 42º BPM"</strong> para abrir a ficha completa.
+              Este registro está no <strong>Banco Bruno</strong> — os dados estão visíveis na foto ao lado. Clique em <strong>"Ver no Banco Bruno"</strong> para abrir a ficha completa.
             </div>
           )}
 
@@ -172,7 +188,7 @@ export default function ComparisonModal({
               href={`/qualificados/bruno/${result.bruno_id}`}
               className="flex-1 bg-amber-700 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors text-center text-sm"
             >
-              Ver no Banco 42º BPM
+              Ver no Banco Bruno
             </a>
           )}
           <button

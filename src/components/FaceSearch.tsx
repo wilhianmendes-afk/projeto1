@@ -51,7 +51,6 @@ export default function FaceSearch() {
   const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
   const [imgDisplay, setImgDisplay] = useState<{ w: number; h: number } | null>(null);
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
-  const [driveLightbox, setDriveLightbox]   = useState<string | null>(null);
 
   const fileRef  = useRef<HTMLInputElement>(null);
   const imgRef   = useRef<HTMLImageElement>(null);
@@ -331,7 +330,7 @@ export default function FaceSearch() {
           {response?.results.map((r, i) => (
             <div
               key={i}
-              onClick={() => r.from_drive ? setDriveLightbox(r.photo_url) : setSelectedResult(r)}
+              onClick={() => setSelectedResult(r)}
               className={`flex items-center gap-4 bg-gray-900 rounded-xl p-4 cursor-pointer transition-colors hover:bg-gray-800 ${
                 r.from_bruno
                   ? "border-2 border-amber-700"
@@ -348,7 +347,7 @@ export default function FaceSearch() {
               <div className="flex-1 min-w-0">
                 {r.from_bruno && (
                   <span className="inline-block text-[9px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded mb-1">
-                    BANCO 42º BPM
+                    BANCO BRUNO
                   </span>
                 )}
                 {r.from_drive && (
@@ -365,7 +364,7 @@ export default function FaceSearch() {
                   <p className="text-amber-500 text-xs">Dados na foto (Drive)</p>
                 )}
                 {r.from_drive && (
-                  <p className="text-green-500 text-xs">Clique para ver a foto completa</p>
+                  <p className="text-green-500 text-xs">Clique para comparar</p>
                 )}
               </div>
               <div className="text-right flex-shrink-0">
@@ -420,26 +419,6 @@ export default function FaceSearch() {
         onClose={() => setSelectedResult(null)}
       />
 
-      {/* Lightbox foto Drive */}
-      {driveLightbox && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setDriveLightbox(null)}
-        >
-          <button
-            className="absolute top-4 right-4 text-white bg-gray-800 rounded-full p-2 hover:bg-gray-700"
-            onClick={() => setDriveLightbox(null)}
-          >
-            <X size={20} />
-          </button>
-          <img
-            src={driveLightbox}
-            alt="Foto do abordado"
-            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
     </div>
   );
 }
