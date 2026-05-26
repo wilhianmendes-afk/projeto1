@@ -73,13 +73,13 @@ export async function POST(req: NextRequest) {
   const db = getAdminClient();
 
   // IDs já indexados ou já marcados como sem rosto
-  const [{ data: indexed }, { data: skipped }] = await Promise.all([
+  const [{ data: indexed }, { data: alreadySkipped }] = await Promise.all([
     db.from("face_embeddings").select("source_id").eq("source", SOURCE),
     db.from("face_skipped").select("source_id").eq("source", SOURCE),
   ]);
   const indexedIds = new Set([
     ...(indexed ?? []).map((r: { source_id: string }) => r.source_id),
-    ...(skipped ?? []).map((r: { source_id: string }) => r.source_id),
+    ...(alreadySkipped ?? []).map((r: { source_id: string }) => r.source_id),
   ]);
 
   // Listar arquivos do Drive
