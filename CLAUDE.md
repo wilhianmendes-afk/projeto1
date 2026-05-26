@@ -15,6 +15,8 @@ Sistema de reconhecimento facial para inteligência policial.
 - **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid)
 - **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API
 - **Railway Hobby ativo**: plano $5/mês ativado em 2026-05-25 — face service online
+- **Perfil viewer (coruja)**: usuário somente leitura — veja seção Controle de Acesso
+- **Busca facial**: resultados MEU DRIVE abrem ComparisonModal lado a lado; badges alinhados com busca de qualificados
 
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
@@ -29,7 +31,38 @@ Sistema de reconhecimento facial para inteligência policial.
 
 ## Autenticação
 Login por usuário (sem @), convertido internamente para `usuario@42bpm.intel`.
-Criar usuários pelo painel do Supabase Auth.
+Criar usuários pelo painel do Supabase Auth ou via Admin API (curl com service role key).
+
+## Controle de Acesso (roles)
+
+Role lido de `app_metadata.role` do Supabase via `src/lib/get-role.ts`.
+Definido na criação do usuário via Admin API — não editável pelo próprio usuário.
+
+| Role | Comportamento |
+|------|--------------|
+| `admin` (padrão) | Acesso total |
+| `viewer` | Somente leitura — veja abaixo |
+
+**Usuários cadastrados:**
+- `mendeswillian` / admin — acesso total
+- `coruja` / viewer — somente leitura
+
+**O que o viewer NÃO vê:**
+- Botão Excluir na ficha do qualificado (`DeleteButton`)
+- Upload e re-indexação de foto (`FotoUpload`, `IndexButton`)
+- Botão Excluir no lightbox MEU DRIVE (`QualificadosSearch`)
+- Listas "Sem Foto" e "Sem Rosto" na indexação (`SemFotoList`, `SemRostoList`)
+- Botões "Rodar agora" e "Atualizar" no `BackfillStatus`
+
+**Como criar usuário viewer via API (sem abrir o painel):**
+```bash
+curl -s -X POST "https://avtbwrkjqaepbawvxyvf.supabase.co/auth/v1/admin/users" \
+  -H "apikey: <SERVICE_ROLE_KEY>" \
+  -H "Authorization: Bearer <SERVICE_ROLE_KEY>" \
+  -H "Content-Type: application/json" \
+  -H "User-Agent: supabase-cli/1.0" \
+  -d '{"email":"usuario@42bpm.intel","password":"senha","email_confirm":true,"app_metadata":{"role":"viewer"}}'
+```
 
 ## Variáveis de ambiente (Vercel)
 ```
@@ -94,7 +127,7 @@ Fotos enviadas para o Drive de `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_
 **Indexação facial:**
 - Workflow `drive-index-faces.yml` (a cada 6h) varre a pasta e indexa rostos
 - Fonte: `source = "drive_bq"` em `face_embeddings`
-- Aparecem na busca facial com badge verde "DRIVE 42º BPM"
+- Aparecem na busca facial com badge verde **"MEU DRIVE"**
 - Batch de **10 fotos por chamada** (limite Vercel 60s — 30 causava timeout)
 - `/api/drive/index-faces` exclui tanto `face_embeddings` quanto `face_skipped` do cálculo de pendentes (arquivos sem rosto não ficam em loop eterno)
 
@@ -186,8 +219,15 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 ## Busca de qualificados (`/qualificados`)
 - Sem botão "Novo" — cadastro somente via IBIS ou Drive
 - Busca local (Supabase) + Drive BQ (`own-search`) + Banco Bruno — em paralelo
-- **MEU DRIVE**: badge verde — thumbnail da foto + lightbox ao clicar + botão Excluir
-- **BANCO BRUNO**: badge âmbar
+- **MEU DRIVE**: badge verde — thumbnail + lightbox + botão Excluir (oculto para viewer)
+- **BANCO DO BRUNO**: badge âmbar — banco do parceiro
+- **DRIVE DO BRUNO**: badge azul — drive do parceiro
+
+## Busca facial (`/busca`)
+- Resultados **MEU DRIVE** (`from_drive=true`): abrem `ComparisonModal` com fotos lado a lado
+- Resultados **BANCO DO BRUNO** (`from_bruno=true`, `source≠"drive"`): badge âmbar
+- Resultados **DRIVE DO BRUNO** (`from_bruno=true`, `source="drive"`): badge azul
+- `ComparisonModal`: sem botão "Ver no Banco Bruno" (rota não implementada)
 
 ## Face Service (Railway)
 
@@ -219,13 +259,14 @@ face-service/
 ## Componentes principais
 | Componente | Função |
 |------------|--------|
-| `BackfillStatus.tsx` | Status indexação + botão "Rodar agora" |
-| `SemFotoList.tsx` | Lista qualificados sem foto |
-| `SemRostoList.tsx` | Lista qualificados sem rosto + botão Limpar |
-| `FotoUpload.tsx` | Upload foto na página do qualificado |
-| `FaceSearch.tsx` | Busca facial com detecção automática |
-| `QualificadosSearch.tsx` | Busca local + Drive BQ + Bruno simultânea; lightbox com botão Excluir no Drive BQ |
-| `BancoParceiros.tsx` | Stats do Banco Bruno (badge "BANCO BRUNO") |
+| `BackfillStatus.tsx` | Status indexação + botão "Rodar agora" (oculto para viewer) |
+| `SemFotoList.tsx` | Lista qualificados sem foto (oculto para viewer) |
+| `SemRostoList.tsx` | Lista qualificados sem rosto + botão Limpar (oculto para viewer) |
+| `FotoUpload.tsx` | Upload foto na página do qualificado (oculto para viewer) |
+| `FaceSearch.tsx` | Busca facial — badges MEU DRIVE / BANCO DO BRUNO / DRIVE DO BRUNO |
+| `ComparisonModal.tsx` | Modal lado a lado — suporta drive_bq, banco Bruno e drive Bruno |
+| `QualificadosSearch.tsx` | Busca local + Drive BQ + Bruno; botão Excluir oculto para viewer |
+| `BancoParceiros.tsx` | Stats do Banco Bruno |
 | `TotalQualificados.tsx` | Contador de registros na página de qualificados |
 | `DevChat.tsx` | Chat flutuante de desenvolvimento |
 
