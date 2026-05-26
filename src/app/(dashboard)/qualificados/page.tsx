@@ -1,6 +1,7 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import QualificadosSearch from "@/components/QualificadosSearch";
 import TotalQualificados from "@/components/TotalQualificados";
+import { getUserRole } from "@/lib/get-role";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ function getAdminClient() {
 
 export default async function QualificadosPage() {
   const supabase = getAdminClient();
+  const role = await getUserRole();
 
   const { data: qualificados, count } = await supabase
     .from("qualificados")
@@ -29,7 +31,7 @@ export default async function QualificadosPage() {
         <TotalQualificados local={count ?? 0} />
       </div>
 
-      <QualificadosSearch initialData={qualificados ?? []} totalCount={count ?? 0} />
+      <QualificadosSearch initialData={qualificados ?? []} totalCount={count ?? 0} isViewer={role === "viewer"} />
     </div>
   );
 }

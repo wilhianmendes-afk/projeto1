@@ -44,6 +44,7 @@ interface OwnDriveFile {
 interface QualificadosSearchProps {
   initialData: Qualificado[];
   totalCount: number;
+  isViewer?: boolean;
 }
 
 function CardLocal({ p }: { p: Qualificado }) {
@@ -191,7 +192,7 @@ function CardOwnDrive({ f, onClick }: { f: OwnDriveFile; onClick: () => void }) 
   );
 }
 
-function LightboxOwnDrive({ f, onClose, onDeleted }: { f: OwnDriveFile; onClose: () => void; onDeleted: (id: string) => void }) {
+function LightboxOwnDrive({ f, onClose, onDeleted, isViewer = false }: { f: OwnDriveFile; onClose: () => void; onDeleted: (id: string) => void; isViewer?: boolean }) {
   const [deleting, setDeleting] = React.useState(false);
   const [confirm, setConfirm] = React.useState(false);
 
@@ -220,21 +221,25 @@ function LightboxOwnDrive({ f, onClose, onDeleted }: { f: OwnDriveFile; onClose:
             <span className="text-white text-sm font-medium">{f.name}</span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className={`text-xs font-semibold px-3 py-1.5 rounded transition-colors ${
-                confirm
-                  ? "bg-red-600 hover:bg-red-500 text-white"
-                  : "bg-gray-700 hover:bg-red-700 text-gray-200"
-              }`}
-            >
-              {deleting ? "Excluindo..." : confirm ? "Confirmar exclusão" : "Excluir"}
-            </button>
-            {confirm && !deleting && (
-              <button onClick={() => setConfirm(false)} className="text-gray-400 hover:text-white text-xs px-2 py-1.5">
-                Cancelar
-              </button>
+            {!isViewer && (
+              <>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className={`text-xs font-semibold px-3 py-1.5 rounded transition-colors ${
+                    confirm
+                      ? "bg-red-600 hover:bg-red-500 text-white"
+                      : "bg-gray-700 hover:bg-red-700 text-gray-200"
+                  }`}
+                >
+                  {deleting ? "Excluindo..." : confirm ? "Confirmar exclusão" : "Excluir"}
+                </button>
+                {confirm && !deleting && (
+                  <button onClick={() => setConfirm(false)} className="text-gray-400 hover:text-white text-xs px-2 py-1.5">
+                    Cancelar
+                  </button>
+                )}
+              </>
             )}
             <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none ml-1">✕</button>
           </div>
@@ -288,7 +293,7 @@ function LightboxDrive({ f, onClose }: { f: BrunoDriveFile; onClose: () => void 
   );
 }
 
-export default function QualificadosSearch({ initialData, totalCount }: QualificadosSearchProps) {
+export default function QualificadosSearch({ initialData, totalCount, isViewer = false }: QualificadosSearchProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [localResults, setLocalResults] = useState<Qualificado[] | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
@@ -360,6 +365,7 @@ export default function QualificadosSearch({ initialData, totalCount }: Qualific
           f={ownDriveLightbox}
           onClose={() => setOwnDriveLightbox(null)}
           onDeleted={(id) => setOwnDrive((prev) => prev.filter((f) => f.id !== id))}
+          isViewer={isViewer}
         />
       )}
       <input

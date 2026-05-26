@@ -5,6 +5,7 @@ import IndexButton from "@/components/IndexButton";
 import DeleteButton from "@/components/DeleteButton";
 import BackButton from "@/components/BackButton";
 import FotoUpload from "@/components/FotoUpload";
+import { getUserRole } from "@/lib/get-role";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -21,6 +22,8 @@ export default async function QualificadoPage({
 }) {
   const { id } = await params;
   const supabase = getAdminClient();
+  const role = await getUserRole();
+  const viewer = role === "viewer";
 
   const { data: pessoa } = await supabase
     .from("qualificados")
@@ -63,7 +66,7 @@ export default async function QualificadoPage({
     <div className="max-w-3xl">
       <div className="flex items-center justify-between mb-6">
         <BackButton />
-        <DeleteButton id={id} nome={pessoa.nome} />
+        {!viewer && <DeleteButton id={id} nome={pessoa.nome} />}
       </div>
 
       <div className="flex flex-col sm:flex-row items-start gap-6 mb-8">
@@ -81,7 +84,7 @@ export default async function QualificadoPage({
               </div>
             )}
           </div>
-          <FotoUpload qualificadoId={id} temFoto={!!pessoa.foto_url} />
+          {!viewer && <FotoUpload qualificadoId={id} temFoto={!!pessoa.foto_url} />}
         </div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-white">{pessoa.nome}</h1>
@@ -130,7 +133,7 @@ export default async function QualificadoPage({
             <Fingerprint className="w-5 h-5 text-blue-400" />
             <h2 className="font-semibold text-white">Embeddings faciais</h2>
           </div>
-          <IndexButton qualificadoId={id} />
+          {!viewer && <IndexButton qualificadoId={id} />}
         </div>
 
         {skipped && (

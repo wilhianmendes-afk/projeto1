@@ -5,6 +5,7 @@ import SemRostoList from "@/components/SemRostoList";
 import { CheckCircle, Clock, XCircle, TrendingUp, Info } from "lucide-react";
 import { getFaceStats } from "@/lib/face-stats";
 import { getBQDriveClient, hasBQDriveConfig } from "@/lib/google-drive";
+import { getUserRole } from "@/lib/get-role";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,6 +55,8 @@ async function getDriveStats() {
 
 export default async function IndexacaoPage() {
   const supabase = getAdminClient();
+  const role = await getUserRole();
+  const viewer = role === "viewer";
 
   const [stats, driveStats, { data: semFotoData }] = await Promise.all([
     getFaceStats(),
@@ -93,8 +96,8 @@ export default async function IndexacaoPage() {
         <StatCard icon={XCircle} color="red" label="Sem rosto" value={totalSkippedGeral} />
       </div>
 
-      <SemFotoList qualificados={semFotoList} />
-      <SemRostoList records={skippedList} total={totalSkipped} />
+      {!viewer && <SemFotoList qualificados={semFotoList} />}
+      {!viewer && <SemRostoList records={skippedList} total={totalSkipped} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
