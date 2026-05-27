@@ -1,7 +1,7 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-05-26)
+## Estado atual (2026-05-27)
 
 ### Funcionando
 - **Banco IBIS**: 1.322 qualificados importados via extrator IBIS
@@ -17,6 +17,8 @@ Sistema de reconhecimento facial para inteligência policial.
 - **Railway Hobby ativo**: plano $5/mês ativado em 2026-05-25 — face service online
 - **Perfil viewer (coruja)**: usuário somente leitura — veja seção Controle de Acesso
 - **Busca facial**: resultados MEU DRIVE abrem ComparisonModal lado a lado; badges alinhados com busca de qualificados
+- **Deduplicação Drive BQ**: script `scripts/deduplicate-drive.js` + workflow `deduplicate-drive.yml` (todo domingo 03h UTC); remove fotos byte-idênticas (mesmo MD5), mantém o mais antigo; 20 duplicatas já removidas em 2026-05-27
+- **OAuth2 BQ escopo completo**: refresh token regenerado com `https://www.googleapis.com/auth/drive` (antes era `drive.readonly`) — permite delete via API
 
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
@@ -249,6 +251,7 @@ face-service/
 | `backfill.yml` | a cada 15min + manual | Indexação embeddings IBIS |
 | `drive-index-faces.yml` | a cada 6h + manual | Indexação rostos Drive BQ |
 | `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway |
+| `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ |
 
 ## Integração Banco Bruno (MCP bidirecional)
 - Bruno mantém banco próprio + Drive; sistema offline (404 no MCP)
@@ -273,4 +276,4 @@ face-service/
 ## Deploy
 - Branch: `claude/check-github-access-v30TG`
 - Deploy automático via `deploy.yml` a cada push
-- Secrets GitHub: `VERCEL_DEPLOY_HOOK`, `IBIS_IMPORT_TOKEN`, `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID`
+- Secrets GitHub: `VERCEL_DEPLOY_HOOK`, `IBIS_IMPORT_TOKEN`, `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `DRIVE_BQ_FOLDER_ID`
