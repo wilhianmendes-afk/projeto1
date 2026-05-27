@@ -1,0 +1,31 @@
+name: Drive — Remover Fotos Duplicadas
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"   # toda domingo às 03:00 UTC
+  workflow_dispatch:        # disparo manual
+
+jobs:
+  deduplicate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar googleapis
+        run: npm install --no-save googleapis
+
+      - name: Remover fotos duplicadas do Drive BQ
+        env:
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+          DRIVE_BQ_FOLDER_ID: ${{ secrets.DRIVE_BQ_FOLDER_ID }}
+        run: node scripts/deduplicate-drive.js --delete
