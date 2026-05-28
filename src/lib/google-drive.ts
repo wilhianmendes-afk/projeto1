@@ -30,31 +30,22 @@ export function hasBQDriveConfig() {
   );
 }
 
-// Conta todos os arquivos (não pastas) em uma pasta e suas subpastas via BFS.
+// Conta todos os arquivos (não pastas) em uma pasta e suas subpastas.
+// Usa "in ancestors" — uma query única em vez de BFS recursivo.
 export async function countBQDriveFiles(folderId: string): Promise<number> {
   const drive = getBQDriveClient();
   let total = 0;
-  const queue = [folderId];
-  while (queue.length > 0) {
-    const currentFolder = queue.shift()!;
-    let pageToken: string | undefined;
-    do {
-      const { data } = await drive.files.list({
-        q: `'${currentFolder}' in parents and trashed = false`,
-        fields: "nextPageToken, files(id, mimeType)",
-        pageSize: 1000,
-        pageToken,
-      });
-      for (const f of data.files ?? []) {
-        if (f.mimeType === "application/vnd.google-apps.folder") {
-          queue.push(f.id!);
-        } else {
-          total++;
-        }
-      }
-      pageToken = data.nextPageToken ?? undefined;
-    } while (pageToken);
-  }
+  let pageToken: string | undefined;
+  do {
+    const { data } = await drive.files.list({
+      q: `'${folderId}' in ancestors and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "nextPageToken, files(id)",
+      pageSize: 1000,
+      pageToken,
+    });
+    total += (data.files ?? []).length;
+    pageToken = data.nextPageToken ?? undefined;
+  } while (pageToken);
   return total;
 }
 
