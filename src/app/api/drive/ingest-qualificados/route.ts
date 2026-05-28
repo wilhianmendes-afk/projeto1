@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { listBQFolderFiles, hasBQDriveConfig, ocrImageBuffer } from "@/lib/google-drive";
+import { listBQFolderFiles, getBQDriveClient, hasBQDriveConfig, ocrImageBuffer } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

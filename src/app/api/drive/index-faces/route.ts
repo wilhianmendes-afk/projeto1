@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { listBQFolderFiles, hasBQDriveConfig } from "@/lib/google-drive";
+import { listBQFolderFiles, getBQDriveClient, hasBQDriveConfig } from "@/lib/google-drive";
 import { embedImage } from "@/lib/face-service";
 
 export const dynamic = "force-dynamic";

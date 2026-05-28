@@ -13,7 +13,7 @@ export async function GET() {
     return NextResponse.json({ count: 0, v, _debug: { hasCfg, hasFolderId } });
   }
   try {
-    const count = await countBQDriveFiles(process.env.DRIVE_BQ_FOLDER_ID);
+    const count = await countBQDriveFiles(process.env.DRIVE_BQ_FOLDER_ID!);
     return NextResponse.json(
       { count, v },
       { headers: { "Cache-Control": `public, max-age=${CACHE_TTL}, stale-while-revalidate=${CACHE_TTL * 2}` } }
