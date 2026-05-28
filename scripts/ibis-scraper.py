@@ -347,9 +347,12 @@ async def main(limit):
                         })
 
                     if payload:
-                        res = importar(payload)
-                        imp = res.get("imported", 0)
-                        skp = res.get("skipped", 0)
+                        imp = skp = 0
+                        for off in range(0, len(payload), 15):
+                            chunk = payload[off:off + 15]
+                            r = importar(chunk)
+                            imp += r.get("imported", 0)
+                            skp += r.get("skipped", 0)
                         print(f"importados={imp} existiam={skp}")
                         total_imp += imp
                         total_rec += len(pessoas)
