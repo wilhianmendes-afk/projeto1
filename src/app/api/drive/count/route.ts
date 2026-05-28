@@ -6,8 +6,10 @@ export const dynamic = "force-dynamic";
 const CACHE_TTL = 5 * 60; // 5 minutos
 
 export async function GET() {
-  if (!hasBQDriveConfig() || !process.env.DRIVE_BQ_FOLDER_ID) {
-    return NextResponse.json({ count: 0 });
+  const hasCfg = hasBQDriveConfig();
+  const hasFolderId = !!process.env.DRIVE_BQ_FOLDER_ID;
+  if (!hasCfg || !hasFolderId) {
+    return NextResponse.json({ count: 0, _debug: { hasCfg, hasFolderId } });
   }
   try {
     const count = await countBQDriveFiles(process.env.DRIVE_BQ_FOLDER_ID);
