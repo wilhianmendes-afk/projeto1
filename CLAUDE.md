@@ -259,7 +259,7 @@ face-service/
 | `drive-index-faces.yml` | **a cada 2h** + manual | Indexação rostos Drive BQ (subpastas incluídas) |
 | `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway |
 | `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ (subpastas incluídas) |
-| `ibis-scraper.yml` | **a cada 2h** (offset 30min) + manual | IBIS auto-scraper: 15 prefixos/rodada, 15s entre buscas, ciclo AA..ZZ |
+| `ibis-scraper.yml` | **a cada 2h** (offset 30min) + manual | IBIS auto-scraper: 15 prefixos/rodada, 30s entre buscas, ciclo AA..ZZ |
 
 ## Integração Banco Bruno (MCP bidirecional)
 - Bruno mantém banco próprio + Drive; sistema offline (404 no MCP)
@@ -304,7 +304,7 @@ FOTO | RG|CPF | NOME | ALCUNHA | GENITORA | DN
 1. Busca próximos 15 prefixos pendentes em `ibis_scraper_progress`
 2. Para cada prefixo: login → pesquisa → extrai TRs → baixa fotos → POST `/api/ibis/import`
 3. Marca prefixo como `done`; ao terminar todos os 676, reseta para `pending` (novo ciclo)
-4. 15s entre buscas para não sobrecarregar o IBIS (OOM confirmado com termos genéricos)
+4. **30s entre buscas** para não sobrecarregar o IBIS (OOM confirmado com termos genéricos)
 5. Trata paginação PrimeFaces (`.ui-paginator-next`)
 
 **Atenção IBIS:**
