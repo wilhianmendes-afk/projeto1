@@ -50,7 +50,7 @@ IMPORT_URL   = os.environ.get("IMPORT_URL",
                "https://projeto1-liard-one.vercel.app/api/ibis/import")
 IMPORT_TOKEN = os.environ.get("IBIS_IMPORT_TOKEN", "")
 
-SLEEP_S      = 4   # segundos entre buscas (não sobrecarregar o IBIS)
+SLEEP_S      = 15  # segundos entre buscas — IBIS é infraestrutura gov frágil (OOM confirmado)
 MAX_PAGES    = 15  # máximo de páginas por prefixo
 
 # ── Supabase REST ─────────────────────────────────────────────────────────────

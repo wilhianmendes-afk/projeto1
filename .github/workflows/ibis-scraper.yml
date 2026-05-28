@@ -8,7 +8,7 @@ on:
       limit:
         description: "Prefixos por rodada"
         required: false
-        default: "25"
+        default: "15"
 
 jobs:
   scrape:
@@ -37,5 +37,5 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           IMPORT_URL:               https://projeto1-liard-one.vercel.app/api/ibis/import
           IBIS_IMPORT_TOKEN:        ${{ secrets.IBIS_IMPORT_TOKEN }}
-          PREFIXES_PER_RUN:         ${{ github.event.inputs.limit || '25' }}
+          PREFIXES_PER_RUN:         ${{ github.event.inputs.limit || '15' }}
         run: python scripts/ibis-scraper.py --limit "$PREFIXES_PER_RUN"
