@@ -30,23 +30,48 @@ export function hasBQDriveConfig() {
   );
 }
 
-// Conta todos os arquivos (não pastas) em uma pasta e suas subpastas.
-// Usa "in ancestors" — uma query única em vez de BFS recursivo.
-export async function countBQDriveFiles(folderId: string): Promise<number> {
+// Lista todos os arquivos (não pastas) de uma pasta e suas subpastas diretas.
+// BFS de 2 níveis — "in ancestors" retorna 400 Invalid Value na Drive API.
+export async function listBQFolderFiles(
+  folderId: string,
+  fields: string,
+): Promise<Array<{ id: string; name: string; mimeType: string }>> {
   const drive = getBQDriveClient();
-  let total = 0;
-  let pageToken: string | undefined;
-  do {
-    const { data } = await drive.files.list({
-      q: `'${folderId}' in ancestors and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
-      fields: "nextPageToken, files(id)",
-      pageSize: 1000,
-      pageToken,
-    });
-    total += (data.files ?? []).length;
-    pageToken = data.nextPageToken ?? undefined;
-  } while (pageToken);
-  return total;
+  const result: Array<{ id: string; name: string; mimeType: string }> = [];
+
+  async function fetchFiles(id: string) {
+    let pageToken: string | undefined;
+    do {
+      const { data } = await drive.files.list({
+        q: `'${id}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: `nextPageToken, files(${fields})`,
+        pageSize: 1000,
+        pageToken,
+      });
+      for (const f of data.files ?? []) {
+        result.push({ id: f.id ?? "", name: f.name ?? "", mimeType: f.mimeType ?? "" });
+      }
+      pageToken = data.nextPageToken ?? undefined;
+    } while (pageToken);
+  }
+
+  await fetchFiles(folderId);
+
+  const { data: subData } = await drive.files.list({
+    q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: "files(id)",
+    pageSize: 100,
+  });
+  for (const sub of subData.files ?? []) {
+    if (sub.id) await fetchFiles(sub.id);
+  }
+
+  return result;
+}
+
+export async function countBQDriveFiles(folderId: string): Promise<number> {
+  const files = await listBQFolderFiles(folderId, "id");
+  return files.length;
 }
 
 // Interpreta o texto extraído pelo OCR do Google Drive.

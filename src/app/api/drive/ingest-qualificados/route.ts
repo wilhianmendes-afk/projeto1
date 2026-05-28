@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { getBQDriveClient, hasBQDriveConfig, ocrImageBuffer } from "@/lib/google-drive";
+import { listBQFolderFiles, hasBQDriveConfig, ocrImageBuffer } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -18,22 +18,8 @@ function getAdminClient() {
 }
 
 async function listAllImages(folderId: string): Promise<{ id: string; name: string }[]> {
-  const drive = getBQDriveClient();
-  const images: { id: string; name: string }[] = [];
-  let pageToken: string | undefined;
-  do {
-    const { data } = await drive.files.list({
-      q: `'${folderId}' in ancestors and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
-      fields: "nextPageToken, files(id, name, mimeType)",
-      pageSize: 1000,
-      pageToken,
-    });
-    for (const f of data.files ?? []) {
-      if (f.id && f.mimeType?.startsWith("image/")) images.push({ id: f.id, name: f.name ?? f.id });
-    }
-    pageToken = data.nextPageToken ?? undefined;
-  } while (pageToken);
-  return images;
+  const files = await listBQFolderFiles(folderId, "id, name, mimeType");
+  return files.filter(f => f.mimeType.startsWith("image/")).map(f => ({ id: f.id, name: f.name || f.id }));
 }
 
 export async function POST(req: NextRequest) {
