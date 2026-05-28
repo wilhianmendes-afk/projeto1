@@ -1,0 +1,41 @@
+name: IBIS — Extração Automática
+
+on:
+  schedule:
+    - cron: "30 */2 * * *"   # a cada 2h (offset 30min para não bater com drive-index-faces)
+  workflow_dispatch:           # disparo manual
+    inputs:
+      limit:
+        description: "Prefixos por rodada"
+        required: false
+        default: "25"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: |
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Rodar scraper
+        env:
+          IBIS_USER:                ${{ secrets.IBIS_USER }}
+          IBIS_PASS:                ${{ secrets.IBIS_PASS }}
+          SUPABASE_URL:             ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          IMPORT_URL:               https://projeto1-liard-one.vercel.app/api/ibis/import
+          IBIS_IMPORT_TOKEN:        ${{ secrets.IBIS_IMPORT_TOKEN }}
+          PREFIXES_PER_RUN:         ${{ github.event.inputs.limit || '25' }}
+        run: python scripts/ibis-scraper.py --limit "$PREFIXES_PER_RUN"
