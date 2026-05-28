@@ -20,3 +20,6 @@ CROSS JOIN
              ('K'),('L'),('M'),('N'),('O'),('P'),('Q'),('R'),('S'),('T'),
              ('U'),('V'),('W'),('X'),('Y'),('Z')) AS b(l)
 ON CONFLICT (prefix) DO NOTHING;
+
+-- Apenas service role acessa esta tabela (scraper usa SUPABASE_SERVICE_ROLE_KEY)
+ALTER TABLE ibis_scraper_progress ENABLE ROW LEVEL SECURITY;
