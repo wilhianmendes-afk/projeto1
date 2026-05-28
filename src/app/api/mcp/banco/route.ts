@@ -1,31 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { embedImage } from "@/lib/face-service";
-import { google } from "googleapis";
+import { getBQDriveClient } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
 
 const MCP_TOKEN = process.env.MCP_BANCO_TOKEN;
 
-function getDriveClient() {
-  const auth = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
-  auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
-  return google.drive({ version: "v3", auth });
-}
-
 async function searchDrive(query: string, limit: number) {
   try {
-    const drive = getDriveClient();
+    const drive = getBQDriveClient();
     const safe = query.replace(/'/g, "\\'");
     const { data } = await drive.files.list({
-      q: `fullText contains '${safe}' and mimeType contains 'image/' and trashed = false`,
+      q: `fullText contains '${safe}' and trashed = false`,
       fields: "files(id, name, thumbnailLink, webViewLink)",
       pageSize: Math.min(limit, 30),
-      orderBy: "modifiedTime desc",
     });
     return (data.files ?? []).map((f) => ({
       file_id: f.id,
@@ -180,7 +169,7 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<st
     if (sourceIds.length > 0) {
       const { data } = await supabase
         .from("qualificados")
-        .select("id, nome, vulgo, cpf, cidade, uf, nascimento, genitora")
+        .select("id, nome, vulgo, cpf, cidade, uf, nascimento, genitora, foto_url")
         .in("id", sourceIds);
       pessoas = Object.fromEntries((data ?? []).map((p) => [p.id, p]));
     }

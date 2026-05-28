@@ -1,0 +1,30 @@
+name: Drive — Ingestão de Qualificados
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"   # a cada 3h (offset de drive-index-faces que roda nas horas pares)
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Arquivos por rodada (default 5)"
+        required: false
+        default: "5"
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ingestão de qualificados do Drive BQ
+        run: |
+          LIMIT="${{ github.event.inputs.limit || '5' }}"
+          RESP=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "X-Import-Token: ${{ secrets.IBIS_IMPORT_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"limit\": $LIMIT}" \
+            https://projeto1-liard-one.vercel.app/api/drive/ingest-qualificados)
+          BODY=$(echo "$RESP" | head -n -1)
+          CODE=$(echo "$RESP" | tail -n 1)
+          echo "$BODY"
+          [ "$CODE" = "200" ] || exit 1
