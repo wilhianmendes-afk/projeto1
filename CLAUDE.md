@@ -1,29 +1,33 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-05-27)
+## Estado atual (2026-05-28)
 
 ### Funcionando
-- **Banco IBIS**: 1.322 qualificados importados via extrator IBIS (crescendo via auto-scraper)
-- **Drive Banco Qualificados**: `bancodequalificados@gmail.com` — autenticação OAuth2; fotos aparecem na busca via OCR do Google Drive (sem criar ficha no banco)
-- **Drive BQ subpastas**: contagem, indexação de embeddings e deduplicação percorrem subpastas recursivamente (BFS) — `countBQDriveFiles()` em `lib/google-drive.ts`
-- **Busca de qualificados**: server-side via `/api/qualificados/search`; em paralelo busca no Drive BQ (`own-search`) e Banco Bruno
-- **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account primeiro, depois OAuth2 BQ (compatibilidade)
-- **Exclusão de fotos do Drive**: botão no lightbox apaga permanentemente do Google Drive + remove embeddings do banco
-- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 2h**); fonte `drive_bq`; ~15.951 pendentes em 2026-05-27 sendo indexados
-- **Dashboard**: cards IBIS / Meu Drive / Total + BancoParceiros (Banco Bruno); contagem Drive BQ inclui subpastas
-- **Cobertura calculada corretamente**: inclui arquivos do Drive BQ (todas as subpastas) no denominador e numerador
+- **Banco IBIS**: ~4.087+ qualificados; crescendo via scraper local (Agendador de Tarefas Windows, a cada 2h)
+- **IBIS Auto-Scraper local**: `scripts/ibis-scraper.py` + tarefa `"IBIS Scraper 42BPM"` no Windows; importa em lotes de 15 para não estourar timeout Vercel (30s); log em `scripts/ibis-scraper.log`
+- **Drive Banco Qualificados**: `bancodequalificados@gmail.com` — OAuth2; indexação facial (drive_bq) + ingestão como qualificados (drive_bq no banco)
+- **Drive BQ — listagem**: usa `'folderId' in ancestors` (query única) em vez de BFS recursivo — ~3s vs ~28s
+- **Ingestão Drive BQ → qualificados**: endpoint `/api/drive/ingest-qualificados` + workflow `drive-ingest-qualificados.yml` (a cada 3h); OCR + dedup por CPF / nome+nascimento + upload Storage + insert em `qualificados` com `fonte='drive_bq'`; arquivos descartados rastreados em `face_skipped(source='drive_bq_ingest')`
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 2h**); batch=5 por chamada; ~15.683 pendentes em 2026-05-28 sendo indexados
+- **Dashboard**: cards IBIS (server, rápido) + Drive/Total (client async, cache 5min); página carrega imediatamente
+- **Página Indexação**: stats Supabase server-side; cobertura/pendentes calculados client-side após fetch `/api/drive/count`
+- **Cache compartilhado Drive count**: `src/lib/drive-count-cache.ts` — TTL 5min; reutilizado por `DriveCards` e `IndexacaoStats`; sem recalcular ao navegar entre páginas
+- **MCP `/api/mcp/banco`**: usa `getBQDriveClient()` (corrigido de vars inexistentes); `search_face` retorna `foto_url` no objeto `qualificado`; bugs Drive API corrigidos (orderBy + mimeType)
+- **MCP consumido pela PCGO**: `search_text` retorna matches do banco + Drive BQ; `search_face` retorna objeto `qualificado: {nome, cpf, vulgo, cidade, uf, foto_url}`
+- **Cobertura calculada corretamente**: inclui Drive BQ no denominador e numerador
 - **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid)
 - **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API
 - **Railway Hobby ativo**: plano $5/mês ativado em 2026-05-25 — face service online
-- **Perfil viewer (coruja)**: usuário somente leitura — veja seção Controle de Acesso
-- **Busca facial**: resultados MEU DRIVE abrem ComparisonModal lado a lado; badges alinhados com busca de qualificados
-- **Deduplicação Drive BQ**: script `scripts/deduplicate-drive.js` + workflow `deduplicate-drive.yml` (todo domingo 03h UTC); remove fotos byte-idênticas (mesmo MD5), mantém o mais antigo; percorre subpastas recursivamente
-- **OAuth2 BQ escopo completo**: refresh token regenerado com `https://www.googleapis.com/auth/drive` (antes era `drive.readonly`) — permite delete via API
-- **IBIS Auto-Scraper ativo**: `scripts/ibis-scraper.py` + workflow `ibis-scraper.yml` (a cada 2h); varre prefixos AA..ZZ, baixa fotos, importa via `/api/ibis/import`; ciclo completo ~5 dias; ao terminar reinicia automaticamente para capturar novos cadastros
+- **Perfil viewer (coruja)**: usuário somente leitura
+- **Busca facial**: resultados MEU DRIVE abrem ComparisonModal; badges alinhados
+- **Deduplicação Drive BQ**: `deduplicate-drive.yml` (todo domingo 03h UTC)
+- **OAuth2 BQ escopo completo**: `https://www.googleapis.com/auth/drive`
+- **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account, depois OAuth2 BQ
 
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
+- **IBIS scraper via GitHub Actions**: ibis.app.br bloqueia IPs de datacenter (Azure/AWS); scraper roda só via PC local (tarefa agendada)
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
@@ -74,7 +78,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
 ANTHROPIC_API_KEY=           # Apenas Chat do Dev
-IBIS_IMPORT_TOKEN=           # protege /api/ibis/import, /api/face/backfill, /api/drive/index-faces
+IBIS_IMPORT_TOKEN=           # protege /api/ibis/import, /api/face/backfill, /api/drive/index-faces, /api/drive/ingest-qualificados
+MCP_BANCO_TOKEN=             # token Bearer para /api/mcp/banco (usado pela PCGO)
 BANCO_BRUNO_URL=             # URL do MCP do Bruno — atualmente 404
 BANCO_BRUNO_TOKEN=           # Token Bearer do MCP do Bruno
 GOOGLE_SERVICE_ACCOUNT_KEY=  # JSON completo da Service Account (em uma linha)
@@ -108,7 +113,7 @@ WORKER_SLEEP=60
 - Conta: `bancodequalificados@gmail.com`
 - Projeto GCP: `banco-qualificados` (criado em bancodequalificados@gmail.com)
 - Vars: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`
-- Usada por: `own-search`, `index-faces`, `DELETE /api/drive/file/[id]`
+- Usada por: `own-search`, `index-faces`, `ingest-qualificados`, `DELETE /api/drive/file/[id]`, MCP `search_text`
 - Script de setup: `scripts/google-oauth-setup.js`
 
 ### Limitações críticas da Google Drive API (descobertas em produção)
@@ -118,25 +123,29 @@ WORKER_SLEEP=60
 
 ## Drive Banco Qualificados (`drive_bq`)
 
-Fotos enviadas para o Drive de `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_FOLDER_ID`) aparecem automaticamente na busca de qualificados via OCR do Google Drive — **sem criar ficha no banco**.
+Fotos em `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_FOLDER_ID`) alimentam dois pipelines paralelos:
 
-**Fluxo:**
-1. Foto é enviada para a pasta do Drive BQ
-2. Google Drive OCR indexa automaticamente o texto da imagem
-3. Usuário pesquisa nome → `own-search` chama `fullText contains` → retorna thumbnail
-4. Clique abre lightbox com foto em tamanho maior + botão **Excluir**
-5. Botão Excluir (2 cliques): apaga permanentemente do Drive + remove embeddings do banco
+### Pipeline 1 — Ingestão como qualificados (`/api/drive/ingest-qualificados`)
+- Objetivo: criar fichas na tabela `qualificados` (fonte=`drive_bq`) para aparecer no `search_text` do MCP
+- Fluxo: lista Drive → OCR (extrai nome/CPF/vulgo/genitora/nascimento) → dedup (CPF ou nome+nascimento) → upload Storage → insert `qualificados` → limpa entradas `drive_bq` antigas → Railway worker gera embedding sob `source='qualificados'`
+- Dedup: arquivos descartados ficam em `face_skipped(source='drive_bq_ingest', reason='duplicate_cpf'|'duplicate_nome'|'no_ocr')` — não reprocessados
+- Workflow `drive-ingest-qualificados.yml` a cada 3h
 
-**Indexação facial:**
-- Workflow `drive-index-faces.yml` (**a cada 2h**) varre a pasta e indexa rostos
-- Fonte: `source = "drive_bq"` em `face_embeddings`
-- Aparecem na busca facial com badge verde **"MEU DRIVE"**
-- Batch de **10 fotos por chamada** (limite Vercel 60s — 30 causava timeout)
-- `/api/drive/index-faces` exclui tanto `face_embeddings` quanto `face_skipped` do cálculo de pendentes (arquivos sem rosto não ficam em loop eterno)
-- `listAllImages()` faz BFS recursivo **sem limite de arquivos** — subpastas sempre alcançadas
-- Contagem usa `countBQDriveFiles()` em `lib/google-drive.ts` — BFS recursivo, reutilizado no dashboard e na página de indexação
+### Pipeline 2 — Indexação facial direta (`/api/drive/index-faces`)
+- Objetivo: gerar embeddings de arquivos Drive que ainda não têm qualificado no banco
+- Fonte: `source = "drive_bq"` em `face_embeddings`; aparecem na busca facial com badge **"MEU DRIVE"**
+- Batch de **5 fotos por chamada** (Vercel 60s; com `in ancestors` a listagem leva ~3s)
+- Workflow `drive-index-faces.yml` a cada 2h; python3 com `|| echo` — resiliente a timeout do curl
 
-**Registros legados `drive_abordados`**: ainda existem no banco; proxy de foto tenta service account primeiro, depois OAuth2 BQ.
+### Listagem de arquivos
+- **Antes**: BFS recursivo com uma chamada de API por pasta (~28s para 15k arquivos)
+- **Agora**: `'folderId' in ancestors` — query única paginada (~3s); aplicado em `index-faces`, `ingest-qualificados` e `countBQDriveFiles`
+
+### Busca OCR (own-search)
+- Usuário pesquisa nome → `own-search` chama `fullText contains` → retorna thumbnail do Drive
+- Clique abre lightbox + botão Excluir (2 cliques): apaga do Drive + remove embeddings
+
+**Registros legados `drive_abordados`**: proxy de foto tenta service account primeiro, depois OAuth2 BQ.
 
 ## Supabase — regras críticas
 
@@ -156,7 +165,7 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 
 ## Estrutura do banco
 
-**`qualificados`** — cadastro IBIS
+**`qualificados`** — cadastro IBIS e Drive BQ
 | Coluna | Tipo | Obs |
 |--------|------|-----|
 | id | uuid PK | |
@@ -169,8 +178,8 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 | observacoes | text | texto OCR completo — campo principal de busca |
 | foto_url | text | URL pública no Storage |
 | fotos_extras | jsonb | |
-| fonte | text | `"ibis"` |
-| fonte_id | text | ID único na fonte |
+| fonte | text | `"ibis"` ou `"drive_bq"` |
+| fonte_id | text | ID único na fonte (IBIS photo ID ou Drive file ID) |
 | deleted_at | timestamptz | soft delete |
 
 > `nascimento` é **string**, não `date`. Nunca incluir em filtros `ilike` — quebra toda busca.
@@ -180,8 +189,9 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 - `photo_url`, `embedding` (vector 512), `bbox`, `det_score`, `face_index`
 - **UNIQUE INDEX** em `(source, source_id, photo_url, face_index)`
 
-**`face_skipped`** — registros sem rosto
+**`face_skipped`** — registros sem rosto ou descartados
 - `source`, `source_id`, `source_label`, `reason`
+- `source='drive_bq_ingest'`: arquivos Drive avaliados pelo ingest-qualificados e descartados (duplicate_cpf, duplicate_nome, no_ocr) — não reprocessados
 
 **`dev_chat_messages`** — Chat do Dev
 
@@ -196,34 +206,36 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 ## Endpoints principais
 | Rota | Descrição |
 |------|-----------|
-| `POST /api/ibis/import` | Recebe pessoas do extrator IBIS (CORS aberto) |
+| `POST /api/ibis/import` | Recebe pessoas do extrator IBIS (CORS aberto); importa em lotes de 15 |
 | `GET /api/qualificados/search?q=` | Busca server-side: nome, vulgo, genitora, cpf, observacoes |
 | `DELETE /api/qualificados/[id]` | Remove qualificado + embeddings + foto Storage |
 | `POST /api/qualificados/[id]/foto` | Upload foto manual, limpa embeddings anteriores |
 | `POST /api/face/search` | Busca facial — local + Banco Bruno em paralelo |
 | `GET/POST /api/face/backfill` | Gera embeddings dos registros pendentes |
+| `GET /api/drive/count` | Contagem de arquivos no Drive BQ (cache 5min HTTP) |
 | `GET /api/drive/own-search?q=` | Busca OCR no Drive BQ via OAuth2 |
 | `GET /api/drive/photo/[id]` | Proxy de foto: tenta service account, depois OAuth2 |
-| `POST /api/drive/index-faces` | Indexa rostos do Drive BQ (fonte drive_bq) |
+| `POST /api/drive/index-faces` | Indexa rostos do Drive BQ (fonte drive_bq); batch=5 |
+| `POST /api/drive/ingest-qualificados` | Ingere arquivos Drive como qualificados (OCR+dedup+Storage) |
 | `DELETE /api/drive/file/[id]` | Apaga arquivo do Drive BQ + remove embeddings |
 | `GET /api/banco-bruno/search?q=` | Proxy para busca textual no Banco Bruno |
 | `GET /api/banco-bruno/status` | Stats do Banco Bruno |
-| `POST /api/mcp/banco` | Servidor MCP — Bruno acessa nosso banco aqui |
+| `POST /api/mcp/banco` | Servidor MCP — PCGO e Bruno acessam nosso banco aqui |
 | `GET/POST /api/dev-chat` | Chat do Dev — histórico e envio |
 | `PATCH /api/dev-chat/[id]/read` | Marca mensagem como lida |
 
 ## Dashboard (`/`)
-- **3 cards**: IBIS (qualificados no banco) / Meu Drive (arquivos na pasta BQ) / Total geral
+- **Card IBIS**: renderizado server-side (Supabase, ~50ms) — aparece instantaneamente
+- **Cards Drive + Total**: client-side via `DriveCards.tsx` → fetch `/api/drive/count`; cache 5min (HTTP + módulo)
 - **BancoParceiros**: stats do Banco Bruno (badge âmbar "BANCO BRUNO")
-- Drive BQ é contado em tempo real via API — reflete o número atual de arquivos na pasta
+- Cache compartilhado em `src/lib/drive-count-cache.ts`: navegando dashboard↔indexação não recalcula
 
 ## Página de Indexação (`/indexacao`)
+- Server-side: só queries Supabase (rápidas); `countBQDriveFiles` removido do server component
+- **`IndexacaoStats.tsx`** (client): busca `/api/drive/count` (cache 5min) e calcula cobertura/pendentes
 - **Cobertura**: (IBIS indexados + Drive BQ indexados) ÷ (IBIS com foto + Drive BQ total) × 100
-- **Pendentes**: inclui IBIS pendentes + Drive BQ pendentes
-- **Sem rosto**: inclui IBIS skipped + Drive BQ skipped
-- **BackfillStatus**: status do worker Railway + botão "Rodar agora"
-- **Painel de contato** (direita): instrução para contactar Adm. do Sistema ou ALI/42º BPM
-- Cadastro de novos qualificados é feito exclusivamente via IBIS ou Drive BQ — sem formulário manual
+- **BackfillStatus** dentro de `IndexacaoStats` — recebe `pendentes` calculado client-side
+- Cadastro de novos qualificados: exclusivamente via IBIS ou Drive BQ — sem formulário manual
 
 ## Busca de qualificados (`/qualificados`)
 - Sem botão "Novo" — cadastro somente via IBIS ou Drive
@@ -255,21 +267,40 @@ face-service/
 | Arquivo | Trigger | Função |
 |---------|---------|--------|
 | `deploy.yml` | push no branch | Deploy na Vercel |
-| `backfill.yml` | a cada 15min + manual | Indexação embeddings IBIS |
-| `drive-index-faces.yml` | **a cada 2h** + manual | Indexação rostos Drive BQ (subpastas incluídas) |
+| `backfill.yml` | a cada 15min + manual | Indexação embeddings de qualificados IBIS/Drive |
+| `drive-index-faces.yml` | **a cada 2h** + manual | Indexação rostos Drive BQ (batch=5; python3 resiliente a timeout) |
+| `drive-ingest-qualificados.yml` | **a cada 3h** + manual | Ingestão Drive BQ → tabela qualificados (OCR+dedup) |
 | `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway |
-| `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ (subpastas incluídas) |
-| `ibis-scraper.yml` | **a cada 2h** (offset 30min) + manual | IBIS auto-scraper: 15 prefixos/rodada, 30s entre buscas, ciclo AA..ZZ |
+| `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ |
+| `ibis-scraper.yml` | desabilitado (ibis.app.br bloqueia IPs de datacenter) | — substituído pela tarefa local |
 
-## Integração Banco Bruno (MCP bidirecional)
-- Bruno mantém banco próprio + Drive; sistema offline (404 no MCP)
+> **IBIS scraper local**: tarefa `"IBIS Scraper 42BPM"` no Agendador de Tarefas Windows (PC do usuário); `scripts/run-ibis-scraper.bat`; log em `scripts/ibis-scraper.log`; a cada 2h
+
+## MCP `/api/mcp/banco` — consumido por PCGO e Bruno
+
+**Autenticação**: Bearer token via `MCP_BANCO_TOKEN` (env Vercel)
+
+**Tools disponíveis:**
+| Tool | O que retorna |
+|------|--------------|
+| `search_text` | matches em `qualificados` (IBIS + drive_bq) + arquivos do Drive BQ via OCR |
+| `get_qualificado` | ficha completa por UUID |
+| `search_face` | similaridade facial; `qualificado: {nome, cpf, vulgo, cidade, uf, foto_url}` |
+| `get_banco_status` | estatísticas gerais via RPC `get_face_stats` |
+
+**Drive no MCP**: usa `getBQDriveClient()` (OAuth2 BQ); sem `orderBy` e sem `mimeType contains` (limitações da API)
+
+## Integração Banco Bruno (bidirecional)
+- Bruno mantém banco próprio + Drive; sistema offline (404 no MCP dele)
 - Nosso sistema → Bruno: `/api/banco-bruno/search`, `/api/banco-bruno/status`, `/api/face/search`
-- Bruno → Nosso sistema: `/api/mcp/banco` (autenticado via `IBIS_IMPORT_TOKEN`)
+- Bruno → Nosso sistema: `/api/mcp/banco` (autenticado via `MCP_BANCO_TOKEN`)
 - Todas as chamadas fetch ao Bruno precisam de `cache: "no-store"`
 
 ## Componentes principais
 | Componente | Função |
 |------------|--------|
+| `DriveCards.tsx` | Cards "Meu Drive" e "Total" — client, fetch `/api/drive/count`, cache 5min |
+| `IndexacaoStats.tsx` | Cards de cobertura/pendentes + BackfillStatus — client, mesma cache de Drive |
 | `BackfillStatus.tsx` | Status indexação + botão "Rodar agora" (oculto para viewer) |
 | `SemFotoList.tsx` | Lista qualificados sem foto (oculto para viewer) |
 | `SemRostoList.tsx` | Lista qualificados sem rosto + botão Limpar (oculto para viewer) |
@@ -288,12 +319,14 @@ face-service/
 
 ## IBIS Auto-Scraper
 
-Varredura sistemática do IBIS sem precisar do PC — roda no GitHub Actions.
+Varredura sistemática do IBIS — roda via Agendador de Tarefas Windows (PC local).
+**Motivo local**: ibis.app.br bloqueia IPs de datacenter (AWS/Azure do GitHub Actions).
 
 **Arquivos:**
 - `scripts/ibis-scraper.py` — scraper de produção (headless, Playwright)
-- `scripts/ibis-scraper-test.py` — script de teste/diagnóstico (headless=False)
-- `.github/workflows/ibis-scraper.yml` — agendado a cada 2h
+- `scripts/run-ibis-scraper.bat` — wrapper com encoding UTF-8; log em `scripts/ibis-scraper.log`
+- `scripts/ibis-scraper-test.py` — script de diagnóstico (headless=False)
+- Tarefa Windows: `"IBIS Scraper 42BPM"` — a cada 2h, PC deve estar ligado e logado
 
 **Estrutura de colunas do IBIS** (pessoaConsulta.xhtml):
 ```
@@ -302,16 +335,17 @@ FOTO | RG|CPF | NOME | ALCUNHA | GENITORA | DN
 
 **Comportamento:**
 1. Busca próximos 15 prefixos pendentes em `ibis_scraper_progress`
-2. Para cada prefixo: login → pesquisa → extrai TRs → baixa fotos → POST `/api/ibis/import`
+2. Para cada prefixo: login → pesquisa → extrai TRs → baixa fotos → POST `/api/ibis/import` em **lotes de 15** (evita timeout de 30s do Vercel)
 3. Marca prefixo como `done`; ao terminar todos os 676, reseta para `pending` (novo ciclo)
 4. **30s entre buscas** para não sobrecarregar o IBIS (OOM confirmado com termos genéricos)
 5. Trata paginação PrimeFaces (`.ui-paginator-next`)
 
 **Atenção IBIS:**
-- Termos genéricos (ex: "RODRIGUES") causam `OutOfMemoryError` no servidor — o scraper usa prefixos de 2 letras (menos resultados por busca)
+- Termos genéricos causam `OutOfMemoryError` — scraper usa prefixos de 2 letras
+- Payload grande (>25 fotos) estourava timeout Vercel — corrigido com lotes de 15
 - OOM retorna `<partial-response><error>OutOfMemoryError</error></partial-response>` — prefixo marcado como `error` e scraper continua
 
 **Ciclo de atualização contínua:**
 - Ciclo completo (676 prefixos × 15 prefixos/rodada × 2h) ≈ 5 dias
-- Ao finalizar, reseta automaticamente — novos cadastros no IBIS são capturados no próximo ciclo
-- Deduplicação por `fonte_id` no `/api/ibis/import` — registros existentes são ignorados (não duplicam)
+- Ao finalizar, reseta automaticamente
+- Deduplicação por `fonte_id` no `/api/ibis/import`
