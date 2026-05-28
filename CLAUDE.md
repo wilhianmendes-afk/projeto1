@@ -4,25 +4,26 @@ Sistema de reconhecimento facial para inteligência policial.
 ## Estado atual (2026-05-27)
 
 ### Funcionando
-- **Banco IBIS**: 1.322 qualificados importados via extrator IBIS
+- **Banco IBIS**: 1.322 qualificados importados via extrator IBIS (crescendo via auto-scraper)
 - **Drive Banco Qualificados**: `bancodequalificados@gmail.com` — autenticação OAuth2; fotos aparecem na busca via OCR do Google Drive (sem criar ficha no banco)
+- **Drive BQ subpastas**: contagem, indexação de embeddings e deduplicação percorrem subpastas recursivamente (BFS) — `countBQDriveFiles()` em `lib/google-drive.ts`
 - **Busca de qualificados**: server-side via `/api/qualificados/search`; em paralelo busca no Drive BQ (`own-search`) e Banco Bruno
 - **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account primeiro, depois OAuth2 BQ (compatibilidade)
 - **Exclusão de fotos do Drive**: botão no lightbox apaga permanentemente do Google Drive + remove embeddings do banco
-- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (a cada 6h); fonte `drive_bq`
-- **Dashboard**: cards IBIS / Meu Drive / Total + BancoParceiros (Banco Bruno)
-- **Cobertura calculada corretamente**: inclui arquivos do Drive BQ no denominador e numerador
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 2h**); fonte `drive_bq`; ~15.951 pendentes em 2026-05-27 sendo indexados
+- **Dashboard**: cards IBIS / Meu Drive / Total + BancoParceiros (Banco Bruno); contagem Drive BQ inclui subpastas
+- **Cobertura calculada corretamente**: inclui arquivos do Drive BQ (todas as subpastas) no denominador e numerador
 - **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid)
 - **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API
 - **Railway Hobby ativo**: plano $5/mês ativado em 2026-05-25 — face service online
 - **Perfil viewer (coruja)**: usuário somente leitura — veja seção Controle de Acesso
 - **Busca facial**: resultados MEU DRIVE abrem ComparisonModal lado a lado; badges alinhados com busca de qualificados
-- **Deduplicação Drive BQ**: script `scripts/deduplicate-drive.js` + workflow `deduplicate-drive.yml` (todo domingo 03h UTC); remove fotos byte-idênticas (mesmo MD5), mantém o mais antigo; 20 duplicatas já removidas em 2026-05-27
+- **Deduplicação Drive BQ**: script `scripts/deduplicate-drive.js` + workflow `deduplicate-drive.yml` (todo domingo 03h UTC); remove fotos byte-idênticas (mesmo MD5), mantém o mais antigo; percorre subpastas recursivamente
 - **OAuth2 BQ escopo completo**: refresh token regenerado com `https://www.googleapis.com/auth/drive` (antes era `drive.readonly`) — permite delete via API
+- **IBIS Auto-Scraper ativo**: `scripts/ibis-scraper.py` + workflow `ibis-scraper.yml` (a cada 2h); varre prefixos AA..ZZ, baixa fotos, importa via `/api/ibis/import`; ciclo completo ~5 dias; ao terminar reinicia automaticamente para capturar novos cadastros
 
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
-- **IBIS Auto-Scraper**: script de teste criado em `scripts/ibis-scraper-test.py` — login e navegação validados, falta capturar HTML dos resultados para finalizar o extrator
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
@@ -127,11 +128,13 @@ Fotos enviadas para o Drive de `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_
 5. Botão Excluir (2 cliques): apaga permanentemente do Drive + remove embeddings do banco
 
 **Indexação facial:**
-- Workflow `drive-index-faces.yml` (a cada 6h) varre a pasta e indexa rostos
+- Workflow `drive-index-faces.yml` (**a cada 2h**) varre a pasta e indexa rostos
 - Fonte: `source = "drive_bq"` em `face_embeddings`
 - Aparecem na busca facial com badge verde **"MEU DRIVE"**
 - Batch de **10 fotos por chamada** (limite Vercel 60s — 30 causava timeout)
 - `/api/drive/index-faces` exclui tanto `face_embeddings` quanto `face_skipped` do cálculo de pendentes (arquivos sem rosto não ficam em loop eterno)
+- `listAllImages()` faz BFS recursivo **sem limite de arquivos** — subpastas sempre alcançadas
+- Contagem usa `countBQDriveFiles()` em `lib/google-drive.ts` — BFS recursivo, reutilizado no dashboard e na página de indexação
 
 **Registros legados `drive_abordados`**: ainda existem no banco; proxy de foto tenta service account primeiro, depois OAuth2 BQ.
 
@@ -184,7 +187,11 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 
 **Storage buckets**: `faces` (`ibis/`, `drive/`, `manual/`), `dev-chat`
 
-**RLS**: Desabilitado em todas as tabelas.
+**`ibis_scraper_progress`** — progresso da varredura IBIS (migration 011)
+- `prefix` (PK, AA..ZZ), `status` (pending/done/error), `records_found`, `imported`, `last_run`, `error_msg`
+- 676 linhas inicializadas; RLS habilitado (só service role acessa)
+
+**RLS**: Desabilitado em todas as tabelas exceto `ibis_scraper_progress`.
 
 ## Endpoints principais
 | Rota | Descrição |
@@ -249,9 +256,10 @@ face-service/
 |---------|---------|--------|
 | `deploy.yml` | push no branch | Deploy na Vercel |
 | `backfill.yml` | a cada 15min + manual | Indexação embeddings IBIS |
-| `drive-index-faces.yml` | a cada 6h + manual | Indexação rostos Drive BQ |
+| `drive-index-faces.yml` | **a cada 2h** + manual | Indexação rostos Drive BQ (subpastas incluídas) |
 | `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway |
-| `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ |
+| `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ (subpastas incluídas) |
+| `ibis-scraper.yml` | **a cada 2h** (offset 30min) + manual | IBIS auto-scraper: 15 prefixos/rodada, 15s entre buscas, ciclo AA..ZZ |
 
 ## Integração Banco Bruno (MCP bidirecional)
 - Bruno mantém banco próprio + Drive; sistema offline (404 no MCP)
@@ -276,4 +284,34 @@ face-service/
 ## Deploy
 - Branch: `claude/check-github-access-v30TG`
 - Deploy automático via `deploy.yml` a cada push
-- Secrets GitHub: `VERCEL_DEPLOY_HOOK`, `IBIS_IMPORT_TOKEN`, `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `DRIVE_BQ_FOLDER_ID`
+- Secrets GitHub: `VERCEL_DEPLOY_HOOK`, `IBIS_IMPORT_TOKEN`, `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `DRIVE_BQ_FOLDER_ID`, `IBIS_USER`, `IBIS_PASS`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`
+
+## IBIS Auto-Scraper
+
+Varredura sistemática do IBIS sem precisar do PC — roda no GitHub Actions.
+
+**Arquivos:**
+- `scripts/ibis-scraper.py` — scraper de produção (headless, Playwright)
+- `scripts/ibis-scraper-test.py` — script de teste/diagnóstico (headless=False)
+- `.github/workflows/ibis-scraper.yml` — agendado a cada 2h
+
+**Estrutura de colunas do IBIS** (pessoaConsulta.xhtml):
+```
+FOTO | RG|CPF | NOME | ALCUNHA | GENITORA | DN
+```
+
+**Comportamento:**
+1. Busca próximos 15 prefixos pendentes em `ibis_scraper_progress`
+2. Para cada prefixo: login → pesquisa → extrai TRs → baixa fotos → POST `/api/ibis/import`
+3. Marca prefixo como `done`; ao terminar todos os 676, reseta para `pending` (novo ciclo)
+4. 15s entre buscas para não sobrecarregar o IBIS (OOM confirmado com termos genéricos)
+5. Trata paginação PrimeFaces (`.ui-paginator-next`)
+
+**Atenção IBIS:**
+- Termos genéricos (ex: "RODRIGUES") causam `OutOfMemoryError` no servidor — o scraper usa prefixos de 2 letras (menos resultados por busca)
+- OOM retorna `<partial-response><error>OutOfMemoryError</error></partial-response>` — prefixo marcado como `error` e scraper continua
+
+**Ciclo de atualização contínua:**
+- Ciclo completo (676 prefixos × 15 prefixos/rodada × 2h) ≈ 5 dias
+- Ao finalizar, reseta automaticamente — novos cadastros no IBIS são capturados no próximo ciclo
+- Deduplicação por `fonte_id` no `/api/ibis/import` — registros existentes são ignorados (não duplicam)
