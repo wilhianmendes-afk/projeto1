@@ -4,12 +4,12 @@ Sistema de reconhecimento facial para inteligência policial.
 ## Estado atual (2026-05-28)
 
 ### Funcionando
-- **Banco IBIS**: ~4.087+ qualificados; crescendo via scraper local (Agendador de Tarefas Windows, a cada 2h)
+- **Banco IBIS**: ~33.634 pessoas únicas; crescendo via scraper local (Agendador de Tarefas Windows, a cada 2h)
 - **IBIS Auto-Scraper local**: `scripts/ibis-scraper.py` + tarefa `"IBIS Scraper 42BPM"` no Windows; importa em lotes de 15 para não estourar timeout Vercel (30s); log em `scripts/ibis-scraper.log`
-- **Drive Banco Qualificados**: `bancodequalificados@gmail.com` — OAuth2; indexação facial (drive_bq) + ingestão como qualificados (drive_bq no banco)
-- **Drive BQ — listagem**: usa `'folderId' in ancestors` (query única) em vez de BFS recursivo — ~3s vs ~28s
+- **Drive Banco Qualificados**: `bancodequalificados@gmail.com` — OAuth2; 16.654 arquivos em 5 subpastas (Alvos 42º BPM, Alvos Banco, Esposas e Parentes - Alvos, Alvos A.D.E, Irmaos Ciganos)
+- **Drive BQ — listagem**: BFS de 2 níveis com `'id' in parents` — raiz + subpastas diretas (`listBQFolderFiles` em `src/lib/google-drive.ts`); **NÃO usar `in ancestors` — retorna 400 Invalid Value na Drive API**
 - **Ingestão Drive BQ → qualificados**: endpoint `/api/drive/ingest-qualificados` + workflow `drive-ingest-qualificados.yml` (a cada 3h); OCR + dedup por CPF / nome+nascimento + upload Storage + insert em `qualificados` com `fonte='drive_bq'`; arquivos descartados rastreados em `face_skipped(source='drive_bq_ingest')`
-- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 2h**); batch=5 por chamada; ~15.683 pendentes em 2026-05-28 sendo indexados
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 2h**); batch=5 por chamada
 - **Dashboard**: cards IBIS (server, rápido) + Drive/Total (client async, cache 5min); página carrega imediatamente
 - **Página Indexação**: stats Supabase server-side; cobertura/pendentes calculados client-side após fetch `/api/drive/count`
 - **Cache compartilhado Drive count**: `src/lib/drive-count-cache.ts` — TTL 5min; reutilizado por `DriveCards` e `IndexacaoStats`; sem recalcular ao navegar entre páginas
@@ -24,10 +24,12 @@ Sistema de reconhecimento facial para inteligência policial.
 - **Deduplicação Drive BQ**: `deduplicate-drive.yml` (todo domingo 03h UTC)
 - **OAuth2 BQ escopo completo**: `https://www.googleapis.com/auth/drive`
 - **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account, depois OAuth2 BQ
+- **OAuth2 refresh token**: expira periodicamente (app em modo Testing no Google Cloud — tokens válidos por 7 dias); para renovar: `node scripts/google-oauth-setup.js <CLIENT_ID> <CLIENT_SECRET>` e atualizar `GOOGLE_OAUTH_REFRESH_TOKEN` na Vercel. Para token permanente: publicar app no Google Cloud Console → OAuth consent screen → "In production"
 
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
 - **IBIS scraper via GitHub Actions**: ibis.app.br bloqueia IPs de datacenter (Azure/AWS); scraper roda só via PC local (tarefa agendada)
+- **Vercel DEPLOYMENT_DISABLED**: sistema fora do ar em 2026-05-28 após excesso de builds debug; verificar billing/limites em vercel.com
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
@@ -120,6 +122,7 @@ WORKER_SLEEP=60
 > `fullText contains` **NÃO aceita** `orderBy` — retorna "Invalid Value"
 > `fullText contains` **NÃO aceita** `mimeType contains 'image/'` — usar `mimeType = 'image/jpeg'` ou omitir
 > `fullText contains` **NÃO combina** com `in parents` — não é possível filtrar pasta + texto ao mesmo tempo
+> **`in ancestors` NÃO existe** na Drive API — retorna 400 Invalid Value; usar BFS com `in parents` (`listBQFolderFiles` em `google-drive.ts`)
 
 ## Drive Banco Qualificados (`drive_bq`)
 
@@ -134,12 +137,13 @@ Fotos em `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_FOLDER_ID`) alimentam 
 ### Pipeline 2 — Indexação facial direta (`/api/drive/index-faces`)
 - Objetivo: gerar embeddings de arquivos Drive que ainda não têm qualificado no banco
 - Fonte: `source = "drive_bq"` em `face_embeddings`; aparecem na busca facial com badge **"MEU DRIVE"**
-- Batch de **5 fotos por chamada** (Vercel 60s; com `in ancestors` a listagem leva ~3s)
+- Batch de **5 fotos por chamada** (Vercel 60s)
 - Workflow `drive-index-faces.yml` a cada 2h; python3 com `|| echo` — resiliente a timeout do curl
 
 ### Listagem de arquivos
-- **Antes**: BFS recursivo com uma chamada de API por pasta (~28s para 15k arquivos)
-- **Agora**: `'folderId' in ancestors` — query única paginada (~3s); aplicado em `index-faces`, `ingest-qualificados` e `countBQDriveFiles`
+- **Implementação atual**: `listBQFolderFiles(folderId, fields)` em `src/lib/google-drive.ts` — BFS 2 níveis: lista raiz com `in parents`, depois subpastas, depois arquivos de cada subpasta
+- **Estrutura do Drive**: raiz + 5 subpastas diretas (sem sub-subpastas); 16.654 arquivos total
+- **NÃO usar `in ancestors`** — esse operador não existe na Drive API e retorna 400 silenciosamente
 
 ### Busca OCR (own-search)
 - Usuário pesquisa nome → `own-search` chama `fullText contains` → retorna thumbnail do Drive
