@@ -1,7 +1,7 @@
-import { FolderOpen, BookUser, LayoutList } from "lucide-react";
+import { BookUser } from "lucide-react";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { countBQDriveFiles, hasBQDriveConfig } from "@/lib/google-drive";
 import BancoParceiros from "@/components/BancoParceiros";
+import DriveCards from "@/components/DriveCards";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,33 +14,18 @@ function getAdminClient() {
   );
 }
 
-async function getFontesCounts() {
+async function getIbisCount() {
   const supabase = getAdminClient();
-
-  const { count: ibisCount } = await supabase
+  const { count } = await supabase
     .from("qualificados")
     .select("*", { count: "exact", head: true })
     .eq("fonte", "ibis")
     .is("deleted_at", null);
-
-  let driveCount = 0;
-  if (hasBQDriveConfig() && process.env.DRIVE_BQ_FOLDER_ID) {
-    try {
-      driveCount = await countBQDriveFiles(process.env.DRIVE_BQ_FOLDER_ID);
-    } catch {
-      driveCount = 0;
-    }
-  }
-
-  return {
-    ibis: ibisCount ?? 0,
-    drive: driveCount,
-    total: (ibisCount ?? 0) + driveCount,
-  };
+  return count ?? 0;
 }
 
 export default async function DashboardPage() {
-  const fontes = await getFontesCounts();
+  const ibisCount = await getIbisCount();
 
   return (
     <div>
@@ -51,23 +36,11 @@ export default async function DashboardPage() {
           <div className="bg-blue-950 text-blue-400 w-10 h-10 rounded-lg flex items-center justify-center mb-3">
             <BookUser className="w-5 h-5" />
           </div>
-          <p className="text-2xl font-bold text-white">{fontes.ibis.toLocaleString("pt-BR")}</p>
+          <p className="text-2xl font-bold text-white">{ibisCount.toLocaleString("pt-BR")}</p>
           <p className="text-gray-400 text-sm">IBIS</p>
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <div className="bg-green-950 text-green-400 w-10 h-10 rounded-lg flex items-center justify-center mb-3">
-            <FolderOpen className="w-5 h-5" />
-          </div>
-          <p className="text-2xl font-bold text-white">{fontes.drive.toLocaleString("pt-BR")}</p>
-          <p className="text-gray-400 text-sm">Meu Drive</p>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <div className="bg-purple-950 text-purple-400 w-10 h-10 rounded-lg flex items-center justify-center mb-3">
-            <LayoutList className="w-5 h-5" />
-          </div>
-          <p className="text-2xl font-bold text-white">{fontes.total.toLocaleString("pt-BR")}</p>
-          <p className="text-gray-400 text-sm">Total geral</p>
-        </div>
+
+        <DriveCards ibisCount={ibisCount} />
       </div>
 
       <BancoParceiros />
