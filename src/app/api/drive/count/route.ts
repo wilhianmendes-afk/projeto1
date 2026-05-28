@@ -15,7 +15,8 @@ export async function GET() {
       { count },
       { headers: { "Cache-Control": `public, max-age=${CACHE_TTL}, stale-while-revalidate=${CACHE_TTL * 2}` } }
     );
-  } catch {
-    return NextResponse.json({ count: 0 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ count: 0, _error: msg });
   }
 }
