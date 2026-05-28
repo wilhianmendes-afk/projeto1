@@ -48,19 +48,30 @@ function getBQClient() {
 
 async function listAllFiles(drive, folderId) {
   const files = [];
-  let pageToken;
-  console.log("📂 Listando arquivos na pasta...");
-  do {
-    const { data } = await drive.files.list({
-      q: `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`,
-      fields: "nextPageToken, files(id, name, md5Checksum, createdTime, size)",
-      pageSize: 1000,
-      pageToken,
-      orderBy: "createdTime asc",
-    });
-    files.push(...(data.files ?? []));
-    pageToken = data.nextPageToken;
-  } while (pageToken);
+  const queue = [folderId];
+  console.log("📂 Listando arquivos (incluindo subpastas)...");
+  while (queue.length > 0) {
+    const currentFolder = queue.shift();
+    let pageToken;
+    do {
+      const { data } = await drive.files.list({
+        q: `'${currentFolder}' in parents and trashed = false`,
+        fields: "nextPageToken, files(id, name, mimeType, md5Checksum, createdTime, size)",
+        pageSize: 1000,
+        pageToken,
+      });
+      for (const f of data.files ?? []) {
+        if (f.mimeType === "application/vnd.google-apps.folder") {
+          queue.push(f.id);
+        } else {
+          files.push(f);
+        }
+      }
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+  }
+  // Ordena por data de criação (mais antigo primeiro) para manter o original ao deduplicar
+  files.sort((a, b) => new Date(a.createdTime).getTime() - new Date(b.createdTime).getTime());
   return files;
 }
 
