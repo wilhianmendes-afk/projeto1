@@ -27,19 +27,27 @@ async function getFontesCounts() {
   if (hasBQDriveConfig() && process.env.DRIVE_BQ_FOLDER_ID) {
     try {
       const drive = getBQDriveClient();
-      let total = 0;
-      let pageToken: string | undefined;
-      do {
-        const { data } = await drive.files.list({
-          q: `'${process.env.DRIVE_BQ_FOLDER_ID}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`,
-          fields: "nextPageToken, files(id)",
-          pageSize: 1000,
-          pageToken,
-        });
-        total += data.files?.length ?? 0;
-        pageToken = data.nextPageToken ?? undefined;
-      } while (pageToken);
-      driveCount = total;
+      const queue = [process.env.DRIVE_BQ_FOLDER_ID];
+      while (queue.length > 0) {
+        const currentFolder = queue.shift()!;
+        let pageToken: string | undefined;
+        do {
+          const { data } = await drive.files.list({
+            q: `'${currentFolder}' in parents and trashed = false`,
+            fields: "nextPageToken, files(id, mimeType)",
+            pageSize: 1000,
+            pageToken,
+          });
+          for (const f of data.files ?? []) {
+            if (f.mimeType === "application/vnd.google-apps.folder") {
+              queue.push(f.id!);
+            } else {
+              driveCount++;
+            }
+          }
+          pageToken = data.nextPageToken ?? undefined;
+        } while (pageToken);
+      }
     } catch {
       driveCount = 0;
     }

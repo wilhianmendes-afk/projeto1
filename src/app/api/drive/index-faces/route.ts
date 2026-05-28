@@ -16,13 +16,13 @@ function getAdminClient() {
   );
 }
 
-// Lista todas as imagens de uma pasta e subpastas (BFS, máx 500 arquivos por chamada)
+// Lista todas as imagens de uma pasta e subpastas (BFS recursivo, sem limite de arquivos)
 async function listAllImages(folderId: string): Promise<{ id: string; name: string }[]> {
   const drive = getBQDriveClient();
   const images: { id: string; name: string }[] = [];
   const queue = [folderId];
 
-  while (queue.length > 0 && images.length < 500) {
+  while (queue.length > 0) {
     const currentFolder = queue.shift()!;
 
     let pageToken: string | undefined;
