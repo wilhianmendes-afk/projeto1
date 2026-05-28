@@ -2,7 +2,7 @@ name: Drive — Indexação Facial Banco Qualificados
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # a cada 6 horas
+    - cron: "0 */2 * * *"   # a cada 2 horas
   workflow_dispatch:         # disparo manual
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
         run: |
           remaining=1
           rounds=0
-          max_rounds=60   # até 60 × 10 = 600 rostos por execução
+          max_rounds=50   # até 50 × 10 = 500 rostos por execução (dentro do timeout de 55min)
 
           while [ "$remaining" -gt 0 ] && [ "$rounds" -lt "$max_rounds" ]; do
             response=$(curl -s -X POST "$INDEX_URL" \
