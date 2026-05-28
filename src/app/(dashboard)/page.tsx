@@ -1,6 +1,6 @@
 import { FolderOpen, BookUser, LayoutList } from "lucide-react";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { getBQDriveClient, hasBQDriveConfig } from "@/lib/google-drive";
+import { countBQDriveFiles, hasBQDriveConfig } from "@/lib/google-drive";
 import BancoParceiros from "@/components/BancoParceiros";
 
 export const dynamic = "force-dynamic";
@@ -26,28 +26,7 @@ async function getFontesCounts() {
   let driveCount = 0;
   if (hasBQDriveConfig() && process.env.DRIVE_BQ_FOLDER_ID) {
     try {
-      const drive = getBQDriveClient();
-      const queue = [process.env.DRIVE_BQ_FOLDER_ID];
-      while (queue.length > 0) {
-        const currentFolder = queue.shift()!;
-        let pageToken: string | undefined;
-        do {
-          const { data } = await drive.files.list({
-            q: `'${currentFolder}' in parents and trashed = false`,
-            fields: "nextPageToken, files(id, mimeType)",
-            pageSize: 1000,
-            pageToken,
-          });
-          for (const f of data.files ?? []) {
-            if (f.mimeType === "application/vnd.google-apps.folder") {
-              queue.push(f.id!);
-            } else {
-              driveCount++;
-            }
-          }
-          pageToken = data.nextPageToken ?? undefined;
-        } while (pageToken);
-      }
+      driveCount = await countBQDriveFiles(process.env.DRIVE_BQ_FOLDER_ID);
     } catch {
       driveCount = 0;
     }

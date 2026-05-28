@@ -4,7 +4,7 @@ import SemFotoList from "@/components/SemFotoList";
 import SemRostoList from "@/components/SemRostoList";
 import { CheckCircle, Clock, XCircle, TrendingUp, Info } from "lucide-react";
 import { getFaceStats } from "@/lib/face-stats";
-import { getBQDriveClient, hasBQDriveConfig } from "@/lib/google-drive";
+import { countBQDriveFiles, hasBQDriveConfig } from "@/lib/google-drive";
 import { getUserRole } from "@/lib/get-role";
 
 export const dynamic = "force-dynamic";
@@ -24,20 +24,7 @@ async function getDriveStats() {
   let driveFiles = 0;
   if (hasBQDriveConfig() && process.env.DRIVE_BQ_FOLDER_ID) {
     try {
-      const drive = getBQDriveClient();
-      let total = 0;
-      let pageToken: string | undefined;
-      do {
-        const { data } = await drive.files.list({
-          q: `'${process.env.DRIVE_BQ_FOLDER_ID}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`,
-          fields: "nextPageToken, files(id)",
-          pageSize: 1000,
-          pageToken,
-        });
-        total += data.files?.length ?? 0;
-        pageToken = data.nextPageToken ?? undefined;
-      } while (pageToken);
-      driveFiles = total;
+      driveFiles = await countBQDriveFiles(process.env.DRIVE_BQ_FOLDER_ID);
     } catch { driveFiles = 0; }
   }
 
