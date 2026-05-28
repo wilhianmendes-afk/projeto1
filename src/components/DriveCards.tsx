@@ -2,28 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { FolderOpen, LayoutList } from "lucide-react";
-
-// Cache em memória: persiste enquanto o browser não recarregar a aba
-let _cachedCount: number | null = null;
-let _cachedAt = 0;
-const TTL_MS = 5 * 60 * 1000;
+import { fetchDriveCount, getCachedDriveCount } from "@/lib/drive-count-cache";
 
 export default function DriveCards({ ibisCount }: { ibisCount: number }) {
-  const fresh = _cachedCount !== null && Date.now() - _cachedAt < TTL_MS;
-  const [driveCount, setDriveCount] = useState<number | null>(fresh ? _cachedCount : null);
+  const [driveCount, setDriveCount] = useState<number | null>(getCachedDriveCount);
 
   useEffect(() => {
-    if (_cachedCount !== null && Date.now() - _cachedAt < TTL_MS) return;
-
-    fetch("/api/drive/count")
-      .then((r) => r.json())
-      .then((d) => {
-        const count = d.count ?? 0;
-        _cachedCount = count;
-        _cachedAt = Date.now();
-        setDriveCount(count);
-      })
-      .catch(() => setDriveCount(0));
+    if (getCachedDriveCount() !== null) return;
+    fetchDriveCount().then(setDriveCount).catch(() => setDriveCount(0));
   }, []);
 
   const loading = driveCount === null;
