@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Indexar rostos do Drive Banco Qualificados
         env:
-          INDEX_URL: https://projeto1-liard-one.vercel.app/api/drive/index-faces
+          INDEX_URL: https://intel-facial-42bpm.netlify.app/api/drive/index-faces
           IMPORT_TOKEN: ${{ secrets.IBIS_IMPORT_TOKEN }}
         run: |
           remaining=1
