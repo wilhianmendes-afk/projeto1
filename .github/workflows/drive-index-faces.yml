@@ -34,12 +34,7 @@ jobs:
             embedded=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('embedded',0))"   2>/dev/null || echo "0")
             skipped=$(echo "$response"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('skipped',0))"    2>/dev/null || echo "0")
             done_flag=$(echo "$response"| python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('done',False))"   2>/dev/null || echo "False")
-            cursor=$(echo "$response"   | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-c = d.get('nextCursor')
-print('null' if c is None else json.dumps(c))
-" 2>/dev/null || echo "null")
+            cursor=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); c=d.get('nextCursor'); print('null' if c is None else json.dumps(c))" 2>/dev/null || echo "null")
 
             rounds=$((rounds + 1))
             total_embedded=$((total_embedded + embedded))
