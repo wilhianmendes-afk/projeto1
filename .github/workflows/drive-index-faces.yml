@@ -16,34 +16,48 @@ jobs:
           INDEX_URL: https://intel-facial-42bpm.netlify.app/api/drive/index-faces
           IMPORT_TOKEN: ${{ secrets.IBIS_IMPORT_TOKEN }}
         run: |
-          remaining=1
+          cursor="null"
           rounds=0
-          max_rounds=50   # até 50 × 10 = 500 rostos por execução (dentro do timeout de 55min)
+          max_rounds=200
+          total_embedded=0
+          total_skipped=0
 
-          while [ "$remaining" -gt 0 ] && [ "$rounds" -lt "$max_rounds" ]; do
+          while [ "$rounds" -lt "$max_rounds" ]; do
+            echo "{\"limit\":5,\"cursor\":$cursor}" > /tmp/req.json
             response=$(curl -s -X POST "$INDEX_URL" \
               -H "Content-Type: application/json" \
               -H "x-import-token: $IMPORT_TOKEN" \
-              -d '{"limit":5}' \
-              --max-time 55) || true
+              -d @/tmp/req.json \
+              --max-time 30) || true
 
             ok=$(echo "$response"       | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ok',''))"        2>/dev/null || echo "")
             embedded=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('embedded',0))"   2>/dev/null || echo "0")
             skipped=$(echo "$response"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('skipped',0))"    2>/dev/null || echo "0")
-            remaining=$(echo "$response"| python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('remaining',0))"  2>/dev/null || echo "0")
+            done_flag=$(echo "$response"| python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('done',False))"   2>/dev/null || echo "False")
+            cursor=$(echo "$response"   | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+c = d.get('nextCursor')
+print('null' if c is None else json.dumps(c))
+" 2>/dev/null || echo "null")
 
             rounds=$((rounds + 1))
-            echo "Rodada $rounds: embedded=$embedded skipped=$skipped remaining=$remaining"
+            total_embedded=$((total_embedded + embedded))
+            total_skipped=$((total_skipped + skipped))
 
             if [ "$ok" != "True" ] && [ "$ok" != "true" ]; then
-              echo "Erro ou face service offline — abortando."
-              echo "Resposta: $response"
+              echo "Rodada $rounds: erro — abortando. Resposta: $response"
               break
             fi
 
-            if [ "$remaining" -gt 0 ]; then
-              sleep 3
+            echo "Rodada $rounds: embedded=$embedded skipped=$skipped done=$done_flag"
+
+            if [ "$done_flag" = "True" ] || [ "$cursor" = "null" ]; then
+              echo "Ciclo completo."
+              break
             fi
+
+            sleep 1
           done
 
-          echo "Concluído: $rounds rodadas."
+          echo "Total: embedded=$total_embedded skipped=$total_skipped em $rounds rodadas."

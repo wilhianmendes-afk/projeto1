@@ -69,6 +69,66 @@ export async function listBQFolderFiles(
   return result;
 }
 
+// Cursor para indexação paginada — mantém posição entre chamadas sem re-listar tudo.
+export type DriveCursor = {
+  folders: string[];    // [rootId, sub1, sub2, ...]
+  folderIndex: number;  // pasta atual
+  pageToken?: string;   // token de paginação dentro da pasta atual
+};
+
+// Lista UMA página de UMA pasta por chamada — O(1) chamadas Drive por rodada.
+// Usa cursor para continuar de onde parou sem re-listar todos os 16k+ arquivos.
+export async function listBQFolderPage(
+  rootFolderId: string,
+  pageSize: number,
+  cursor?: DriveCursor | null,
+): Promise<{ files: Array<{ id: string; name: string; mimeType: string }>; nextCursor: DriveCursor | null }> {
+  const drive = getBQDriveClient();
+
+  // Na primeira chamada, descobre as subpastas (1 chamada Drive rápida)
+  let folders: string[];
+  if (cursor?.folders?.length) {
+    folders = cursor.folders;
+  } else {
+    const { data } = await drive.files.list({
+      q: `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "files(id)",
+      pageSize: 100,
+    });
+    folders = [rootFolderId, ...(data.files?.map(f => f.id!).filter(Boolean) ?? [])];
+  }
+
+  const folderIndex = cursor?.folderIndex ?? 0;
+  const pageToken = cursor?.pageToken;
+
+  if (folderIndex >= folders.length) {
+    return { files: [], nextCursor: null };
+  }
+
+  const { data } = await drive.files.list({
+    q: `'${folders[folderIndex]}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: "nextPageToken, files(id, name, mimeType)",
+    pageSize,
+    pageToken,
+  });
+
+  const files = (data.files ?? [])
+    .map(f => ({ id: f.id ?? "", name: f.name ?? "", mimeType: f.mimeType ?? "" }))
+    .filter(f => f.id);
+
+  const nextPageToken = data.nextPageToken ?? undefined;
+  let nextCursor: DriveCursor | null;
+  if (nextPageToken) {
+    nextCursor = { folders, folderIndex, pageToken: nextPageToken };
+  } else if (folderIndex + 1 < folders.length) {
+    nextCursor = { folders, folderIndex: folderIndex + 1 };
+  } else {
+    nextCursor = null;
+  }
+
+  return { files, nextCursor };
+}
+
 export async function countBQDriveFiles(folderId: string): Promise<number> {
   const files = await listBQFolderFiles(folderId, "id");
   return files.length;
