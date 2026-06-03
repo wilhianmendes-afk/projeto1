@@ -148,8 +148,14 @@ export async function POST(req: NextRequest) {
         .select("id, nome, vulgo, cpf, cidade, uf, nascimento, genitora").in("id", topIds);
       topPessoas = Object.fromEntries((data ?? []).map((p) => [p.id, p]));
     }
-    topResults = (topRaw ?? []).map((m: { source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object }) => ({
-      ...m, from_bruno: false, pessoa: topPessoas[m.source_id] ?? null,
+    topResults = (topRaw ?? []).map((m: { source: string; source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object }) => ({
+      ...m,
+      from_bruno: false,
+      from_drive: m.source === "drive_bq" || m.source === "drive_abordados",
+      photo_url: (m.source === "drive_bq" || m.source === "drive_abordados")
+        ? `/api/drive/photo/${m.source_id}`
+        : m.photo_url,
+      pessoa: topPessoas[m.source_id] ?? null,
       confidence: m.similarity >= 0.55 ? "alta" : m.similarity >= 0.42 ? "forte" : m.similarity >= 0.30 ? "incerto" : "baixa",
     }));
   }

@@ -39,17 +39,7 @@ jobs:
 
           echo "Railway API response: $RESPONSE"
 
-          DEPLOY_ID=$(echo "$RESPONSE" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-edges = d.get('data', {}).get('deployments', {}).get('edges', [])
-if edges:
-    node = edges[0]['node']
-    print(node['id'])
-    print(f'[railway] status anterior: {node[\"status\"]}', file=sys.stderr)
-else:
-    print('', end='')
-" 2>&1 | head -1)
+          DEPLOY_ID=$(echo "$RESPONSE" | python3 -c "import sys,json;d=json.load(sys.stdin);edges=d.get('data',{}).get('deployments',{}).get('edges',[]);print(edges[0]['node']['id'] if edges else '')")
 
           if [ -z "$DEPLOY_ID" ]; then
             echo "Erro: não foi possível obter deployment ID do Railway"
