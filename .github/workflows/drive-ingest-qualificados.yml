@@ -1,9 +1,7 @@
 name: Drive — Ingestão de Qualificados
 
 on:
-  schedule:
-    - cron: "0 */3 * * *"   # a cada 3h (offset de drive-index-faces que roda nas horas pares)
-  workflow_dispatch:
+  workflow_dispatch:  # desabilitado: Drive BQ nunca gera fichas, apenas embeddings faciais
     inputs:
       limit:
         description: "Arquivos por rodada (default 5)"
