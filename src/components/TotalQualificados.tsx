@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export default function TotalQualificados({ local }: { local: number }) {
+export default function TotalQualificados({ local, drive }: { local: number; drive: number }) {
   const [parceiros, setParceiros] = useState<number | null>(null);
 
   useEffect(() => {
@@ -16,10 +16,15 @@ export default function TotalQualificados({ local }: { local: number }) {
 
   return (
     <p className="text-gray-400 text-sm">
-      {local.toLocaleString("pt-BR")} registros
+      {local.toLocaleString("pt-BR")} registros IBIS
+      {drive > 0 && (
+        <span className="text-green-500">
+          {" "}· {drive.toLocaleString("pt-BR")} Drive BQ
+        </span>
+      )}
       {parceiros != null && (
         <span className="text-amber-500">
-          {" "}+ {parceiros.toLocaleString("pt-BR")} bancos parceiros
+          {" "}· {parceiros.toLocaleString("pt-BR")} bancos parceiros
         </span>
       )}
     </p>

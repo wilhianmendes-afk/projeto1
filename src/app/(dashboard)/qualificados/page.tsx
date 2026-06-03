@@ -17,18 +17,27 @@ export default async function QualificadosPage() {
   const supabase = getAdminClient();
   const role = await getUserRole();
 
-  const { data: qualificados, count } = await supabase
-    .from("qualificados")
-    .select("id, nome, vulgo, cpf, rg, nascimento, genitora, foto_url, fonte, observacoes, created_at", { count: "exact" })
-    .is("deleted_at", null)
-    .order("nome")
-    .limit(100000);
+  const [
+    { data: qualificados, count },
+    { count: driveCount },
+  ] = await Promise.all([
+    supabase
+      .from("qualificados")
+      .select("id, nome, vulgo, cpf, rg, nascimento, genitora, foto_url, fonte, observacoes, created_at", { count: "exact" })
+      .is("deleted_at", null)
+      .order("nome")
+      .limit(100000),
+    supabase
+      .from("face_embeddings")
+      .select("source_id", { count: "exact", head: true })
+      .eq("source", "drive_bq"),
+  ]);
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Qualificados</h1>
-        <TotalQualificados local={count ?? 0} />
+        <TotalQualificados local={count ?? 0} drive={driveCount ?? 0} />
       </div>
 
       <QualificadosSearch initialData={qualificados ?? []} totalCount={count ?? 0} isViewer={role === "viewer"} />
