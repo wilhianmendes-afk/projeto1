@@ -1,42 +1,53 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-05-28)
+## Estado atual (2026-06-02)
 
 ### Funcionando
 - **Banco IBIS**: ~33.634 pessoas únicas; crescendo via scraper local (Agendador de Tarefas Windows, a cada 2h)
-- **IBIS Auto-Scraper local**: `scripts/ibis-scraper.py` + tarefa `"IBIS Scraper 42BPM"` no Windows; importa em lotes de 15 para não estourar timeout Vercel (30s); log em `scripts/ibis-scraper.log`
+- **IBIS Auto-Scraper local**: `scripts/ibis-scraper.py` + tarefa `"IBIS Scraper 42BPM"` no Windows; importa em lotes de 15; log em `scripts/ibis-scraper.log`; URL aponta para Netlify
 - **Drive Banco Qualificados**: `bancodequalificados@gmail.com` — OAuth2; 16.654 arquivos em 5 subpastas (Alvos 42º BPM, Alvos Banco, Esposas e Parentes - Alvos, Alvos A.D.E, Irmaos Ciganos)
-- **Drive BQ — listagem**: BFS de 2 níveis com `'id' in parents` — raiz + subpastas diretas (`listBQFolderFiles` em `src/lib/google-drive.ts`); **NÃO usar `in ancestors` — retorna 400 Invalid Value na Drive API**
-- **Ingestão Drive BQ → qualificados**: endpoint `/api/drive/ingest-qualificados` + workflow `drive-ingest-qualificados.yml` (a cada 3h); OCR + dedup por CPF / nome+nascimento + upload Storage + insert em `qualificados` com `fonte='drive_bq'`; arquivos descartados rastreados em `face_skipped(source='drive_bq_ingest')`
-- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 2h**); batch=5 por chamada
+- **Drive BQ — listagem**: duas funções em `src/lib/google-drive.ts`:
+  - `listBQFolderFiles` — lista todos os arquivos (BFS 2 níveis); usada por own-search e ingest
+  - `listBQFolderPage` — lista **uma página de uma pasta por chamada** com cursor `DriveCursor`; usada por `index-faces` para evitar re-listar 16k arquivos a cada rodada
+  - **NÃO usar `in ancestors` — retorna 400 Invalid Value na Drive API**
+- **Ingestão Drive BQ → qualificados**: endpoint `/api/drive/ingest-qualificados` + workflow `drive-ingest-qualificados.yml` (a cada 3h)
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 2h**); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas; ~15.700 pendentes zerando
 - **Dashboard**: cards IBIS (server, rápido) + Drive/Total (client async, cache 5min); página carrega imediatamente
 - **Página Indexação**: stats Supabase server-side; cobertura/pendentes calculados client-side após fetch `/api/drive/count`
-- **Cache compartilhado Drive count**: `src/lib/drive-count-cache.ts` — TTL 5min; reutilizado por `DriveCards` e `IndexacaoStats`; sem recalcular ao navegar entre páginas
-- **MCP `/api/mcp/banco`**: usa `getBQDriveClient()` (corrigido de vars inexistentes); `search_face` retorna `foto_url` no objeto `qualificado`; bugs Drive API corrigidos (orderBy + mimeType)
+- **Cache compartilhado Drive count**: `src/lib/drive-count-cache.ts` — TTL 5min; reutilizado por `DriveCards` e `IndexacaoStats`
+- **MCP `/api/mcp/banco`**: usa `getBQDriveClient()`; `search_face` retorna `foto_url` no objeto `qualificado`
 - **MCP consumido pela PCGO**: `search_text` retorna matches do banco + Drive BQ; `search_face` retorna objeto `qualificado: {nome, cpf, vulgo, cidade, uf, foto_url}`
-- **Cobertura calculada corretamente**: inclui Drive BQ no denominador e numerador
-- **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid)
+- **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid); `face_skipped.source_id` ainda é `uuid`
+- **RPC `get_pending_qualificados` corrigida**: usa `q.id::text` para comparar com `face_embeddings.source_id` (text) e `q.id` direto para `face_skipped.source_id` (uuid)
 - **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API
-- **Railway Hobby ativo**: plano $5/mês ativado em 2026-05-25 — face service online
-- **Perfil viewer (coruja)**: usuário somente leitura
+- **Railway Hobby ativo**: plano $5/mês — face service online
+- **Perfil viewer (coruja)**: usuário somente leitura; Chat Dev oculto para viewer (`layout.tsx` verifica role)
 - **Busca facial**: resultados MEU DRIVE abrem ComparisonModal; badges alinhados
 - **Deduplicação Drive BQ**: `deduplicate-drive.yml` (todo domingo 03h UTC)
 - **OAuth2 BQ escopo completo**: `https://www.googleapis.com/auth/drive`
 - **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account, depois OAuth2 BQ
-- **OAuth2 refresh token**: expira periodicamente (app em modo Testing no Google Cloud — tokens válidos por 7 dias); para renovar: `node scripts/google-oauth-setup.js <CLIENT_ID> <CLIENT_SECRET>` e atualizar `GOOGLE_OAUTH_REFRESH_TOKEN` na Vercel. Para token permanente: publicar app no Google Cloud Console → OAuth consent screen → "In production"
+- **OAuth2 refresh token**: expira periodicamente (app em modo Testing no Google Cloud — tokens válidos por 7 dias); para renovar: `node scripts/google-oauth-setup.js <CLIENT_ID> <CLIENT_SECRET>` e atualizar `GOOGLE_OAUTH_REFRESH_TOKEN` no Netlify. Para token permanente: publicar app no Google Cloud Console → OAuth consent screen → "In production"
 
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
 - **IBIS scraper via GitHub Actions**: ibis.app.br bloqueia IPs de datacenter (Azure/AWS); scraper roda só via PC local (tarefa agendada)
-- **Vercel DEPLOYMENT_DISABLED**: sistema fora do ar em 2026-05-28 após excesso de builds debug; verificar billing/limites em vercel.com
+- **Embeddings IBIS pendentes**: ~6.590 qualificados com foto sem embedding; backfill.yml a cada 15min zerando (~1 dia)
 
 ## Stack
-- **Frontend/API**: Next.js 14 (App Router) — deploy na Vercel
+- **Frontend/API**: Next.js 14 (App Router) — deploy no **Netlify** (migrado da Vercel em 2026-06-02)
 - **Banco de dados**: Supabase (Postgres + pgvector + Storage + Auth)
 - **Face service**: FastAPI + InsightFace buffalo_l — deploy no Railway (Hobby $5/mês)
-- **URL produção**: https://projeto1-liard-one.vercel.app
+- **URL produção**: https://intel-facial-42bpm.netlify.app
 - **Face service**: https://projeto1-production-b575.up.railway.app
+
+## Deploy (Netlify)
+- **Site ID**: `83e68e74-e7fe-4e29-9da5-121f35593e89`
+- **Deploy**: GitHub Actions `deploy.yml` — `npm ci` + `npx netlify-cli deploy --build --prod`
+- **Secrets GitHub**: `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`
+- **Motivo da migração**: Vercel retornava 402 (billing/Fast Origin Transfer excedido)
+- **Diferença Vercel → Netlify**: sem limite separado de "Fast Origin Transfer"; limite único de 100 GB banda/mês
+- **Timeout funções**: Netlify free suporta funções de até ~26s na prática (testado: `/api/drive/index-faces` responde em ~12s)
 
 ## Autenticação
 Login por usuário (sem @), convertido internamente para `usuario@42bpm.intel`.
@@ -61,7 +72,8 @@ Definido na criação do usuário via Admin API — não editável pelo próprio
 - Upload e re-indexação de foto (`FotoUpload`, `IndexButton`)
 - Botão Excluir no lightbox MEU DRIVE (`QualificadosSearch`)
 - Listas "Sem Foto" e "Sem Rosto" na indexação (`SemFotoList`, `SemRostoList`)
-- Botões "Rodar agora" e "Atualizar" no `BackfillStatus`
+- Botões "Rodar agora" e "Atualizar" no `BackfillStatus`)
+- **Chat Dev** (`DevChat` — oculto no `layout.tsx` via verificação de role no servidor)
 
 **Como criar usuário viewer via API (sem abrir o painel):**
 ```bash
@@ -73,7 +85,7 @@ curl -s -X POST "https://avtbwrkjqaepbawvxyvf.supabase.co/auth/v1/admin/users" \
   -d '{"email":"usuario@42bpm.intel","password":"senha","email_confirm":true,"app_metadata":{"role":"viewer"}}'
 ```
 
-## Variáveis de ambiente (Vercel)
+## Variáveis de ambiente (Netlify)
 ```
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
@@ -90,6 +102,7 @@ GOOGLE_OAUTH_CLIENT_SECRET=  # OAuth2 para bancodequalificados@gmail.com
 GOOGLE_OAUTH_REFRESH_TOKEN=  # OAuth2 para bancodequalificados@gmail.com
 DRIVE_BQ_FOLDER_ID=1SJCMYf2DcTgEAFUhIR4edK9TnTY3J2QQ  # pasta do Drive BQ
 OCR_SPACE_API_KEY=           # ocr.space API key (25k req/mês free)
+NEXT_TELEMETRY_DISABLED=1
 ```
 
 > **DRIVE_ABORDADOS_FOLDER_ID**: descontinuada. Substituída por DRIVE_BQ_FOLDER_ID.
