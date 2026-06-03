@@ -47,7 +47,7 @@ SUPABASE_URL = (os.environ.get("SUPABASE_URL")
                 or os.environ.get("NEXT_PUBLIC_SUPABASE_URL", ""))
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 IMPORT_URL   = os.environ.get("IMPORT_URL",
-               "https://projeto1-liard-one.vercel.app/api/ibis/import")
+               "https://intel-facial-42bpm.netlify.app/api/ibis/import")
 IMPORT_TOKEN = os.environ.get("IBIS_IMPORT_TOKEN", "")
 
 SLEEP_S      = 30  # segundos entre buscas — IBIS é infraestrutura gov frágil (OOM confirmado)
