@@ -1,10 +1,10 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-06-02)
+## Estado atual (2026-06-03)
 
 ### Funcionando
-- **Banco IBIS**: ~33.634 pessoas únicas; crescendo via scraper local (Agendador de Tarefas Windows, a cada 2h)
+- **Banco IBIS**: ~14.493 qualificados únicos; 14.132 indexados (embeddings gerados); 14 skipped (sem rosto detectável)
 - **IBIS Auto-Scraper local**: `scripts/ibis-scraper.py` + tarefa `"IBIS Scraper 42BPM"` no Windows; importa em lotes de 15; log em `scripts/ibis-scraper.log`; URL aponta para Netlify
 - **Drive Banco Qualificados**: `bancodequalificados@gmail.com` — OAuth2; 16.654 arquivos em 5 subpastas (Alvos 42º BPM, Alvos Banco, Esposas e Parentes - Alvos, Alvos A.D.E, Irmaos Ciganos)
 - **Drive BQ — listagem**: duas funções em `src/lib/google-drive.ts`:
@@ -20,10 +20,10 @@ Sistema de reconhecimento facial para inteligência policial.
 - **MCP consumido pela PCGO**: `search_text` retorna matches do banco + Drive BQ; `search_face` retorna objeto `qualificado: {nome, cpf, vulgo, cidade, uf, foto_url}`
 - **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid); `face_skipped.source_id` ainda é `uuid`
 - **RPC `get_pending_qualificados` corrigida**: usa `q.id::text` para comparar com `face_embeddings.source_id` (text) e `q.id` direto para `face_skipped.source_id` (uuid)
-- **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API
+- **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API (YAML corrigido em 2026-06-03 — bug Python multi-linha quebrava o parser e o cron nunca disparava)
 - **Railway Hobby ativo**: plano $5/mês — face service online
 - **Perfil viewer (coruja)**: usuário somente leitura; Chat Dev oculto para viewer (`layout.tsx` verifica role)
-- **Busca facial**: resultados MEU DRIVE abrem ComparisonModal; badges alinhados
+- **Busca facial**: resultados MEU DRIVE abrem ComparisonModal; badges alinhados; `top_results` agora usa proxy `/api/drive/photo/:id` para registros drive_bq (bug corrigido em 2026-06-03)
 - **Deduplicação Drive BQ**: `deduplicate-drive.yml` (todo domingo 03h UTC)
 - **OAuth2 BQ escopo completo**: `https://www.googleapis.com/auth/drive`
 - **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account, depois OAuth2 BQ
@@ -32,7 +32,7 @@ Sistema de reconhecimento facial para inteligência policial.
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
 - **IBIS scraper via GitHub Actions**: ibis.app.br bloqueia IPs de datacenter (Azure/AWS); scraper roda só via PC local (tarefa agendada)
-- **Embeddings IBIS pendentes**: ~6.590 qualificados com foto sem embedding; backfill.yml a cada 15min zerando (~1 dia)
+- **Backfill IBIS completo**: 14.132/14.480 indexados; 14 em face_skipped; fila vazia (remaining=0 em 2026-06-03)
 
 ## Stack
 - **Frontend/API**: Next.js 14 (App Router) — deploy no **Netlify** (migrado da Vercel em 2026-06-02)
