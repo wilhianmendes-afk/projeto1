@@ -1,7 +1,7 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-## Estado atual (2026-06-03)
+## Estado atual (2026-06-05)
 
 ### Funcionando
 - **Banco IBIS**: ~14.493 qualificados únicos; 14.132 indexados (embeddings gerados); 14 skipped (sem rosto detectável)
@@ -12,7 +12,7 @@ Sistema de reconhecimento facial para inteligência policial.
   - `listBQFolderPage` — lista **uma página de uma pasta por chamada** com cursor `DriveCursor`; usada por `index-faces` para evitar re-listar 16k arquivos a cada rodada
   - **NÃO usar `in ancestors` — retorna 400 Invalid Value na Drive API**
 - **Ingestão Drive BQ → qualificados**: endpoint `/api/drive/ingest-qualificados` + workflow `drive-ingest-qualificados.yml` (a cada 3h)
-- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 2h**); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas; ~15.700 pendentes zerando
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 12h**); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas
 - **Dashboard**: cards IBIS (server, rápido) + Drive/Total (client async, cache 5min); página carrega imediatamente
 - **Página Indexação**: stats Supabase server-side; cobertura/pendentes calculados client-side após fetch `/api/drive/count`
 - **Cache compartilhado Drive count**: `src/lib/drive-count-cache.ts` — TTL 5min; reutilizado por `DriveCards` e `IndexacaoStats`
@@ -27,7 +27,8 @@ Sistema de reconhecimento facial para inteligência policial.
 - **Deduplicação Drive BQ**: `deduplicate-drive.yml` (todo domingo 03h UTC)
 - **OAuth2 BQ escopo completo**: `https://www.googleapis.com/auth/drive`
 - **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account, depois OAuth2 BQ
-- **OAuth2 refresh token**: expira periodicamente (app em modo Testing no Google Cloud — tokens válidos por 7 dias); para renovar: `node scripts/google-oauth-setup.js <CLIENT_ID> <CLIENT_SECRET>` e atualizar `GOOGLE_OAUTH_REFRESH_TOKEN` no Netlify. Para token permanente: publicar app no Google Cloud Console → OAuth consent screen → "In production"
+- **OAuth2 refresh token**: **PERMANENTE** — app Google Cloud `banco-qualificados` publicado em produção em 2026-06-05 (era Testing; tokens expiravam a cada 7 dias). Se precisar renovar manualmente: `node scripts/google-oauth-setup.js <CLIENT_ID> <CLIENT_SECRET>` e atualizar `GOOGLE_OAUTH_REFRESH_TOKEN` no Netlify via `netlify env:set`
+- **Dashboard — erro de auth visível**: `DriveCards.tsx` exibe alerta vermelho "Token expirado" quando `/api/drive/count` retorna `error: "auth_expired"` — não mostra 0 silencioso. `fetchDriveCount()` retorna `{ count, error }` (não só `number`)
 
 ### Pendente — Normal
 - **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
@@ -44,10 +45,13 @@ Sistema de reconhecimento facial para inteligência policial.
 ## Deploy (Netlify)
 - **Site ID**: `83e68e74-e7fe-4e29-9da5-121f35593e89`
 - **Deploy**: GitHub Actions `deploy.yml` — `npm ci` + `npx netlify-cli deploy --build --prod`
+- **Trigger**: `workflow_dispatch` **manual** (alterado em 2026-06-05 — deploy por push consumia 15 créditos cada)
+- **Como deployar**: GitHub → Actions → "Deploy to Netlify" → "Run workflow"
 - **Secrets GitHub**: `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`
 - **Motivo da migração**: Vercel retornava 402 (billing/Fast Origin Transfer excedido)
-- **Diferença Vercel → Netlify**: sem limite separado de "Fast Origin Transfer"; limite único de 100 GB banda/mês
+- **Plano Netlify free**: 300 créditos/mês — 15 créditos/deploy, 10 créditos/GB-HR de functions
 - **Timeout funções**: Netlify free suporta funções de até ~26s na prática (testado: `/api/drive/index-faces` responde em ~12s)
+- **`.netlify/state.json`**: criado em 2026-06-05 — vincula projeto ao site ID para o CLI funcionar
 
 ## Autenticação
 Login por usuário (sem @), convertido internamente para `usuario@42bpm.intel`.
@@ -283,11 +287,11 @@ face-service/
 ## GitHub Actions — workflows
 | Arquivo | Trigger | Função |
 |---------|---------|--------|
-| `deploy.yml` | push no branch | Deploy na Vercel |
-| `backfill.yml` | a cada 15min + manual | Indexação embeddings de qualificados IBIS/Drive |
-| `drive-index-faces.yml` | **a cada 2h** + manual | Indexação rostos Drive BQ (batch=5; python3 resiliente a timeout) |
-| `drive-ingest-qualificados.yml` | **a cada 3h** + manual | Ingestão Drive BQ → tabela qualificados (OCR+dedup) |
-| `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway |
+| `deploy.yml` | **manual (workflow_dispatch)** | Deploy no Netlify — alterado em 2026-06-05 para economizar créditos |
+| `backfill.yml` | **a cada 2h** + manual | Indexação embeddings de qualificados IBIS/Drive (era 15min — alterado em 2026-06-05) |
+| `drive-index-faces.yml` | **a cada 12h** + manual | Indexação rostos Drive BQ (batch=5; era 2h — alterado em 2026-06-05) |
+| `drive-ingest-qualificados.yml` | **DESABILITADO** + manual | Ingestão Drive BQ → tabela qualificados (OCR+dedup) |
+| `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway (chama Railway diretamente — não consome Netlify functions) |
 | `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ |
 | `ibis-scraper.yml` | desabilitado (ibis.app.br bloqueia IPs de datacenter) | — substituído pela tarefa local |
 
@@ -331,8 +335,8 @@ face-service/
 
 ## Deploy
 - Branch: `claude/check-github-access-v30TG`
-- Deploy automático via `deploy.yml` a cada push
-- Secrets GitHub: `VERCEL_DEPLOY_HOOK`, `IBIS_IMPORT_TOKEN`, `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `DRIVE_BQ_FOLDER_ID`, `IBIS_USER`, `IBIS_PASS`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`
+- Deploy **manual** via `deploy.yml` (workflow_dispatch) — desde 2026-06-05
+- Secrets GitHub: `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID`, `IBIS_IMPORT_TOKEN`, `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `DRIVE_BQ_FOLDER_ID`, `IBIS_USER`, `IBIS_PASS`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`
 
 ## IBIS Auto-Scraper
 
