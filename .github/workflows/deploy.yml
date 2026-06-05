@@ -1,9 +1,7 @@
 name: Deploy to Netlify
 
 on:
-  push:
-    branches:
-      - claude/check-github-access-v30TG
+  workflow_dispatch:
 
 jobs:
   deploy:

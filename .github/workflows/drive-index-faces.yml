@@ -2,7 +2,7 @@ name: Drive - Indexacao Facial BQ
 
 on:
   schedule:
-    - cron: "0 */2 * * *"   # a cada 2 horas
+    - cron: "0 */12 * * *"   # a cada 12 horas
   workflow_dispatch:         # disparo manual
 
 jobs:

@@ -28,7 +28,7 @@ export default function IndexacaoStats({
 
   useEffect(() => {
     if (getCachedDriveCount() !== null) return;
-    fetchDriveCount().then(setDriveFiles).catch(() => setDriveFiles(0));
+    fetchDriveCount().then(({ count }) => setDriveFiles(count)).catch(() => setDriveFiles(0));
   }, []);
 
   const ibisComFoto = totalQualificados - totalSemFoto;

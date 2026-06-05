@@ -2,7 +2,7 @@ name: Backfill de Embeddings
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # a cada 15 minutos
+    - cron: '0 */2 * * *'   # a cada 2 horas
   workflow_dispatch:          # permite rodar manualmente pelo GitHub
 
 jobs:
