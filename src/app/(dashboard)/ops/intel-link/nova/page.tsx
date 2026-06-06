@@ -392,11 +392,12 @@ async function drawAnuncioOgCanvas(
   }
 }
 
-// ─── Captura do preview como imagem WhatsApp ──────────────────────────────────
+// ─── Captura do preview como imagem WhatsApp (1200×630) ──────────────────────
 
-function CapturarPrevia({ previewRef, onImageReady }: {
+function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6" }: {
   previewRef: React.RefObject<HTMLDivElement>;
   onImageReady: (url: string) => void;
+  bgColor?: string;
 }) {
   const [capturing, setCapturing] = useState(false);
   const [applied, setApplied] = useState(false);
@@ -406,13 +407,44 @@ function CapturarPrevia({ previewRef, onImageReady }: {
     setCapturing(true);
     try {
       const h2c = (await import("html2canvas")).default;
-      const canvas = await h2c(previewRef.current, {
+
+      // Captura o card no tamanho renderizado
+      const captured = await h2c(previewRef.current, {
         useCORS: true,
-        scale: 2,
+        scale: 3,
         backgroundColor: "#ffffff",
         logging: false,
       });
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+      // Cria canvas 1200×630 (proporção esperada pelo WhatsApp)
+      const OG_W = 1200, OG_H = 630;
+      const ogCanvas = document.createElement("canvas");
+      ogCanvas.width = OG_W;
+      ogCanvas.height = OG_H;
+      const ctx = ogCanvas.getContext("2d")!;
+
+      // Fundo com cor da plataforma
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, OG_W, OG_H);
+
+      // Escala o card capturado para caber em OG_H com margem
+      const margin = 30;
+      const maxH = OG_H - margin * 2;
+      const maxW = OG_W - margin * 2;
+      const scale = Math.min(maxW / captured.width, maxH / captured.height);
+      const drawW = captured.width * scale;
+      const drawH = captured.height * scale;
+      const drawX = (OG_W - drawW) / 2;
+      const drawY = (OG_H - drawH) / 2;
+
+      // Sombra sutil
+      ctx.shadowColor = "rgba(0,0,0,0.18)";
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 6;
+      ctx.drawImage(captured, drawX, drawY, drawW, drawH);
+      ctx.shadowBlur = 0;
+
+      const dataUrl = ogCanvas.toDataURL("image/jpeg", 0.92);
       const res = await fetch("/api/ops/intel-link/upload-og", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1554,6 +1586,10 @@ export default function NovaInvestigacaoPage() {
                 <CapturarPrevia
                   previewRef={pixPreviewRef}
                   onImageReady={(url) => setF("og_imagem_url", url)}
+                  bgColor={
+                    pix.banco === "inter" ? "#fff3e8" :
+                    pix.banco === "caixa" ? "#e8eff7" : "#e8f8fd"
+                  }
                 />
               </div>
             </div>
@@ -1629,6 +1665,10 @@ export default function NovaInvestigacaoPage() {
                 <CapturarPrevia
                   previewRef={anuncioPreviewRef}
                   onImageReady={(url) => setF("og_imagem_url", url)}
+                  bgColor={
+                    anuncio.plataforma === "shopee" ? "#fff0ed" :
+                    anuncio.plataforma === "olx"    ? "#f0ebf9" : "#fffbe6"
+                  }
                 />
               </div>
             </div>
