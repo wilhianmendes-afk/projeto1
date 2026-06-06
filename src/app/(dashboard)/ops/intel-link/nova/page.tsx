@@ -116,6 +116,463 @@ function drawInstagramIcon(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.fill();
 }
 
+// ─── Canvas: PIX OG Image (1200×630) ─────────────────────────────────────────
+
+function drawPixOgCanvas(ctx: CanvasRenderingContext2D, pix: PixForm, banco: string) {
+  const W = 1200, H = 630;
+  const colors: Record<string, string> = { mercado_pago: "#00b1ea", inter: "#FF6B00", caixa: "#005CA9" };
+  const names: Record<string, string>  = { mercado_pago: "mercado pago", inter: "inter", caixa: "CAIXA" };
+  const color    = colors[banco] || "#00b1ea";
+  const bankName = names[banco]  || "mercado pago";
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+
+  // Left accent strip
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 16, H);
+
+  // Header band
+  ctx.fillStyle = color;
+  ctx.fillRect(16, 0, W - 16, 120);
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  ctx.fillRect(16, 0, W - 16, 120);
+  ctx.fillStyle = color;
+  ctx.fillRect(16, 0, W - 16, 120);
+
+  ctx.fillStyle = "white";
+  ctx.font = banco === "inter" ? "bold italic 62px Arial" : "bold 62px Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(bankName, 48, 60);
+
+  // Subtitle in header (banco label)
+  if (banco === "mercado_pago" || banco === "caixa") {
+    ctx.font = "28px Arial";
+    ctx.globalAlpha = 0.75;
+    ctx.fillText(banco === "caixa" ? "Comprovante de Pix" : "Comprovante de Pix", W - 400, 60);
+    ctx.globalAlpha = 1;
+  }
+
+  // Green check circle
+  ctx.fillStyle = "#22c55e";
+  ctx.beginPath();
+  ctx.arc(60, 162, 20, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(50, 162);
+  ctx.lineTo(58, 172);
+  ctx.lineTo(72, 150);
+  ctx.stroke();
+
+  // Title
+  ctx.fillStyle = "#111827";
+  ctx.font = "bold 36px Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(banco === "inter" ? "Pix enviado" : "Comprovante de Pix", 94, 162);
+
+  // Date + time
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "22px Arial";
+  ctx.textAlign = "right";
+  ctx.fillText(`${pix.data || ""}  ${pix.horario || ""}`.trim(), W - 44, 162);
+
+  // Large R$ value
+  ctx.fillStyle = "#111827";
+  ctx.font = "bold 84px Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(`R$ ${pix.valor || "0"}`, 44, 300);
+
+  // Divider 1
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = "butt";
+  ctx.beginPath();
+  ctx.moveTo(44, 330);
+  ctx.lineTo(W - 44, 330);
+  ctx.stroke();
+
+  // De / Para columns
+  const c1 = 44, c2 = W / 2 + 20;
+  const maxW = W / 2 - c1 - 40;
+
+  function trunc(text: string, mw: number, font: string): string {
+    ctx.font = font;
+    if (ctx.measureText(text).width <= mw) return text;
+    let t = text;
+    while (t.length > 0 && ctx.measureText(t + "…").width > mw) t = t.slice(0, -1);
+    return t + "…";
+  }
+
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "20px Arial";
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillText("De", c1, 352);
+  ctx.fillText("Para", c2, 352);
+
+  ctx.fillStyle = "#374151";
+  ctx.font = "bold 26px Arial";
+  ctx.fillText(trunc(pix.de_nome || "—", maxW, "bold 26px Arial"), c1, 380);
+  ctx.fillText(trunc(pix.para_nome || "—", maxW, "bold 26px Arial"), c2, 380);
+
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "20px Arial";
+  ctx.fillText(trunc(pix.de_cpf   || "", maxW, "20px Arial"), c1, 418);
+  ctx.fillText(trunc(pix.para_cpf || "", maxW, "20px Arial"), c2, 418);
+  ctx.fillText(trunc(pix.de_banco   || "", maxW, "20px Arial"), c1, 446);
+  ctx.fillText(trunc(pix.para_banco || "", maxW, "20px Arial"), c2, 446);
+
+  // Arrow in centre
+  ctx.fillStyle = "#d1d5db";
+  ctx.font = "bold 36px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("→", W / 2, 415);
+
+  // Divider 2
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(44, 490);
+  ctx.lineTo(W - 44, 490);
+  ctx.stroke();
+
+  // Transaction ID
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "18px Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("ID Pix:", 44, 520);
+  ctx.fillStyle = "#374151";
+  ctx.font = "18px monospace";
+  ctx.fillText(trunc(pix.id || "—", W - 180, "18px monospace"), 120, 520);
+
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "18px Arial";
+  ctx.fillText("Transação:", 44, 556);
+  ctx.fillStyle = "#374151";
+  ctx.fillText(trunc(pix.transacao || "—", W - 220, "18px Arial"), 150, 556);
+}
+
+// ─── Canvas: Anúncio OG Image (1200×630) ─────────────────────────────────────
+
+async function drawAnuncioOgCanvas(
+  ctx: CanvasRenderingContext2D,
+  plataforma: string,
+  titulo: string,
+  preco: string,
+  descricao: string,
+  fotoDataUrl: string | null
+) {
+  const W = 1200, H = 630;
+  const plats: Record<string, { cor: string; corTexto: string; nome: string }> = {
+    mercadolivre: { cor: "#FFE600", corTexto: "#222", nome: "mercadolivre" },
+    shopee:       { cor: "#EE4D2D", corTexto: "#fff", nome: "shopee" },
+    olx:          { cor: "#6E0AD6", corTexto: "#fff", nome: "OLX" },
+  };
+  const plat = plats[plataforma] || plats.mercadolivre;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+
+  // Right half: product photo
+  if (fotoDataUrl) {
+    await new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const dW = W / 2, dH = H;
+        const r = img.width / img.height, dr = dW / dH;
+        let sx = 0, sy = 0, sw = img.width, sh = img.height;
+        if (r > dr) { sw = img.height * dr; sx = (img.width - sw) / 2; }
+        else         { sh = img.width / dr;  sy = (img.height - sh) / 2; }
+        ctx.drawImage(img, sx, sy, sw, sh, W / 2, 0, dW, dH);
+        resolve();
+      };
+      img.onerror = () => resolve();
+      img.src = fotoDataUrl;
+    });
+  } else {
+    ctx.fillStyle = "#f3f4f6";
+    ctx.fillRect(W / 2, 0, W / 2, H);
+    ctx.fillStyle = "#9ca3af";
+    ctx.font = "bold 28px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Foto do produto", W * 3 / 4, H / 2);
+  }
+
+  // Divider between halves
+  ctx.fillStyle = "#e5e7eb";
+  ctx.fillRect(W / 2, 0, 2, H);
+
+  // Left half: platform header
+  ctx.fillStyle = plat.cor;
+  ctx.fillRect(0, 0, W / 2, 100);
+  ctx.fillStyle = plat.corTexto;
+  ctx.font = plataforma === "shopee" ? "bold italic 52px Arial" : "bold 52px Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(plat.nome, 30, 50);
+
+  // Title (wrapped, max 3 lines)
+  const maxW = W / 2 - 60;
+  ctx.fillStyle = "#111827";
+  ctx.font = "bold 32px Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  const words = (titulo || "Produto").split(" ");
+  const lines: string[] = [];
+  let line = "";
+  for (const w of words) {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxW && line) {
+      lines.push(line); line = w;
+      if (lines.length >= 3) { line = ""; break; }
+    } else line = test;
+  }
+  if (line && lines.length < 3) lines.push(line);
+  lines.forEach((l, i) => ctx.fillText(l, 30, 114 + i * 40));
+
+  // Price
+  const priceY = 114 + lines.length * 40 + 16;
+  ctx.fillStyle = plataforma === "shopee" ? "#EE4D2D" : "#111827";
+  ctx.font = "bold 54px Arial";
+  ctx.textBaseline = "top";
+  ctx.fillText(`R$ ${preco || "0"}`, 30, priceY);
+
+  // Extra label
+  const labelY = priceY + 68;
+  ctx.font = "22px Arial";
+  if (plataforma === "mercadolivre") {
+    ctx.fillStyle = "#22c55e";
+    ctx.fillText("✓ Frete grátis", 30, labelY);
+    const pNum = parseFloat((preco || "0").replace(",", ".")) || 0;
+    const parc = pNum > 0 ? (pNum / 12).toFixed(2).replace(".", ",") : "0,00";
+    ctx.fillText(`em 12x R$ ${parc} sem juros`, 30, labelY + 32);
+  } else if (plataforma === "shopee") {
+    ctx.fillStyle = "#EE4D2D";
+    ctx.fillText("★★★★★  4.9 | 2.847 avaliações", 30, labelY);
+  } else {
+    ctx.fillStyle = "#9ca3af";
+    ctx.fillText("📍 Goiânia, GO", 30, labelY);
+  }
+
+  // Description (2 lines max)
+  if (descricao) {
+    const descY = labelY + 72;
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "21px Arial";
+    const dWords = descricao.split(" ");
+    const dLines: string[] = [];
+    let dLine = "";
+    for (const w of dWords) {
+      const t = dLine ? dLine + " " + w : w;
+      if (ctx.measureText(t).width > maxW && dLine) {
+        dLines.push(dLine); dLine = w;
+        if (dLines.length >= 2) break;
+      } else dLine = t;
+    }
+    if (dLine && dLines.length < 2) dLines.push(dLine);
+    dLines.forEach((l, i) => ctx.fillText(l, 30, descY + i * 30));
+  }
+}
+
+// ─── Compositor PIX WhatsApp ──────────────────────────────────────────────────
+
+function PixOgComposer({ pix, banco, onImageReady }: {
+  pix: PixForm;
+  banco: string;
+  onImageReady: (url: string) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [applied, setApplied] = useState(false);
+
+  function handleGenerate() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = 1200;
+    canvas.height = 630;
+    drawPixOgCanvas(ctx, pix, banco);
+    setPreviewUrl(canvas.toDataURL("image/jpeg", 0.9));
+    setApplied(false);
+  }
+
+  async function handleApply() {
+    if (!previewUrl) return;
+    setUploading(true);
+    try {
+      const res = await fetch("/api/ops/intel-link/upload-og", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: previewUrl }),
+      });
+      const data = await res.json();
+      if (data.url) { onImageReady(data.url); setApplied(true); }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-800 space-y-3">
+      <p className="text-xs text-gray-400 font-medium">Imagem para preview no WhatsApp</p>
+      <canvas ref={canvasRef} className="hidden" />
+      <div className="flex flex-wrap gap-2 items-center">
+        <button type="button" onClick={handleGenerate}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors">
+          <ImagePlus className="w-4 h-4" />
+          Gerar imagem WhatsApp
+        </button>
+        {previewUrl && !applied && (
+          <button type="button" onClick={handleApply} disabled={uploading}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors">
+            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {uploading ? "Enviando..." : "Aplicar ao link"}
+          </button>
+        )}
+        {applied && (
+          <span className="flex items-center gap-1.5 text-green-400 text-sm">
+            <Check className="w-4 h-4" /> Aplicado!
+          </span>
+        )}
+      </div>
+      {previewUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={previewUrl} alt="pix og" className="w-full rounded border border-gray-700 max-h-44 object-cover" />
+      )}
+    </div>
+  );
+}
+
+// ─── Compositor Anúncio WhatsApp ──────────────────────────────────────────────
+
+function AnuncioOgComposer({ plataforma, titulo, preco, descricao, onRawReady, onOgReady }: {
+  plataforma: string;
+  titulo: string;
+  preco: string;
+  descricao: string;
+  onRawReady: (url: string) => void;
+  onOgReady: (url: string) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [fotoDataUrl, setFotoDataUrl] = useState<string | null>(null);
+  const [ogPreviewUrl, setOgPreviewUrl] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [applied, setApplied] = useState(false);
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setFotoDataUrl(ev.target?.result as string);
+      setOgPreviewUrl(null);
+      setApplied(false);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleGenerate() {
+    if (!fotoDataUrl) return;
+    setGenerating(true);
+    try {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      canvas.width = 1200;
+      canvas.height = 630;
+      await drawAnuncioOgCanvas(ctx, plataforma, titulo, preco, descricao, fotoDataUrl);
+      setOgPreviewUrl(canvas.toDataURL("image/jpeg", 0.9));
+      setApplied(false);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleApply() {
+    if (!fotoDataUrl || !ogPreviewUrl) return;
+    setUploading(true);
+    try {
+      const [rawRes, ogRes] = await Promise.all([
+        fetch("/api/ops/intel-link/upload-og", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: fotoDataUrl }),
+        }),
+        fetch("/api/ops/intel-link/upload-og", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: ogPreviewUrl }),
+        }),
+      ]);
+      const [rawData, ogData] = await Promise.all([rawRes.json(), ogRes.json()]);
+      if (rawData.url) onRawReady(rawData.url);
+      if (ogData.url) onOgReady(ogData.url);
+      setApplied(true);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <canvas ref={canvasRef} className="hidden" />
+      <p className="text-xs text-gray-500">Preencha os campos acima antes de gerar o card.</p>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => { setOgPreviewUrl(null); setApplied(false); fileRef.current?.click(); }}
+          className="flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
+          <Upload className="w-4 h-4" />
+          {fotoDataUrl ? "Trocar foto" : "Selecionar foto"}
+        </button>
+        {fotoDataUrl && (
+          <button type="button" onClick={handleGenerate} disabled={generating}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors">
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+            {generating ? "Gerando..." : "Gerar card WhatsApp"}
+          </button>
+        )}
+      </div>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+
+      {fotoDataUrl && !ogPreviewUrl && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Foto selecionada:</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={fotoDataUrl} alt="foto" className="h-20 rounded border border-gray-700 object-cover" />
+        </div>
+      )}
+
+      {ogPreviewUrl && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400">Card WhatsApp gerado:</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={ogPreviewUrl} alt="og card" className="w-full rounded border border-gray-700 max-h-44 object-cover" />
+          <button type="button" onClick={handleApply} disabled={uploading || applied}
+            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
+              applied ? "bg-green-900/40 text-green-400 border border-green-700" : "bg-blue-700 hover:bg-blue-600 text-white"
+            } disabled:opacity-50`}>
+            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : applied ? <Check className="w-4 h-4" /> : <ImagePlus className="w-4 h-4" />}
+            {uploading ? "Enviando..." : applied ? "Aplicado!" : "Aplicar ao link"}
+          </button>
+          {applied && <p className="text-xs text-green-400">✓ Foto e card WhatsApp aplicados.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Compositor de Imagem ─────────────────────────────────────────────────────
 
 function ImageComposer({ onImageReady }: { onImageReady: (url: string) => void }) {
@@ -868,7 +1325,7 @@ export default function NovaInvestigacaoPage() {
     redirect_url: "",
   });
 
-  const [anuncio, setAnuncio] = useState({ plataforma: "mercadolivre", preco: "" });
+  const [anuncio, setAnuncio] = useState({ plataforma: "mercadolivre", preco: "", imagem_url: "" });
 
   const [pix, setPix] = useState<PixForm>({
     banco: "mercado_pago",
@@ -1208,6 +1665,11 @@ export default function NovaInvestigacaoPage() {
                  <MercadoPagoPreview pix={pix} />}
               </div>
             </div>
+            <PixOgComposer
+              pix={pix}
+              banco={pix.banco}
+              onImageReady={(url) => setF("og_imagem_url", url)}
+            />
           </div>
         )}
 
@@ -1261,10 +1723,14 @@ export default function NovaInvestigacaoPage() {
                 {/* Imagem */}
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">Foto do produto</label>
-                  <input type="url" value={form.og_imagem_url} onChange={(e) => setF("og_imagem_url", e.target.value)}
-                    placeholder="Cole a URL da foto ou faça upload"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm mb-2" />
-                  <AnuncioImageUpload onUrlReady={(url) => setF("og_imagem_url", url)} />
+                  <AnuncioOgComposer
+                    plataforma={anuncio.plataforma}
+                    titulo={form.og_titulo}
+                    preco={anuncio.preco}
+                    descricao={form.og_descricao}
+                    onRawReady={(url) => setA("imagem_url", url)}
+                    onOgReady={(url) => setF("og_imagem_url", url)}
+                  />
                 </div>
               </div>
 
@@ -1272,11 +1738,11 @@ export default function NovaInvestigacaoPage() {
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Preview (o que o alvo vê)</p>
                 {anuncio.plataforma === "shopee" ? (
-                  <ShopeeAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={form.og_imagem_url} preco={anuncio.preco} />
+                  <ShopeeAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
                 ) : anuncio.plataforma === "olx" ? (
-                  <OlxAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={form.og_imagem_url} preco={anuncio.preco} />
+                  <OlxAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
                 ) : (
-                  <MercadoLivreAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={form.og_imagem_url} preco={anuncio.preco} />
+                  <MercadoLivreAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
                 )}
               </div>
             </div>

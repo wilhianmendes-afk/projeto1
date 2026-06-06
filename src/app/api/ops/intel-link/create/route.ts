@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       // Anúncio
       anuncio_plataforma:  anuncio?.plataforma   || null,
       anuncio_preco:       anuncio?.preco         || null,
+      anuncio_imagem_url:  anuncio?.imagem_url   || null,
     })
     .select()
     .single();

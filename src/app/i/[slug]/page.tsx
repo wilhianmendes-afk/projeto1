@@ -15,7 +15,7 @@ async function getInvestigation(slug: string) {
   const supabase = getAdminClient();
   const { data } = await supabase
     .from("ops_hispy_investigations")
-    .select("id, slug, tipo, og_titulo, og_descricao, og_imagem_url, redirect_url, status, pix_banco, pix_valor, pix_data, pix_horario, pix_de_nome, pix_de_cpf, pix_de_banco, pix_para_nome, pix_para_cpf, pix_para_banco, pix_transacao, pix_id, anuncio_plataforma, anuncio_preco")
+    .select("id, slug, tipo, og_titulo, og_descricao, og_imagem_url, redirect_url, status, pix_banco, pix_valor, pix_data, pix_horario, pix_de_nome, pix_de_cpf, pix_de_banco, pix_para_nome, pix_para_cpf, pix_para_banco, pix_transacao, pix_id, anuncio_plataforma, anuncio_preco, anuncio_imagem_url")
     .eq("slug", slug)
     .single();
   return data;
@@ -56,7 +56,7 @@ export default async function BaitPage({ params }: { params: { slug: string } })
       tipo={inv.tipo}
       titulo={inv.og_titulo}
       descricao={inv.og_descricao}
-      imagemUrl={inv.og_imagem_url}
+      imagemUrl={inv.tipo === "anuncio" ? (inv.anuncio_imagem_url || inv.og_imagem_url) : inv.og_imagem_url}
       redirectUrl={inv.redirect_url}
       anuncioPlatforma={inv.anuncio_plataforma}
       anuncioPreco={inv.anuncio_preco}
