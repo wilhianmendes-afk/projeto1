@@ -1373,6 +1373,11 @@ export default function NovaInvestigacaoPage() {
   }
 
   function handleBancoChange(banco: string) {
+    const redirects: Record<string, string> = {
+      mercado_pago: "https://www.mercadopago.com.br",
+      inter:        "https://inter.co",
+      caixa:        "https://www.caixa.gov.br",
+    };
     setPix((prev) => ({
       ...prev,
       banco,
@@ -1388,6 +1393,7 @@ export default function NovaInvestigacaoPage() {
       transacao:
         banco === "caixa" ? gerarIdentificador() : prev.transacao,
     }));
+    setForm((prev) => ({ ...prev, redirect_url: redirects[banco] || prev.redirect_url }));
   }
 
   function handleTipoChange(tipo: "reportagem" | "pix" | "anuncio") {
