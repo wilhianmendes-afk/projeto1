@@ -69,6 +69,14 @@ const PLATAFORMAS_ANUNCIO = [
   { id: "olx",          label: "OLX",           cor: "#6E0AD6", corTexto: "#fff", redirect: "https://www.olx.com.br" },
 ];
 
+const PORTAL_CONFIGS = [
+  { id: "g1",        label: "G1",        logoId: "g1",     bg: "#CC0000", textColor: "#fff", italic: true,  redirect: "https://g1.globo.com" },
+  { id: "record",    label: "Record TV", logoId: "record", bg: "#003087", textColor: "#fff", italic: false, redirect: "https://www.recordtv.com.br" },
+  { id: "sbt",       label: "SBT",       logoId: "sbt",    bg: "#0033A0", textColor: "#fff", italic: false, redirect: "https://www.sbt.com.br" },
+  { id: "band",      label: "Band",      logoId: "band",   bg: "#FFD700", textColor: "#000", italic: false, redirect: "https://www.band.com.br" },
+  { id: "instagram", label: "Instagram", logoId: null,     bg: "#C13584", textColor: "#fff", italic: false, redirect: "https://www.instagram.com" },
+];
+
 function drawLogoOnCanvas(
   ctx: CanvasRenderingContext2D,
   logo: typeof LOGOS[0],
@@ -575,8 +583,8 @@ function AnuncioOgComposer({ plataforma, titulo, preco, descricao, onRawReady, o
 
 // ─── Compositor de Imagem ─────────────────────────────────────────────────────
 
-function ImageComposer({ onImageReady }: { onImageReady: (url: string) => void }) {
-  const [selectedLogo, setSelectedLogo] = useState(LOGOS[0]);
+function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: string) => void; defaultLogoId?: string }) {
+  const [selectedLogo, setSelectedLogo] = useState(LOGOS.find((l) => l.id === defaultLogoId) ?? LOGOS[0]);
   const [faceDataUrl, setFaceDataUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -1260,11 +1268,13 @@ function CaixaPreview({ pix }: { pix: PixForm }) {
 
 // ─── Preview WhatsApp ────────────────────────────────────────────────────────
 
-function WhatsAppPreview({ titulo, descricao, imagemUrl, slug, baseUrl }: {
-  titulo: string; descricao: string; imagemUrl: string; slug: string; baseUrl: string;
+function WhatsAppPreview({ titulo, descricao, imagemUrl, slug, baseUrl, redirectUrl }: {
+  titulo: string; descricao: string; imagemUrl: string; slug: string; baseUrl: string; redirectUrl?: string;
 }) {
   const linkExibido = `${baseUrl}/i/${slug || "..."}`;
-  const dominio = baseUrl.replace(/^https?:\/\//, "");
+  const dominio = redirectUrl
+    ? redirectUrl.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0]
+    : baseUrl.replace(/^https?:\/\//, "");
   return (
     <div className="bg-[#0b141a] rounded-xl p-4">
       <p className="text-xs text-gray-500 mb-3 uppercase tracking-wide">Preview no WhatsApp</p>
@@ -1313,7 +1323,7 @@ export default function NovaInvestigacaoPage() {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  const [composerMode, setComposerMode] = useState<"logo" | "instagram">("logo");
+  const [reportagemPortal, setReportagemPortal] = useState("g1");
 
   const [form, setForm] = useState({
     nome: "",
@@ -1396,12 +1406,19 @@ export default function NovaInvestigacaoPage() {
     setForm((prev) => ({ ...prev, redirect_url: redirects[banco] || prev.redirect_url }));
   }
 
+  function handlePortalChange(portalId: string) {
+    const portal = PORTAL_CONFIGS.find((p) => p.id === portalId);
+    setReportagemPortal(portalId);
+    if (portal) setForm((prev) => ({ ...prev, redirect_url: portal.redirect }));
+  }
+
   function handleTipoChange(tipo: "reportagem" | "pix" | "anuncio") {
     const redirects: Record<string, string> = {
       pix: "https://www.mercadopago.com.br",
       anuncio: "https://www.mercadolivre.com.br",
       reportagem: "https://g1.globo.com",
     };
+    setReportagemPortal("g1");
     setForm((prev) => ({ ...prev, tipo, redirect_url: redirects[tipo] || "" }));
   }
 
@@ -1755,71 +1772,102 @@ export default function NovaInvestigacaoPage() {
           </div>
         )}
 
-        {/* ── Reportagem: WhatsApp preview ── */}
+        {/* ── Reportagem: editor + preview ── */}
         {form.tipo === "reportagem" && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
             <div>
-              <h3 className="text-sm font-medium text-gray-300">Preview do WhatsApp</h3>
-              <p className="text-xs text-gray-500 mt-0.5">O que aparece no chat antes do alvo clicar no link.</p>
+              <h3 className="text-sm font-medium text-gray-300">Reportagem</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Escolha o portal e edite o conteúdo que aparecerá no WhatsApp.</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Título</label>
-                  <input type="text" value={form.og_titulo} onChange={(e) => setF("og_titulo", e.target.value)}
-                    placeholder="Ex: Homem é preso após..."
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Descrição</label>
-                  <textarea value={form.og_descricao} onChange={(e) => setF("og_descricao", e.target.value)}
-                    rows={3} placeholder="Ex: Polícia realizou operação na região..."
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm resize-none" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Imagem de Preview</label>
-                  <input type="url" value={form.og_imagem_url} onChange={(e) => { setF("og_imagem_url", e.target.value); }}
-                    placeholder="URL externa ou use o compositor abaixo"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm" />
-                </div>
 
-                {/* Compositor de imagem */}
-                <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-4">
-                  {/* Tabs */}
-                  <div className="flex gap-2 mb-4">
-                    <button type="button" onClick={() => setComposerMode("logo")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        composerMode === "logo" ? "bg-blue-700 text-white" : "bg-gray-700 text-gray-400 hover:text-white"
-                      }`}>
-                      <ImagePlus className="w-3.5 h-3.5" />
-                      Logo + Foto
-                    </button>
-                    <button type="button" onClick={() => setComposerMode("instagram")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        composerMode === "instagram" ? "bg-pink-700 text-white" : "bg-gray-700 text-gray-400 hover:text-white"
-                      }`}>
-                      <span className="text-sm leading-none">📷</span>
-                      Instagram
-                    </button>
-                  </div>
-
-                  {composerMode === "logo" && (
-                    <ImageComposer onImageReady={(url) => setF("og_imagem_url", url)} />
-                  )}
-                  {composerMode === "instagram" && (
-                    <InstagramComposer
-                      onImageReady={(url) => setF("og_imagem_url", url)}
-                      onMetaReady={(titulo, descricao) => {
-                        setF("og_titulo", titulo);
-                        setF("og_descricao", descricao);
-                      }}
-                    />
-                  )}
-                </div>
+            {/* Seletor de portal */}
+            <div>
+              <p className="text-xs text-gray-400 mb-2">Portal / Plataforma</p>
+              <div className="flex gap-2 flex-wrap">
+                {PORTAL_CONFIGS.map((portal) => (
+                  <button
+                    key={portal.id}
+                    type="button"
+                    onClick={() => handlePortalChange(portal.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${
+                      reportagemPortal === portal.id ? "border-blue-400 scale-105" : "border-gray-700 hover:border-gray-500"
+                    }`}
+                    style={{
+                      background: portal.bg,
+                      color: portal.textColor,
+                      fontStyle: portal.italic ? "italic" : "normal",
+                    }}
+                  >
+                    {portal.id === "instagram" ? "📷 Instagram" : portal.label}
+                  </button>
+                ))}
               </div>
-              <WhatsAppPreview titulo={form.og_titulo} descricao={form.og_descricao}
-                imagemUrl={form.og_imagem_url} slug={form.slug} baseUrl={baseUrl} />
             </div>
+
+            {/* Instagram */}
+            {reportagemPortal === "instagram" ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-4">
+                  <InstagramComposer
+                    key="instagram-composer"
+                    onImageReady={(url) => setF("og_imagem_url", url)}
+                    onMetaReady={(titulo, descricao) => {
+                      setF("og_titulo", titulo);
+                      setF("og_descricao", descricao);
+                    }}
+                  />
+                </div>
+                <WhatsAppPreview
+                  titulo={form.og_titulo}
+                  descricao={form.og_descricao}
+                  imagemUrl={form.og_imagem_url}
+                  slug={form.slug}
+                  baseUrl={baseUrl}
+                  redirectUrl={form.redirect_url}
+                />
+              </div>
+            ) : (
+              /* G1 / Record / SBT / Band */
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Título</label>
+                    <input
+                      type="text"
+                      value={form.og_titulo}
+                      onChange={(e) => setF("og_titulo", e.target.value)}
+                      placeholder="Ex: Homem é preso após..."
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Descrição</label>
+                    <textarea
+                      value={form.og_descricao}
+                      onChange={(e) => setF("og_descricao", e.target.value)}
+                      rows={3}
+                      placeholder="Ex: Polícia realizou operação na região..."
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm resize-none"
+                    />
+                  </div>
+                  <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-4">
+                    <ImageComposer
+                      key={reportagemPortal}
+                      defaultLogoId={PORTAL_CONFIGS.find((p) => p.id === reportagemPortal)?.logoId ?? "g1"}
+                      onImageReady={(url) => setF("og_imagem_url", url)}
+                    />
+                  </div>
+                </div>
+                <WhatsAppPreview
+                  titulo={form.og_titulo}
+                  descricao={form.og_descricao}
+                  imagemUrl={form.og_imagem_url}
+                  slug={form.slug}
+                  baseUrl={baseUrl}
+                  redirectUrl={form.redirect_url}
+                />
+              </div>
+            )}
           </div>
         )}
 
