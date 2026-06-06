@@ -21,6 +21,8 @@ jobs:
           max_rounds=200
           total_embedded=0
           total_skipped=0
+          idle_rounds=0
+          max_idle=3
 
           while [ "$rounds" -lt "$max_rounds" ]; do
             echo "{\"limit\":5,\"cursor\":$cursor}" > /tmp/req.json
@@ -46,6 +48,17 @@ jobs:
             fi
 
             echo "Rodada $rounds: embedded=$embedded skipped=$skipped done=$done_flag"
+
+            if [ "$embedded" = "0" ]; then
+              idle_rounds=$((idle_rounds + 1))
+            else
+              idle_rounds=0
+            fi
+
+            if [ "$idle_rounds" -ge "$max_idle" ]; then
+              echo "Sem novos embeddings por $max_idle rodadas consecutivas — encerrando."
+              break
+            fi
 
             if [ "$done_flag" = "True" ] || [ "$cursor" = "null" ]; then
               echo "Ciclo completo."
