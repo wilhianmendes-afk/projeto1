@@ -12,7 +12,7 @@ Sistema de reconhecimento facial para inteligência policial.
   - `listBQFolderPage` — lista **uma página de uma pasta por chamada** com cursor `DriveCursor`; usada por `index-faces` para evitar re-listar 16k arquivos a cada rodada
   - **NÃO usar `in ancestors` — retorna 400 Invalid Value na Drive API**
 - **Ingestão Drive BQ → qualificados**: endpoint `/api/drive/ingest-qualificados` + workflow `drive-ingest-qualificados.yml` (a cada 3h)
-- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 12h**); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 12h**); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas; **encerra antecipadamente após 3 rodadas consecutivas sem novos embeddings** (economiza créditos Netlify quando Drive já está indexado)
 - **Dashboard**: cards IBIS (server, rápido) + Drive/Total (client async, cache 5min); página carrega imediatamente
 - **Página Indexação**: stats Supabase server-side; cobertura/pendentes calculados client-side após fetch `/api/drive/count`
 - **Cache compartilhado Drive count**: `src/lib/drive-count-cache.ts` — TTL 5min; reutilizado por `DriveCards` e `IndexacaoStats`
@@ -289,7 +289,7 @@ face-service/
 |---------|---------|--------|
 | `deploy.yml` | **manual (workflow_dispatch)** | Deploy no Netlify — alterado em 2026-06-05 para economizar créditos |
 | `backfill.yml` | **a cada 2h** + manual | Indexação embeddings de qualificados IBIS/Drive (era 15min — alterado em 2026-06-05) |
-| `drive-index-faces.yml` | **a cada 12h** + manual | Indexação rostos Drive BQ (batch=5; era 2h — alterado em 2026-06-05) |
+| `drive-index-faces.yml` | **a cada 12h** + manual | Indexação rostos Drive BQ (batch=5; era 2h — alterado em 2026-06-05); para após 3 rodadas idle consecutivas (2026-06-05) |
 | `drive-ingest-qualificados.yml` | **DESABILITADO** + manual | Ingestão Drive BQ → tabela qualificados (OCR+dedup) |
 | `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway (chama Railway diretamente — não consome Netlify functions) |
 | `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ |

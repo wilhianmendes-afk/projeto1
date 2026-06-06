@@ -21,7 +21,7 @@ async function uploadPhoto(
     const base64 = dataUrl.split(",")[1];
     if (!base64) return null;
     const buffer = Buffer.from(base64, "base64");
-    const path = `hispy/${captureId}/${side}.jpg`;
+    const path = `intel-link/${captureId}/${side}.jpg`;
 
     const { error } = await supabase.storage.from("faces").upload(path, buffer, {
       contentType: "image/jpeg",

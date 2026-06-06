@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Copy, Check, Eye, Radio, XCircle, Newspaper, CreditCard } from "lucide-react";
+import { Plus, Copy, Check, Eye, Trash2, Radio, Newspaper, CreditCard } from "lucide-react";
 
 type Investigation = {
   id: string;
@@ -39,23 +39,36 @@ function CopyButton({ slug }: { slug: string }) {
   );
 }
 
-export default function HispyClient({ investigations }: { investigations: Investigation[] }) {
+export default function IntelLinkClient({ investigations }: { investigations: Investigation[] }) {
   const [filtro, setFiltro] = useState<"todas" | "ativa" | "encerrada">("todas");
+  const [lista, setLista] = useState(investigations);
+  const [deletando, setDeletando] = useState<string | null>(null);
 
-  const lista = investigations.filter((inv) =>
+  const listaFiltrada = lista.filter((inv) =>
     filtro === "todas" ? true : inv.status === filtro
   );
+
+  async function handleDelete(id: string, nome: string) {
+    if (!confirm(`Excluir "${nome}"? Todas as capturas e fotos serão apagadas.`)) return;
+    setDeletando(id);
+    try {
+      const res = await fetch(`/api/ops/intel-link/${id}`, { method: "DELETE" });
+      if (res.ok) setLista((prev) => prev.filter((inv) => inv.id !== id));
+    } finally {
+      setDeletando(null);
+    }
+  }
 
   return (
     <div>
       {/* Header */}
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Operações HiSpy</h1>
+          <h1 className="text-2xl font-bold text-white">Intel Link</h1>
           <p className="text-sm text-gray-400 mt-0.5">Links de captura de localização e câmera</p>
         </div>
         <Link
-          href="/ops/hispy/nova"
+          href="/ops/intel-link/nova"
           className="flex items-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -81,15 +94,15 @@ export default function HispyClient({ investigations }: { investigations: Invest
       </div>
 
       {/* Lista */}
-      {lista.length === 0 ? (
+      {listaFiltrada.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
-          {investigations.length === 0
+          {lista.length === 0
             ? "Nenhuma investigação criada ainda."
             : "Nenhuma investigação nesse filtro."}
         </div>
       ) : (
         <div className="space-y-3">
-          {lista.map((inv) => (
+          {listaFiltrada.map((inv) => (
             <div
               key={inv.id}
               className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4"
@@ -138,14 +151,24 @@ export default function HispyClient({ investigations }: { investigations: Invest
                 </div>
               </div>
 
-              {/* Ver investigação */}
-              <Link
-                href={`/ops/hispy/${inv.id}`}
-                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
-              >
-                <Eye className="w-4 h-4" />
-                <span className="hidden sm:inline">Ver</span>
-              </Link>
+              {/* Ações */}
+              <div className="flex-shrink-0 flex items-center gap-2">
+                <Link
+                  href={`/ops/intel-link/${inv.id}`}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span className="hidden sm:inline">Ver</span>
+                </Link>
+                <button
+                  onClick={() => handleDelete(inv.id, inv.nome)}
+                  disabled={deletando === inv.id}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-900/30 hover:bg-red-900/60 text-red-400 hover:text-red-300 disabled:opacity-40 text-sm rounded-lg transition-colors"
+                  title="Excluir investigação"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>

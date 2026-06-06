@@ -184,7 +184,7 @@ export default function InvestigacaoClient({
     setTogglingStatus(true);
     const novoStatus = status === "ativa" ? "encerrada" : "ativa";
     try {
-      const res = await fetch(`/api/ops/hispy/${investigation.id}`, {
+      const res = await fetch(`/api/ops/intel-link/${investigation.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: novoStatus }),
@@ -200,7 +200,7 @@ export default function InvestigacaoClient({
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link href="/ops/hispy" className="text-gray-400 hover:text-white transition-colors">
+          <Link href="/ops/intel-link" className="text-gray-400 hover:text-white transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>

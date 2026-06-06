@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Shield, Search, Users, Database, LayoutDashboard, LogOut, Menu, X } from "lucide-react";
+import { Shield, Search, Users, Database, LayoutDashboard, LogOut, Menu, X, Link2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/busca", label: "Busca Facial", icon: Search },
-  { href: "/qualificados", label: "Qualificados", icon: Users },
-  { href: "/indexacao", label: "Indexação", icon: Database },
+const allNavItems = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, adminOnly: false },
+  { href: "/busca", label: "Busca Facial", icon: Search, adminOnly: false },
+  { href: "/qualificados", label: "Qualificados", icon: Users, adminOnly: false },
+  { href: "/indexacao", label: "Indexação", icon: Database, adminOnly: true },
+  { href: "/ops/intel-link", label: "Intel Link", icon: Link2, adminOnly: false },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ role }: { role?: string | null }) {
+  const navItems = allNavItems.filter((item) => !item.adminOnly || role === "admin");
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();

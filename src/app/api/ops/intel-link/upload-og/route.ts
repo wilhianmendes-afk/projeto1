@@ -1,7 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
-import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -18,26 +17,23 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await auth.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { nome, tipo, og_titulo, og_descricao, og_imagem_url } = await req.json();
-  if (!nome?.trim()) return NextResponse.json({ error: "Nome obrigatório" }, { status: 400 });
+  const { image } = await req.json();
+  if (!image) return NextResponse.json({ error: "Imagem obrigatória" }, { status: 400 });
 
-  const slug = randomBytes(8).toString("hex").slice(0, 12);
+  const base64 = image.split(",")[1];
+  if (!base64) return NextResponse.json({ error: "Formato inválido" }, { status: 400 });
+
+  const buffer = Buffer.from(base64, "base64");
+  const filename = `intel-link/og/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+
   const supabase = getAdminClient();
-
-  const { data, error } = await supabase
-    .from("ops_hispy_investigations")
-    .insert({
-      nome: nome.trim(),
-      slug,
-      tipo: tipo || "reportagem",
-      og_titulo: og_titulo || null,
-      og_descricao: og_descricao || null,
-      og_imagem_url: og_imagem_url || null,
-      created_by: user.id,
-    })
-    .select()
-    .single();
+  const { error } = await supabase.storage.from("faces").upload(filename, buffer, {
+    contentType: "image/jpeg",
+    upsert: true,
+  });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+
+  const { data: { publicUrl } } = supabase.storage.from("faces").getPublicUrl(filename);
+  return NextResponse.json({ url: publicUrl });
 }

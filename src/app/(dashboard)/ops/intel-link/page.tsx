@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import HispyClient from "./HispyClient";
+import IntelLinkClient from "./IntelLinkClient";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ function getAdminClient() {
   );
 }
 
-export default async function HispyPage() {
+export default async function IntelLinkPage() {
   const auth = await createServerClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user) redirect("/login");
@@ -38,5 +38,5 @@ export default async function HispyPage() {
     captures_count: countMap[inv.id] || 0,
   }));
 
-  return <HispyClient investigations={data} />;
+  return <IntelLinkClient investigations={data} />;
 }

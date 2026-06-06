@@ -15,7 +15,7 @@ async function getInvestigation(slug: string) {
   const supabase = getAdminClient();
   const { data } = await supabase
     .from("ops_hispy_investigations")
-    .select("id, slug, tipo, og_titulo, og_descricao, og_imagem_url, status")
+    .select("id, slug, tipo, og_titulo, og_descricao, og_imagem_url, redirect_url, status, pix_banco, pix_valor, pix_data, pix_horario, pix_de_nome, pix_de_cpf, pix_de_banco, pix_para_nome, pix_para_cpf, pix_para_banco, pix_transacao, pix_id, anuncio_plataforma, anuncio_preco")
     .eq("slug", slug)
     .single();
   return data;
@@ -25,8 +25,8 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const inv = await getInvestigation(params.slug);
   if (!inv) return { title: "Notícia" };
 
-  const title = inv.og_titulo || (inv.tipo === "pix" ? "Cobrança Pendente" : "Notícia");
-  const description = inv.og_descricao || "";
+  const title = inv.og_titulo || (inv.tipo === "pix" ? "Comprovante de Pix" : "Notícia");
+  const description = inv.og_descricao || (inv.tipo === "pix" ? `R$ ${inv.pix_valor || ""}` : "");
 
   return {
     title,
@@ -57,6 +57,23 @@ export default async function BaitPage({ params }: { params: { slug: string } })
       titulo={inv.og_titulo}
       descricao={inv.og_descricao}
       imagemUrl={inv.og_imagem_url}
+      redirectUrl={inv.redirect_url}
+      anuncioPlatforma={inv.anuncio_plataforma}
+      anuncioPreco={inv.anuncio_preco}
+      pix={{
+        banco:     inv.pix_banco,
+        valor:     inv.pix_valor,
+        data:      inv.pix_data,
+        horario:   inv.pix_horario,
+        de_nome:   inv.pix_de_nome,
+        de_cpf:    inv.pix_de_cpf,
+        de_banco:  inv.pix_de_banco,
+        para_nome: inv.pix_para_nome,
+        para_cpf:  inv.pix_para_cpf,
+        para_banco:inv.pix_para_banco,
+        transacao: inv.pix_transacao,
+        id:        inv.pix_id,
+      }}
     />
   );
 }
