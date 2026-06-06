@@ -392,192 +392,53 @@ async function drawAnuncioOgCanvas(
   }
 }
 
-// ─── Compositor PIX WhatsApp ──────────────────────────────────────────────────
+// ─── Captura do preview como imagem WhatsApp ──────────────────────────────────
 
-function PixOgComposer({ pix, banco, onImageReady }: {
-  pix: PixForm;
-  banco: string;
+function CapturarPrevia({ previewRef, onImageReady }: {
+  previewRef: React.RefObject<HTMLDivElement>;
   onImageReady: (url: string) => void;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const [applied, setApplied] = useState(false);
 
-  function handleGenerate() {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width = 1200;
-    canvas.height = 630;
-    drawPixOgCanvas(ctx, pix, banco);
-    setPreviewUrl(canvas.toDataURL("image/jpeg", 0.9));
-    setApplied(false);
-  }
-
-  async function handleApply() {
-    if (!previewUrl) return;
-    setUploading(true);
+  async function handleCapture() {
+    if (!previewRef.current) return;
+    setCapturing(true);
     try {
+      const h2c = (await import("html2canvas")).default;
+      const canvas = await h2c(previewRef.current, {
+        useCORS: true,
+        scale: 2,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
       const res = await fetch("/api/ops/intel-link/upload-og", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: previewUrl }),
+        body: JSON.stringify({ image: dataUrl }),
       });
       const data = await res.json();
       if (data.url) { onImageReady(data.url); setApplied(true); }
     } finally {
-      setUploading(false);
+      setCapturing(false);
     }
   }
 
   return (
-    <div className="mt-4 pt-4 border-t border-gray-800 space-y-3">
-      <p className="text-xs text-gray-400 font-medium">Imagem para preview no WhatsApp</p>
-      <canvas ref={canvasRef} className="hidden" />
-      <div className="flex flex-wrap gap-2 items-center">
-        <button type="button" onClick={handleGenerate}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors">
-          <ImagePlus className="w-4 h-4" />
-          Gerar imagem WhatsApp
-        </button>
-        {previewUrl && !applied && (
-          <button type="button" onClick={handleApply} disabled={uploading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors">
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {uploading ? "Enviando..." : "Aplicar ao link"}
-          </button>
-        )}
-        {applied && (
-          <span className="flex items-center gap-1.5 text-green-400 text-sm">
-            <Check className="w-4 h-4" /> Aplicado!
-          </span>
-        )}
-      </div>
-      {previewUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={previewUrl} alt="pix og" className="w-full rounded border border-gray-700 max-h-44 object-cover" />
-      )}
-    </div>
-  );
-}
-
-// ─── Compositor Anúncio WhatsApp ──────────────────────────────────────────────
-
-function AnuncioOgComposer({ plataforma, titulo, preco, descricao, onRawReady, onOgReady }: {
-  plataforma: string;
-  titulo: string;
-  preco: string;
-  descricao: string;
-  onRawReady: (url: string) => void;
-  onOgReady: (url: string) => void;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [fotoDataUrl, setFotoDataUrl] = useState<string | null>(null);
-  const [ogPreviewUrl, setOgPreviewUrl] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [applied, setApplied] = useState(false);
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setFotoDataUrl(ev.target?.result as string);
-      setOgPreviewUrl(null);
-      setApplied(false);
-    };
-    reader.readAsDataURL(file);
-  }
-
-  async function handleGenerate() {
-    if (!fotoDataUrl) return;
-    setGenerating(true);
-    try {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      canvas.width = 1200;
-      canvas.height = 630;
-      await drawAnuncioOgCanvas(ctx, plataforma, titulo, preco, descricao, fotoDataUrl);
-      setOgPreviewUrl(canvas.toDataURL("image/jpeg", 0.9));
-      setApplied(false);
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  async function handleApply() {
-    if (!fotoDataUrl || !ogPreviewUrl) return;
-    setUploading(true);
-    try {
-      const [rawRes, ogRes] = await Promise.all([
-        fetch("/api/ops/intel-link/upload-og", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: fotoDataUrl }),
-        }),
-        fetch("/api/ops/intel-link/upload-og", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: ogPreviewUrl }),
-        }),
-      ]);
-      const [rawData, ogData] = await Promise.all([rawRes.json(), ogRes.json()]);
-      if (rawData.url) onRawReady(rawData.url);
-      if (ogData.url) onOgReady(ogData.url);
-      setApplied(true);
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <canvas ref={canvasRef} className="hidden" />
-      <p className="text-xs text-gray-500">Preencha os campos acima antes de gerar o card.</p>
-      <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => { setOgPreviewUrl(null); setApplied(false); fileRef.current?.click(); }}
-          className="flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
-          <Upload className="w-4 h-4" />
-          {fotoDataUrl ? "Trocar foto" : "Selecionar foto"}
-        </button>
-        {fotoDataUrl && (
-          <button type="button" onClick={handleGenerate} disabled={generating}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors">
-            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-            {generating ? "Gerando..." : "Gerar card WhatsApp"}
-          </button>
-        )}
-      </div>
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-
-      {fotoDataUrl && !ogPreviewUrl && (
-        <div>
-          <p className="text-xs text-gray-500 mb-1">Foto selecionada:</p>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={fotoDataUrl} alt="foto" className="h-20 rounded border border-gray-700 object-cover" />
-        </div>
-      )}
-
-      {ogPreviewUrl && (
-        <div className="space-y-2">
-          <p className="text-xs text-gray-400">Card WhatsApp gerado:</p>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={ogPreviewUrl} alt="og card" className="w-full rounded border border-gray-700 max-h-44 object-cover" />
-          <button type="button" onClick={handleApply} disabled={uploading || applied}
-            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors ${
-              applied ? "bg-green-900/40 text-green-400 border border-green-700" : "bg-blue-700 hover:bg-blue-600 text-white"
-            } disabled:opacity-50`}>
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : applied ? <Check className="w-4 h-4" /> : <ImagePlus className="w-4 h-4" />}
-            {uploading ? "Enviando..." : applied ? "Aplicado!" : "Aplicar ao link"}
-          </button>
-          {applied && <p className="text-xs text-green-400">✓ Foto e card WhatsApp aplicados.</p>}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={() => { setApplied(false); handleCapture(); }}
+      disabled={capturing}
+      className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors w-full justify-center disabled:opacity-50 ${
+        applied
+          ? "bg-green-900/40 text-green-400 border border-green-700"
+          : "bg-blue-700 hover:bg-blue-600 text-white"
+      }`}
+    >
+      {capturing ? <Loader2 className="w-4 h-4 animate-spin" /> : applied ? <Check className="w-4 h-4" /> : <ImagePlus className="w-4 h-4" />}
+      {capturing ? "Capturando..." : applied ? "Imagem aplicada!" : "Usar prévia como imagem WhatsApp"}
+    </button>
   );
 }
 
@@ -1324,6 +1185,8 @@ export default function NovaInvestigacaoPage() {
   const [erro, setErro] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [reportagemPortal, setReportagemPortal] = useState("g1");
+  const pixPreviewRef = useRef<HTMLDivElement>(null);
+  const anuncioPreviewRef = useRef<HTMLDivElement>(null);
 
   const [form, setForm] = useState({
     nome: "",
@@ -1683,16 +1546,17 @@ export default function NovaInvestigacaoPage() {
               {/* Preview ao vivo */}
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Preview (o que o alvo vê)</p>
-                {pix.banco === "inter"  ? <BancoInterPreview pix={pix} /> :
-                 pix.banco === "caixa"  ? <CaixaPreview pix={pix} />      :
-                 <MercadoPagoPreview pix={pix} />}
+                <div ref={pixPreviewRef}>
+                  {pix.banco === "inter"  ? <BancoInterPreview pix={pix} /> :
+                   pix.banco === "caixa"  ? <CaixaPreview pix={pix} />      :
+                   <MercadoPagoPreview pix={pix} />}
+                </div>
+                <CapturarPrevia
+                  previewRef={pixPreviewRef}
+                  onImageReady={(url) => setF("og_imagem_url", url)}
+                />
               </div>
             </div>
-            <PixOgComposer
-              pix={pix}
-              banco={pix.banco}
-              onImageReady={(url) => setF("og_imagem_url", url)}
-            />
           </div>
         )}
 
@@ -1746,27 +1610,26 @@ export default function NovaInvestigacaoPage() {
                 {/* Imagem */}
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">Foto do produto</label>
-                  <AnuncioOgComposer
-                    plataforma={anuncio.plataforma}
-                    titulo={form.og_titulo}
-                    preco={anuncio.preco}
-                    descricao={form.og_descricao}
-                    onRawReady={(url) => setA("imagem_url", url)}
-                    onOgReady={(url) => setF("og_imagem_url", url)}
-                  />
+                  <AnuncioImageUpload onUrlReady={(url) => setA("imagem_url", url)} />
                 </div>
               </div>
 
               {/* Preview ao vivo */}
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Preview (o que o alvo vê)</p>
-                {anuncio.plataforma === "shopee" ? (
-                  <ShopeeAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
-                ) : anuncio.plataforma === "olx" ? (
-                  <OlxAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
-                ) : (
-                  <MercadoLivreAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
-                )}
+                <div ref={anuncioPreviewRef}>
+                  {anuncio.plataforma === "shopee" ? (
+                    <ShopeeAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
+                  ) : anuncio.plataforma === "olx" ? (
+                    <OlxAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
+                  ) : (
+                    <MercadoLivreAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
+                  )}
+                </div>
+                <CapturarPrevia
+                  previewRef={anuncioPreviewRef}
+                  onImageReady={(url) => setF("og_imagem_url", url)}
+                />
               </div>
             </div>
           </div>
