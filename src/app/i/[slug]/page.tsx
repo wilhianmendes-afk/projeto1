@@ -21,12 +21,42 @@ async function getInvestigation(slug: string) {
   return data;
 }
 
+function getSiteInfo(inv: Awaited<ReturnType<typeof getInvestigation>>) {
+  if (!inv) return { siteName: "", siteUrl: "" };
+
+  if (inv.tipo === "pix") {
+    const banks: Record<string, { name: string; url: string }> = {
+      mercado_pago: { name: "Mercado Pago", url: "https://www.mercadopago.com.br" },
+      inter:        { name: "Banco Inter",  url: "https://inter.co" },
+      caixa:        { name: "Caixa Econômica Federal", url: "https://www.caixa.gov.br" },
+    };
+    const b = banks[inv.pix_banco || "mercado_pago"] ?? banks.mercado_pago;
+    return { siteName: b.name, siteUrl: inv.redirect_url || b.url };
+  }
+
+  if (inv.tipo === "anuncio") {
+    const plats: Record<string, { name: string; url: string }> = {
+      mercadolivre: { name: "Mercado Livre", url: "https://www.mercadolivre.com.br" },
+      shopee:       { name: "Shopee",        url: "https://shopee.com.br" },
+      olx:          { name: "OLX",           url: "https://www.olx.com.br" },
+    };
+    const p = plats[inv.anuncio_plataforma || "mercadolivre"] ?? plats.mercadolivre;
+    return { siteName: p.name, siteUrl: inv.redirect_url || p.url };
+  }
+
+  // reportagem — usa redirect_url (g1, record, sbt, band, instagram...)
+  const siteUrl = inv.redirect_url || "https://g1.globo.com";
+  const siteName = siteUrl.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+  return { siteName, siteUrl };
+}
+
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const inv = await getInvestigation(params.slug);
   if (!inv) return { title: "Notícia" };
 
   const title = inv.og_titulo || (inv.tipo === "pix" ? "Comprovante de Pix" : "Notícia");
   const description = inv.og_descricao || (inv.tipo === "pix" ? `R$ ${inv.pix_valor || ""}` : "");
+  const { siteName, siteUrl } = getSiteInfo(inv);
 
   return {
     title,
@@ -34,6 +64,8 @@ export async function generateMetadata({ params }: { params: { slug: string } })
     openGraph: {
       title,
       description,
+      url: siteUrl,
+      siteName,
       images: inv.og_imagem_url ? [{ url: inv.og_imagem_url, width: 1200, height: 630 }] : [],
       type: "article",
     },
