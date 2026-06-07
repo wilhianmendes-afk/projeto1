@@ -917,13 +917,13 @@ function MercadoLivreAnuncioPreview({ titulo, descricao, imagemUrl, preco }: Anu
       )}
       <div className="px-3 py-3">
         <div className="text-gray-500 text-xs mb-1">Novo | +100 vendidos</div>
-        <div className="font-semibold text-gray-900 text-sm leading-snug mb-2 line-clamp-2">{titulo || "Título do produto"}</div>
+        <div className="font-semibold text-gray-900 text-sm leading-snug mb-2 line-clamp-2 break-words">{titulo || "Título do produto"}</div>
         <div className="text-2xl font-light text-gray-900 mb-0.5">
           <span className="text-xs align-top mr-0.5">R$</span>{preco || "0"}
         </div>
         <div className="text-green-600 text-xs mb-0.5">em 12x R$ {parcelado} sem juros</div>
         <div className="text-green-600 text-xs mb-2">🚚 Frete grátis</div>
-        {descricao && <div className="text-gray-500 text-xs mb-2 line-clamp-2">{descricao}</div>}
+        {descricao && <div className="text-gray-500 text-xs mb-2 line-clamp-2 break-words">{descricao}</div>}
         <button type="button" className="w-full py-2 bg-[#3483FA] text-white font-bold rounded-lg text-xs mb-1">Comprar agora</button>
         <button type="button" className="w-full py-2 border border-[#3483FA] text-[#3483FA] font-bold rounded-lg text-xs">Adicionar ao carrinho</button>
       </div>
@@ -946,8 +946,8 @@ function ShopeeAnuncioPreview({ titulo, descricao, imagemUrl, preco }: AnuncioPr
       )}
       <div className="bg-white px-3 py-3">
         <div className="text-[#EE4D2D] font-bold text-lg mb-1">R$ {preco || "0,00"}</div>
-        <div className="font-semibold text-gray-900 text-sm leading-snug mb-1 line-clamp-2">{titulo || "Título do produto"}</div>
-        {descricao && <div className="text-gray-500 text-xs mb-2 line-clamp-2">{descricao}</div>}
+        <div className="font-semibold text-gray-900 text-sm leading-snug mb-1 line-clamp-2 break-words">{titulo || "Título do produto"}</div>
+        {descricao && <div className="text-gray-500 text-xs mb-2 line-clamp-2 break-words">{descricao}</div>}
         <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
           <span className="text-[#EE4D2D] text-xs">★★★★★</span> 4.9 | 2.847 avaliações
         </div>
@@ -974,8 +974,8 @@ function OlxAnuncioPreview({ titulo, descricao, imagemUrl, preco }: AnuncioPrevi
       )}
       <div className="px-3 py-3">
         <div className="text-xl font-bold text-gray-900 mb-0.5">R$ {preco || "0"}</div>
-        <div className="font-semibold text-gray-800 text-sm mb-1 line-clamp-2">{titulo || "Título do anúncio"}</div>
-        {descricao && <div className="text-gray-600 text-xs mb-2 line-clamp-3">{descricao}</div>}
+        <div className="font-semibold text-gray-800 text-sm mb-1 line-clamp-2 break-words">{titulo || "Título do anúncio"}</div>
+        {descricao && <div className="text-gray-600 text-xs mb-2 line-clamp-3 break-words">{descricao}</div>}
         <div className="text-xs text-gray-400 mb-2">📍 Goiânia, GO</div>
         <button type="button" className="w-full py-2 bg-[#6E0AD6] text-white font-bold rounded-lg text-xs mb-1">Ver telefone</button>
         <button type="button" className="w-full py-2 border border-[#6E0AD6] text-[#6E0AD6] font-bold rounded-lg text-xs">Chat OLX</button>
