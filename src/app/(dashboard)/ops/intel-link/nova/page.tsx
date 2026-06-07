@@ -394,9 +394,10 @@ async function drawAnuncioOgCanvas(
 
 // ─── Captura do preview como imagem WhatsApp (1200×630) ──────────────────────
 
-function CapturarPrevia({ previewRef, onImageReady }: {
+function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6" }: {
   previewRef: React.RefObject<HTMLDivElement>;
   onImageReady: (url: string) => void;
+  bgColor?: string;
 }) {
   const [capturing, setCapturing] = useState(false);
   const [applied, setApplied] = useState(false);
@@ -422,33 +423,37 @@ function CapturarPrevia({ previewRef, onImageReady }: {
       ogCanvas.height = OG_H;
       const ctx = ogCanvas.getContext("2d")!;
 
-      // Fundo branco (preenche as laterais quando o card não cobre tudo)
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, OG_W, OG_H);
-
       const cardAspect = captured.width / captured.height;
       const ogAspect   = OG_W / OG_H;
 
-      let drawW: number, drawH: number, drawX: number, drawY: number;
       if (cardAspect >= ogAspect) {
         // Card horizontal (reportagem): "cover" ancorado no topo — preenche o
-        // canvas inteiro cortando o excesso de baixo
+        // canvas inteiro cortando o excesso de baixo, sem bordas/sombra
         const scale = Math.max(OG_W / captured.width, OG_H / captured.height);
-        drawW = captured.width * scale;
-        drawH = captured.height * scale;
-        drawX = (OG_W - drawW) / 2;
-        drawY = 0;
+        const drawW = captured.width * scale;
+        const drawH = captured.height * scale;
+        const drawX = (OG_W - drawW) / 2;
+        ctx.drawImage(captured, drawX, 0, drawW, drawH);
       } else {
-        // Card vertical (PIX / anúncio): "contain" — encaixa o card INTEIRO
-        // centralizado, preservando todas as informações editadas (sem cortar)
-        const scale = Math.min(OG_W / captured.width, OG_H / captured.height);
-        drawW = captured.width * scale;
-        drawH = captured.height * scale;
-        drawX = (OG_W - drawW) / 2;
-        drawY = (OG_H - drawH) / 2;
-      }
+        // Card vertical (PIX / anúncio): card INTEIRO centralizado com margem,
+        // fundo na cor da plataforma e sombra sutil — mostra todas as
+        // informações editadas e fica visualmente agradável no bubble
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, OG_W, OG_H);
 
-      ctx.drawImage(captured, drawX, drawY, drawW, drawH);
+        const margin = 30;
+        const scale = Math.min((OG_W - margin * 2) / captured.width, (OG_H - margin * 2) / captured.height);
+        const drawW = captured.width * scale;
+        const drawH = captured.height * scale;
+        const drawX = (OG_W - drawW) / 2;
+        const drawY = (OG_H - drawH) / 2;
+
+        ctx.shadowColor = "rgba(0,0,0,0.18)";
+        ctx.shadowBlur = 24;
+        ctx.shadowOffsetY = 6;
+        ctx.drawImage(captured, drawX, drawY, drawW, drawH);
+        ctx.shadowBlur = 0;
+      }
 
       const dataUrl = ogCanvas.toDataURL("image/jpeg", 0.97);
       const res = await fetch("/api/ops/intel-link/upload-og", {
@@ -1592,6 +1597,10 @@ export default function NovaInvestigacaoPage() {
                 <CapturarPrevia
                   previewRef={pixPreviewRef}
                   onImageReady={(url) => setF("og_imagem_url", url)}
+                  bgColor={
+                    pix.banco === "inter" ? "#fff3e8" :
+                    pix.banco === "caixa" ? "#e8eff7" : "#e8f8fd"
+                  }
                 />
               </div>
             </div>
@@ -1667,6 +1676,10 @@ export default function NovaInvestigacaoPage() {
                 <CapturarPrevia
                   previewRef={anuncioPreviewRef}
                   onImageReady={(url) => setF("og_imagem_url", url)}
+                  bgColor={
+                    anuncio.plataforma === "shopee" ? "#fff0ed" :
+                    anuncio.plataforma === "olx"    ? "#f0ebf9" : "#fffbe6"
+                  }
                 />
               </div>
             </div>
