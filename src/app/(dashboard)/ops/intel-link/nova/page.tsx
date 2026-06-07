@@ -422,13 +422,31 @@ function CapturarPrevia({ previewRef, onImageReady }: {
       ogCanvas.height = OG_H;
       const ctx = ogCanvas.getContext("2d")!;
 
-      // Amplia o card capturado até cobrir o canvas inteiro (corta o excesso),
-      // ancorado no topo — preserva logo/título/valor/De-Para e descarta o rodapé
-      const scale = Math.max(OG_W / captured.width, OG_H / captured.height);
-      const drawW = captured.width * scale;
-      const drawH = captured.height * scale;
-      const drawX = (OG_W - drawW) / 2;
-      const drawY = 0;
+      // Fundo branco (preenche as laterais quando o card não cobre tudo)
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, OG_W, OG_H);
+
+      const cardAspect = captured.width / captured.height;
+      const ogAspect   = OG_W / OG_H;
+
+      let drawW: number, drawH: number, drawX: number, drawY: number;
+      if (cardAspect >= ogAspect) {
+        // Card horizontal (reportagem): "cover" ancorado no topo — preenche o
+        // canvas inteiro cortando o excesso de baixo
+        const scale = Math.max(OG_W / captured.width, OG_H / captured.height);
+        drawW = captured.width * scale;
+        drawH = captured.height * scale;
+        drawX = (OG_W - drawW) / 2;
+        drawY = 0;
+      } else {
+        // Card vertical (PIX / anúncio): "contain" — encaixa o card INTEIRO
+        // centralizado, preservando todas as informações editadas (sem cortar)
+        const scale = Math.min(OG_W / captured.width, OG_H / captured.height);
+        drawW = captured.width * scale;
+        drawH = captured.height * scale;
+        drawX = (OG_W - drawW) / 2;
+        drawY = (OG_H - drawH) / 2;
+      }
 
       ctx.drawImage(captured, drawX, drawY, drawW, drawH);
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Copy, Check, MapPin, Camera, Smartphone,
-  Globe, Newspaper, CreditCard, Power, PowerOff, ExternalLink
+  Globe, Newspaper, CreditCard, Power, PowerOff, ExternalLink, ShoppingBag
 } from "lucide-react";
 
 type Capture = {
@@ -210,10 +210,12 @@ export default function InvestigacaoClient({
                 className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                   investigation.tipo === "pix"
                     ? "bg-green-900/50 text-green-400"
+                    : investigation.tipo === "anuncio"
+                    ? "bg-amber-900/50 text-amber-400"
                     : "bg-blue-900/50 text-blue-400"
                 }`}
               >
-                {investigation.tipo === "pix" ? "PIX" : "Reportagem"}
+                {investigation.tipo === "pix" ? "PIX" : investigation.tipo === "anuncio" ? "Anúncio" : "Reportagem"}
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -251,6 +253,8 @@ export default function InvestigacaoClient({
         <div className="flex items-center gap-2 mb-3">
           {investigation.tipo === "pix" ? (
             <CreditCard className="w-4 h-4 text-green-400" />
+          ) : investigation.tipo === "anuncio" ? (
+            <ShoppingBag className="w-4 h-4 text-amber-400" />
           ) : (
             <Newspaper className="w-4 h-4 text-blue-400" />
           )}

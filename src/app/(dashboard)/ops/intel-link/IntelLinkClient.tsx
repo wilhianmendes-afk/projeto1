@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Copy, Check, Eye, Trash2, Radio, Newspaper, CreditCard } from "lucide-react";
+import { Plus, Copy, Check, Eye, Trash2, Radio, Newspaper, CreditCard, ShoppingBag } from "lucide-react";
 
 type Investigation = {
   id: string;
@@ -111,6 +111,8 @@ export default function IntelLinkClient({ investigations }: { investigations: In
               <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
                 {inv.tipo === "pix" ? (
                   <CreditCard className="w-5 h-5 text-green-400" />
+                ) : inv.tipo === "anuncio" ? (
+                  <ShoppingBag className="w-5 h-5 text-amber-400" />
                 ) : (
                   <Newspaper className="w-5 h-5 text-blue-400" />
                 )}
@@ -124,10 +126,12 @@ export default function IntelLinkClient({ investigations }: { investigations: In
                     className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                       inv.tipo === "pix"
                         ? "bg-green-900/50 text-green-400"
+                        : inv.tipo === "anuncio"
+                        ? "bg-amber-900/50 text-amber-400"
                         : "bg-blue-900/50 text-blue-400"
                     }`}
                   >
-                    {inv.tipo === "pix" ? "PIX" : "Reportagem"}
+                    {inv.tipo === "pix" ? "PIX" : inv.tipo === "anuncio" ? "Anúncio" : "Reportagem"}
                   </span>
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full font-medium ${
