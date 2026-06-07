@@ -4,10 +4,12 @@ import { NextResponse, type NextRequest } from "next/server";
 type CookieToSet = { name: string; value: string; options?: Record<string, unknown> };
 
 const BAIT_HOSTS = ["linkdigital.app.br", "www.linkdigital.app.br"];
+const BAIT_ALLOWED_PREFIXES = ["/i/", "/api/ops/intel-link/capture"];
 
 export async function middleware(request: NextRequest) {
   const host = request.headers.get("host") || "";
-  if (BAIT_HOSTS.includes(host) && !request.nextUrl.pathname.startsWith("/i/")) {
+  const pathname = request.nextUrl.pathname;
+  if (BAIT_HOSTS.includes(host) && !BAIT_ALLOWED_PREFIXES.some((p) => pathname.startsWith(p))) {
     return new NextResponse("Not Found", { status: 404 });
   }
 
