@@ -416,44 +416,31 @@ function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6" }: {
         logging: false,
       });
 
-      // Cria canvas 1200×630 (proporção esperada pelo WhatsApp)
-      const OG_W = 1200, OG_H = 630;
+      // Gera a imagem OG no FORMATO DO PRÓPRIO CARD, para preencher o bubble
+      // do WhatsApp sem sobras. A altura é limitada a 1.5× a largura:
+      //  - anúncio (card mais baixo): cabe INTEIRO, sem cortar
+      //  - PIX (card mais alto): preenche a largura e corta só o rodapé,
+      //    preservando o topo com as informações
+      const cardAspect = captured.width / captured.height; // largura/altura
+      const OG_W = 1080;
+      const OG_H = Math.min(Math.round(OG_W / cardAspect), Math.round(OG_W * 1.5));
+
       const ogCanvas = document.createElement("canvas");
       ogCanvas.width = OG_W;
       ogCanvas.height = OG_H;
       const ctx = ogCanvas.getContext("2d")!;
 
-      const cardAspect = captured.width / captured.height;
-      const ogAspect   = OG_W / OG_H;
+      // Fundo (só aparece se houver alguma sobra por arredondamento)
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, OG_W, OG_H);
 
-      if (cardAspect >= ogAspect) {
-        // Card horizontal (reportagem): "cover" ancorado no topo — preenche o
-        // canvas inteiro cortando o excesso de baixo, sem bordas/sombra
-        const scale = Math.max(OG_W / captured.width, OG_H / captured.height);
-        const drawW = captured.width * scale;
-        const drawH = captured.height * scale;
-        const drawX = (OG_W - drawW) / 2;
-        ctx.drawImage(captured, drawX, 0, drawW, drawH);
-      } else {
-        // Card vertical (PIX / anúncio): card INTEIRO centralizado com margem,
-        // fundo na cor da plataforma e sombra sutil — mostra todas as
-        // informações editadas e fica visualmente agradável no bubble
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, OG_W, OG_H);
-
-        const margin = 30;
-        const scale = Math.min((OG_W - margin * 2) / captured.width, (OG_H - margin * 2) / captured.height);
-        const drawW = captured.width * scale;
-        const drawH = captured.height * scale;
-        const drawX = (OG_W - drawW) / 2;
-        const drawY = (OG_H - drawH) / 2;
-
-        ctx.shadowColor = "rgba(0,0,0,0.18)";
-        ctx.shadowBlur = 24;
-        ctx.shadowOffsetY = 6;
-        ctx.drawImage(captured, drawX, drawY, drawW, drawH);
-        ctx.shadowBlur = 0;
-      }
+      // "cover" ancorado no topo: preenche a largura inteira; se o card for
+      // mais alto que o canvas (PIX), corta o excesso de baixo
+      const scale = Math.max(OG_W / captured.width, OG_H / captured.height);
+      const drawW = captured.width * scale;
+      const drawH = captured.height * scale;
+      const drawX = (OG_W - drawW) / 2;
+      ctx.drawImage(captured, drawX, 0, drawW, drawH);
 
       const dataUrl = ogCanvas.toDataURL("image/jpeg", 0.97);
       const res = await fetch("/api/ops/intel-link/upload-og", {

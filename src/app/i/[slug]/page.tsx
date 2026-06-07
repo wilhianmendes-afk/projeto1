@@ -58,6 +58,13 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const description = inv.og_descricao || (inv.tipo === "pix" ? `R$ ${inv.pix_valor || ""}` : "");
   const { siteName, siteUrl } = getSiteInfo(inv);
 
+  // pix/anúncio geram a imagem OG em RETRATO (formato do card); reportagem em
+  // paisagem 1200×630. Declarar as dimensões certas faz o WhatsApp mostrar o
+  // card grande na proporção correta.
+  const ogDims = (inv.tipo === "pix" || inv.tipo === "anuncio")
+    ? { width: 1080, height: 1350 }
+    : { width: 1200, height: 630 };
+
   return {
     title,
     description,
@@ -66,7 +73,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
       description,
       url: siteUrl,
       siteName,
-      images: inv.og_imagem_url ? [{ url: inv.og_imagem_url, width: 1200, height: 630 }] : [],
+      images: inv.og_imagem_url ? [{ url: inv.og_imagem_url, ...ogDims }] : [],
       type: "article",
     },
     twitter: {
