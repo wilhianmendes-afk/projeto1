@@ -1,0 +1,2 @@
+ALTER TABLE ops_hispy_investigations RENAME TO ops_intel_link_investigations;
+ALTER TABLE ops_hispy_captures RENAME TO ops_intel_link_captures;

@@ -21,11 +21,11 @@ export async function GET(req: NextRequest) {
 
   const [{ data: investigations }, { data: captures }] = await Promise.all([
     supabase
-      .from("ops_hispy_investigations")
+      .from("ops_intel_link_investigations")
       .select("id, nome, slug, tipo, og_imagem_url, created_at, status")
       .order("created_at", { ascending: false }),
     supabase
-      .from("ops_hispy_captures")
+      .from("ops_intel_link_captures")
       .select("investigation_id"),
   ]);
 

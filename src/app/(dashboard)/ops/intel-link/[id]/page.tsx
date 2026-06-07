@@ -21,9 +21,9 @@ export default async function InvestigacaoPage({ params }: { params: { id: strin
   const supabase = getAdminClient();
 
   const [{ data: investigation }, { data: captures }] = await Promise.all([
-    supabase.from("ops_hispy_investigations").select("*").eq("id", params.id).single(),
+    supabase.from("ops_intel_link_investigations").select("*").eq("id", params.id).single(),
     supabase
-      .from("ops_hispy_captures")
+      .from("ops_intel_link_captures")
       .select("*")
       .eq("investigation_id", params.id)
       .order("captured_at", { ascending: false }),

@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     "unknown";
 
   const { data: investigation } = await supabase
-    .from("ops_hispy_investigations")
+    .from("ops_intel_link_investigations")
     .select("id, status")
     .eq("slug", slug)
     .single();
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   if (!investigation || investigation.status !== "ativa") return NextResponse.json({ ok: true });
 
   const { data: capture } = await supabase
-    .from("ops_hispy_captures")
+    .from("ops_intel_link_captures")
     .insert({
       investigation_id: investigation.id,
       latitude: latitude ?? null,
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
 
   if (frenteUrl || traseiraUrl) {
     await supabase
-      .from("ops_hispy_captures")
+      .from("ops_intel_link_captures")
       .update({ foto_frente_url: frenteUrl, foto_traseira_url: traseiraUrl })
       .eq("id", capture.id);
   }

@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const supabase = getAdminClient();
 
   const { data: existing } = await supabase
-    .from("ops_hispy_investigations")
+    .from("ops_intel_link_investigations")
     .select("id")
     .eq("slug", slug)
     .maybeSingle();
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   if (existing) return NextResponse.json({ error: "Esse slug já está em uso. Escolha outro." }, { status: 409 });
 
   const { data, error } = await supabase
-    .from("ops_hispy_investigations")
+    .from("ops_intel_link_investigations")
     .insert({
       nome: nome.trim(),
       slug,

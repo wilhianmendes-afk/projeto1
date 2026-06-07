@@ -20,9 +20,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const supabase = getAdminClient();
 
   const [{ data: investigation }, { data: captures }] = await Promise.all([
-    supabase.from("ops_hispy_investigations").select("*").eq("id", params.id).single(),
+    supabase.from("ops_intel_link_investigations").select("*").eq("id", params.id).single(),
     supabase
-      .from("ops_hispy_captures")
+      .from("ops_intel_link_captures")
       .select("*")
       .eq("investigation_id", params.id)
       .order("captured_at", { ascending: false }),
@@ -42,7 +42,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const supabase = getAdminClient();
 
   const { data, error } = await supabase
-    .from("ops_hispy_investigations")
+    .from("ops_intel_link_investigations")
     .update(body)
     .eq("id", params.id)
     .select()
@@ -61,7 +61,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   // Busca capturas para remover fotos do Storage
   const { data: captures } = await supabase
-    .from("ops_hispy_captures")
+    .from("ops_intel_link_captures")
     .select("id, foto_frente_url, foto_traseira_url")
     .eq("investigation_id", params.id);
 
@@ -75,7 +75,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   }
 
   const { error } = await supabase
-    .from("ops_hispy_investigations")
+    .from("ops_intel_link_investigations")
     .delete()
     .eq("id", params.id);
 

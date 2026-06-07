@@ -14,7 +14,7 @@ function getAdminClient() {
 async function getInvestigation(slug: string) {
   const supabase = getAdminClient();
   const { data } = await supabase
-    .from("ops_hispy_investigations")
+    .from("ops_intel_link_investigations")
     .select("id, slug, tipo, og_titulo, og_descricao, og_imagem_url, redirect_url, status, pix_banco, pix_valor, pix_data, pix_horario, pix_de_nome, pix_de_cpf, pix_de_banco, pix_para_nome, pix_para_cpf, pix_para_banco, pix_transacao, pix_id, anuncio_plataforma, anuncio_preco, anuncio_imagem_url")
     .eq("slug", slug)
     .single();
