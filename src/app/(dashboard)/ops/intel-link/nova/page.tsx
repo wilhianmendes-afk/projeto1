@@ -394,10 +394,9 @@ async function drawAnuncioOgCanvas(
 
 // ─── Captura do preview como imagem WhatsApp (1200×630) ──────────────────────
 
-function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6" }: {
+function CapturarPrevia({ previewRef, onImageReady }: {
   previewRef: React.RefObject<HTMLDivElement>;
   onImageReady: (url: string) => void;
-  bgColor?: string;
 }) {
   const [capturing, setCapturing] = useState(false);
   const [applied, setApplied] = useState(false);
@@ -423,26 +422,15 @@ function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6" }: {
       ogCanvas.height = OG_H;
       const ctx = ogCanvas.getContext("2d")!;
 
-      // Fundo com cor da plataforma
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(0, 0, OG_W, OG_H);
-
-      // Escala o card capturado para caber em OG_H com margem
-      const margin = 30;
-      const maxH = OG_H - margin * 2;
-      const maxW = OG_W - margin * 2;
-      const scale = Math.min(maxW / captured.width, maxH / captured.height);
+      // Amplia o card capturado até cobrir o canvas inteiro (corta o excesso),
+      // ancorado no topo — preserva logo/título/valor/De-Para e descarta o rodapé
+      const scale = Math.max(OG_W / captured.width, OG_H / captured.height);
       const drawW = captured.width * scale;
       const drawH = captured.height * scale;
       const drawX = (OG_W - drawW) / 2;
-      const drawY = (OG_H - drawH) / 2;
+      const drawY = 0;
 
-      // Sombra sutil
-      ctx.shadowColor = "rgba(0,0,0,0.18)";
-      ctx.shadowBlur = 24;
-      ctx.shadowOffsetY = 6;
       ctx.drawImage(captured, drawX, drawY, drawW, drawH);
-      ctx.shadowBlur = 0;
 
       const dataUrl = ogCanvas.toDataURL("image/jpeg", 0.97);
       const res = await fetch("/api/ops/intel-link/upload-og", {
@@ -1586,10 +1574,6 @@ export default function NovaInvestigacaoPage() {
                 <CapturarPrevia
                   previewRef={pixPreviewRef}
                   onImageReady={(url) => setF("og_imagem_url", url)}
-                  bgColor={
-                    pix.banco === "inter" ? "#fff3e8" :
-                    pix.banco === "caixa" ? "#e8eff7" : "#e8f8fd"
-                  }
                 />
               </div>
             </div>
@@ -1665,10 +1649,6 @@ export default function NovaInvestigacaoPage() {
                 <CapturarPrevia
                   previewRef={anuncioPreviewRef}
                   onImageReady={(url) => setF("og_imagem_url", url)}
-                  bgColor={
-                    anuncio.plataforma === "shopee" ? "#fff0ed" :
-                    anuncio.plataforma === "olx"    ? "#f0ebf9" : "#fffbe6"
-                  }
                 />
               </div>
             </div>
