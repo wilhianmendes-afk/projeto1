@@ -15,7 +15,7 @@ type Investigation = {
   captures_count: number;
 };
 
-const BASE_URL = typeof window !== "undefined" ? window.location.origin : "";
+const BASE_URL = "https://linkdigital.app.br";
 
 function CopyButton({ slug }: { slug: string }) {
   const [copied, setCopied] = useState(false);

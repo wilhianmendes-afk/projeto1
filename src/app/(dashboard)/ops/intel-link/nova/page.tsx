@@ -444,7 +444,7 @@ function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6" }: {
       ctx.drawImage(captured, drawX, drawY, drawW, drawH);
       ctx.shadowBlur = 0;
 
-      const dataUrl = ogCanvas.toDataURL("image/jpeg", 0.92);
+      const dataUrl = ogCanvas.toDataURL("image/jpeg", 0.97);
       const res = await fetch("/api/ops/intel-link/upload-og", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -517,7 +517,7 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
           sy = (img.height - sh) / 2;
         }
         ctx.drawImage(img, sx, sy, sw, sh, W / 2, 0, dstW, dstH);
-        setPreviewUrl(canvas.toDataURL("image/jpeg", 0.88));
+        setPreviewUrl(canvas.toDataURL("image/jpeg", 0.95));
       };
       img.src = faceDataUrl;
     } else {
@@ -529,7 +529,7 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Adicione uma foto", W * 3 / 4, H / 2);
-      setPreviewUrl(canvas.toDataURL("image/jpeg", 0.88));
+      setPreviewUrl(canvas.toDataURL("image/jpeg", 0.95));
     }
   }, [selectedLogo, faceDataUrl]);
 
@@ -732,7 +732,7 @@ function InstagramComposer({ onImageReady, onMetaReady }: {
         ctx.shadowBlur = 0;
       }
 
-      setPreviewUrl(canvas.toDataURL("image/jpeg", 0.88));
+      setPreviewUrl(canvas.toDataURL("image/jpeg", 0.95));
     };
 
     if (fotoUrl) {
@@ -1248,7 +1248,7 @@ export default function NovaInvestigacaoPage() {
   });
 
   useEffect(() => {
-    setBaseUrl(window.location.origin);
+    setBaseUrl("https://linkdigital.app.br");
     setForm((prev) => ({ ...prev, slug: gerarSlug() }));
     setPix((prev) => ({
       ...prev,

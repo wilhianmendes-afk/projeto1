@@ -177,7 +177,7 @@ export default function InvestigacaoClient({
 }) {
   const [status, setStatus] = useState(investigation.status);
   const [togglingStatus, setTogglingStatus] = useState(false);
-  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const baseUrl = "https://linkdigital.app.br";
   const link = `${baseUrl}/i/${investigation.slug}`;
 
   async function toggleStatus() {

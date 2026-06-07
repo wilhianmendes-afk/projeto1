@@ -3,7 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 
 type CookieToSet = { name: string; value: string; options?: Record<string, unknown> };
 
+const BAIT_HOSTS = ["linkdigital.app.br", "www.linkdigital.app.br"];
+
 export async function middleware(request: NextRequest) {
+  const host = request.headers.get("host") || "";
+  if (BAIT_HOSTS.includes(host) && !request.nextUrl.pathname.startsWith("/i/")) {
+    return new NextResponse("Not Found", { status: 404 });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
