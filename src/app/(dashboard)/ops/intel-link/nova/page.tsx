@@ -910,8 +910,10 @@ function MercadoLivreAnuncioPreview({ titulo, descricao, imagemUrl, preco }: Anu
         <span className="font-extrabold text-gray-900 text-sm">mercadolivre</span>
       </div>
       {imagemUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={imagemUrl} alt="" className="w-full h-40 object-contain bg-white" />
+        <div
+          className="w-full h-40 bg-white"
+          style={{ backgroundImage: `url(${imagemUrl})`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat" }}
+        />
       ) : (
         <div className="w-full h-40 bg-gray-100 flex items-center justify-center text-gray-400 text-xs">Foto do produto</div>
       )}
@@ -939,8 +941,10 @@ function ShopeeAnuncioPreview({ titulo, descricao, imagemUrl, preco }: AnuncioPr
         <span className="text-white text-xs">🔍 🛒</span>
       </div>
       {imagemUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={imagemUrl} alt="" className="w-full h-40 object-contain bg-white" />
+        <div
+          className="w-full h-40 bg-white"
+          style={{ backgroundImage: `url(${imagemUrl})`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat" }}
+        />
       ) : (
         <div className="w-full h-40 bg-gray-200 flex items-center justify-center text-gray-400 text-xs">Foto do produto</div>
       )}
