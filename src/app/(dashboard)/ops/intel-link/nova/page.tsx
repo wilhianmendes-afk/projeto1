@@ -1581,7 +1581,7 @@ export default function NovaInvestigacaoPage() {
               {/* Preview ao vivo */}
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Preview (o que o alvo vê)</p>
-                <div ref={pixPreviewRef}>
+                <div ref={pixPreviewRef} className="w-80">
                   {pix.banco === "inter"  ? <BancoInterPreview pix={pix} /> :
                    pix.banco === "caixa"  ? <CaixaPreview pix={pix} />      :
                    <MercadoPagoPreview pix={pix} />}
@@ -1656,7 +1656,7 @@ export default function NovaInvestigacaoPage() {
               {/* Preview ao vivo */}
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Preview (o que o alvo vê)</p>
-                <div ref={anuncioPreviewRef}>
+                <div ref={anuncioPreviewRef} className="w-80">
                   {anuncio.plataforma === "shopee" ? (
                     <ShopeeAnuncioPreview titulo={form.og_titulo} descricao={form.og_descricao} imagemUrl={anuncio.imagem_url} preco={anuncio.preco} />
                   ) : anuncio.plataforma === "olx" ? (
