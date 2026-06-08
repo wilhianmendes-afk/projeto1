@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Shield, Search, Users, Database, LayoutDashboard, LogOut, Menu, X, Link2 } from "lucide-react";
+import { Shield, Search, Users, Database, LayoutDashboard, LogOut, Menu, X, Link2, Eye } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 const allNavItems = [
@@ -12,6 +12,7 @@ const allNavItems = [
   { href: "/qualificados", label: "Qualificados", icon: Users, adminOnly: false },
   { href: "/indexacao", label: "Indexação", icon: Database, adminOnly: true },
   { href: "/ops/intel-link", label: "Intel Link", icon: Link2, adminOnly: false },
+  { href: "/monitor", label: "Monitor", icon: Eye, adminOnly: false },
 ];
 
 export default function Sidebar({ role }: { role?: string | null }) {
