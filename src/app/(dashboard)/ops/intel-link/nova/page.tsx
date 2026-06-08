@@ -110,16 +110,31 @@ function drawInstagramIcon(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.closePath();
   ctx.fillStyle = grad;
   ctx.fill();
-  // White circle (lens)
+
+  // Corpo da câmera — retângulo arredondado branco (contorno)
+  const pad = size * 0.2, bodyR = size * 0.15;
+  const bx = x + pad, by = y + pad, bw = size - pad * 2, bh = size - pad * 2;
+  ctx.beginPath();
+  ctx.moveTo(bx + bodyR, by);
+  ctx.arcTo(bx + bw, by, bx + bw, by + bh, bodyR);
+  ctx.arcTo(bx + bw, by + bh, bx, by + bh, bodyR);
+  ctx.arcTo(bx, by + bh, bx, by, bodyR);
+  ctx.arcTo(bx, by, bx + bw, by, bodyR);
+  ctx.closePath();
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = size * 0.065;
+  ctx.stroke();
+
+  // Lente — círculo branco centralizado no corpo
   const cx = x + size / 2, cy = y + size / 2;
   ctx.beginPath();
-  ctx.arc(cx, cy, size * 0.28, 0, Math.PI * 2);
-  ctx.strokeStyle = "white";
-  ctx.lineWidth = size * 0.08;
+  ctx.arc(cx, cy, size * 0.15, 0, Math.PI * 2);
+  ctx.lineWidth = size * 0.06;
   ctx.stroke();
-  // White dot (top-right viewfinder)
+
+  // Flash — ponto branco no canto superior direito do corpo
   ctx.beginPath();
-  ctx.arc(x + size * 0.72, y + size * 0.28, size * 0.065, 0, Math.PI * 2);
+  ctx.arc(bx + bw - size * 0.07, by + size * 0.07, size * 0.04, 0, Math.PI * 2);
   ctx.fillStyle = "white";
   ctx.fill();
 }
@@ -480,7 +495,7 @@ function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6", inteiro
 // ─── Compositor de Imagem ─────────────────────────────────────────────────────
 
 function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: string) => void; defaultLogoId?: string }) {
-  const [selectedLogo, setSelectedLogo] = useState(LOGOS.find((l) => l.id === defaultLogoId) ?? LOGOS[0]);
+  const selectedLogo = LOGOS.find((l) => l.id === defaultLogoId) ?? LOGOS[0];
   const [faceDataUrl, setFaceDataUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -565,28 +580,6 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
   return (
     <div className="space-y-3">
       <canvas ref={canvasRef} className="hidden" />
-
-      {/* Seletor de logo */}
-      <div>
-        <p className="text-xs text-gray-400 mb-2">Portal / Logo</p>
-        <div className="flex gap-2 flex-wrap">
-          {LOGOS.map((logo) => (
-            <button
-              key={logo.id}
-              type="button"
-              onClick={() => { setSelectedLogo(logo); setApplied(false); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all border-2 ${
-                selectedLogo.id === logo.id
-                  ? "border-blue-500 scale-105"
-                  : "border-gray-700 hover:border-gray-500"
-              }`}
-              style={{ background: logo.bg, color: logo.textColor, fontStyle: logo.italic ? "italic" : "normal" }}
-            >
-              {logo.label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Upload da foto */}
       <div>
@@ -1321,7 +1314,14 @@ export default function NovaInvestigacaoPage() {
       reportagem: "https://g1.globo.com",
     };
     setReportagemPortal("g1");
-    setForm((prev) => ({ ...prev, tipo, redirect_url: redirects[tipo] || "" }));
+    setForm((prev) => ({
+      ...prev,
+      tipo,
+      redirect_url: redirects[tipo] || "",
+      og_titulo: "",
+      og_descricao: "",
+      og_imagem_url: "",
+    }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
