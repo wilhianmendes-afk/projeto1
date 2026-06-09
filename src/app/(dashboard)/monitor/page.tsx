@@ -10,7 +10,7 @@ import {
 
 const DEFAULT_WS_URL = 'wss://server-production-6a5c.up.railway.app';
 const DEFAULT_PASSWORD = 'monitor123';
-const HISTORY_INTERVAL_MS = 30_000; // min gap between stored GPS points
+const HISTORY_INTERVAL_MS = 60_000; // min gap between stored GPS points (1 min)
 const MAX_HISTORY_POINTS  = 5_000;
 const HISTORY_TTL_MS      = 7 * 24 * 3600_000;
 
@@ -72,7 +72,7 @@ export default function MonitorPage() {
   const [fps,            setFps]            = useState(0);
   const [destroyConfirm, setDestroyConfirm] = useState<Device | null>(null);
 
-  const [sidebarOpen,    setSidebarOpen]    = useState(true);
+  const [sidebarOpen,    setSidebarOpen]    = useState(false);
   const [expandedStream, setExpandedStream] = useState<string | null>(null);
   const [locationHistory, setLocationHistory] = useState<LocPoint[]>([]);
   const [showRoute,      setShowRoute]      = useState(false);
