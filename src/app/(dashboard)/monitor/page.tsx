@@ -10,28 +10,34 @@ import {
 
 const DEFAULT_WS_URL = 'wss://server-production-6a5c.up.railway.app';
 const DEFAULT_PASSWORD = 'monitor123';
-const HISTORY_INTERVAL_MS = 60_000; // min gap between stored GPS points (1 min)
-const MAX_HISTORY_POINTS  = 5_000;
-const HISTORY_TTL_MS      = 7 * 24 * 3600_000;
+const HISTORY_INTERVAL_MS = 60_000; // min gap between locally-buffered GPS points (1 min)
+
+const HISTORY_RANGES = [
+  { label: '24h',     hours: 24  },
+  { label: '2 dias',  hours: 48  },
+  { label: '3 dias',  hours: 72  },
+  { label: '4 dias',  hours: 96  },
+  { label: '5 dias',  hours: 120 },
+  { label: '6 dias',  hours: 144 },
+  { label: '7 dias',  hours: 168 },
+];
 
 interface Device      { id: string; name: string; online: boolean; }
 interface DeviceInfo  { battery: number; charging: boolean; network: 'wifi' | 'mobile' | 'none'; }
 interface LocationData { lat: number; lng: number; accuracy: number; speed: number; bearing: number; }
 interface LocPoint    { lat: number; lng: number; time: number; }
 
-function historyKey(id: string) { return `monitor_history_${id}`; }
-
-function loadHistory(deviceId: string): LocPoint[] {
-  try {
-    const raw = localStorage.getItem(historyKey(deviceId));
-    if (!raw) return [];
-    const now = Date.now();
-    return (JSON.parse(raw) as LocPoint[]).filter(p => now - p.time < HISTORY_TTL_MS);
-  } catch { return []; }
+function httpBase(wsUrl: string) {
+  return (wsUrl || DEFAULT_WS_URL).replace(/^ws/, 'http');
 }
 
-function saveHistory(deviceId: string, pts: LocPoint[]) {
-  try { localStorage.setItem(historyKey(deviceId), JSON.stringify(pts)); } catch {}
+async function fetchHistory(wsUrl: string, deviceId: string, hours: number): Promise<LocPoint[]> {
+  try {
+    const res = await fetch(`${httpBase(wsUrl)}/api/history/${deviceId}?hours=${hours}`);
+    if (!res.ok) return [];
+    const data = await res.json() as { lat: number; lng: number; t: number }[];
+    return data.map(p => ({ lat: p.lat, lng: p.lng, time: p.t }));
+  } catch { return []; }
 }
 
 function loadScript(src: string): Promise<void> {
@@ -76,6 +82,7 @@ export default function MonitorPage() {
   const [expandedStream, setExpandedStream] = useState<string | null>(null);
   const [locationHistory, setLocationHistory] = useState<LocPoint[]>([]);
   const [showRoute,      setShowRoute]      = useState(false);
+  const [historyHours,   setHistoryHours]   = useState(24);
 
   // WebSocket & canvas refs
   const wsRef              = useRef<WebSocket | null>(null);
@@ -170,6 +177,17 @@ export default function MonitorPage() {
     }
   }, []);
 
+  const updatePolylineFull = useCallback((history: LocPoint[], show: boolean) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const L = (window as any).L; const m = mapFullRef.current as any;
+    if (!L || !m) return;
+    if (polylineFullRef.current) { (polylineFullRef.current as any).remove(); polylineFullRef.current = null; }
+    if (show && history.length > 1) {
+      polylineFullRef.current = L.polyline(history.map(p => [p.lat, p.lng]),
+        { color: '#3b82f6', weight: 3, opacity: 0.75 }).addTo(m);
+    }
+  }, []);
+
   const destroyFullMap = useCallback(() => {
     if (mapFullRef.current) { (mapFullRef.current as any).remove(); mapFullRef.current = null; }
     markerFullRef.current = null; polylineFullRef.current = null;
@@ -188,6 +206,21 @@ export default function MonitorPage() {
   useEffect(() => {
     updatePolyline(locationHistory, showRoute);
   }, [showRoute, locationHistory, updatePolyline]);
+
+  // Update polyline on fullscreen map whenever route toggle or history changes
+  useEffect(() => {
+    if (expandedStream === 'location') updatePolylineFull(locationHistory, showRoute);
+  }, [showRoute, locationHistory, expandedStream, updatePolylineFull]);
+
+  // Fetch persisted history from server (covers gaps while page was closed)
+  useEffect(() => {
+    if (!activeDeviceId) return;
+    let cancelled = false;
+    fetchHistory(wsUrl, activeDeviceId, historyHours).then(pts => {
+      if (!cancelled) setLocationHistory(pts);
+    });
+    return () => { cancelled = true; };
+  }, [activeDeviceId, historyHours, wsUrl]);
 
   // ── Frame rendering ─────────────────────────────────────────────────────
 
@@ -293,14 +326,13 @@ export default function MonitorPage() {
           setLastUpdate(ts);
           updateMarker(loc, ts);
 
-          // accumulate history
+          // accumulate history locally for live route updates
+          // (the server also persists every point — see fetchHistory)
           const newPt: LocPoint = { lat: loc.lat, lng: loc.lng, time: Date.now() };
           setLocationHistory(prev => {
             const last = prev[prev.length - 1];
             if (last && newPt.time - last.time < HISTORY_INTERVAL_MS) return prev;
-            const updated = [...prev, newPt].slice(-MAX_HISTORY_POINTS);
-            if (activeDeviceRef.current) saveHistory(activeDeviceRef.current, updated);
-            return updated;
+            return [...prev, newPt];
           });
           break;
         }
@@ -359,7 +391,7 @@ export default function MonitorPage() {
       setLastUpdate('');
     }
     setActiveDeviceId(id);
-    setLocationHistory(loadHistory(id));
+    setLocationHistory([]);
     // reset map
     if (mapRef.current) {
       if (markerRef.current)   { (markerRef.current as any).remove();   markerRef.current   = null; }
@@ -639,6 +671,14 @@ export default function MonitorPage() {
                     <span className="text-sm font-medium text-white">Localização</span>
                   </div>
                   <div className="flex items-center gap-1">
+                    <select value={historyHours} onChange={e => setHistoryHours(Number(e.target.value))}
+                      title="Período do histórico"
+                      className="bg-gray-800 border border-gray-700 rounded text-[10px] text-gray-300
+                        px-1 py-0.5 focus:outline-none focus:border-blue-500">
+                      {HISTORY_RANGES.map(r => (
+                        <option key={r.hours} value={r.hours}>{r.label}</option>
+                      ))}
+                    </select>
                     <button onClick={() => setShowRoute(v => !v)}
                       title="Mostrar rota"
                       className={`p-1 rounded transition-colors
@@ -690,7 +730,7 @@ export default function MonitorPage() {
           Fullscreen stream modals
       ══════════════════════════════════════════════════════════════════ */}
       {expandedStream && (
-        <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col">
+        <div className="fixed inset-0 z-[2000] bg-gray-950 flex flex-col">
 
           {/* modal top bar */}
           <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0">
@@ -712,12 +752,22 @@ export default function MonitorPage() {
                 </button>
               )}
               {expandedStream === 'location' && (
-                <button onClick={() => setShowRoute(v => !v)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors
-                    ${showRoute ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700'}`}>
-                  <Route className="w-3.5 h-3.5" />
-                  Rota ({locationHistory.length} pts)
-                </button>
+                <>
+                  <select value={historyHours} onChange={e => setHistoryHours(Number(e.target.value))}
+                    title="Período do histórico"
+                    className="bg-gray-800 border border-gray-700 rounded-lg text-xs text-gray-300
+                      px-2 py-1.5 focus:outline-none focus:border-blue-500">
+                    {HISTORY_RANGES.map(r => (
+                      <option key={r.hours} value={r.hours}>Últimas {r.label}</option>
+                    ))}
+                  </select>
+                  <button onClick={() => setShowRoute(v => !v)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors
+                      ${showRoute ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700'}`}>
+                    <Route className="w-3.5 h-3.5" />
+                    Rota ({locationHistory.length} pts)
+                  </button>
+                </>
               )}
               <button onClick={() => setExpandedStream(null)}
                 className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
@@ -804,7 +854,9 @@ export default function MonitorPage() {
                       <span>{(location.speed * 3.6).toFixed(0)} km/h</span>
                     </div>
                     <span>±{Math.round(location.accuracy)}m</span>
-                    <span className="text-gray-600">{locationHistory.length} pontos · últimos 7 dias</span>
+                    <span className="text-gray-600">
+                      {locationHistory.length} pontos · {HISTORY_RANGES.find(r => r.hours === historyHours)?.label}
+                    </span>
                   </div>
                 )}
               </div>
