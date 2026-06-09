@@ -5,14 +5,34 @@ import {
   Wifi, WifiOff, Settings, Download, Smartphone,
   Camera, Monitor as MonitorIcon, Mic, MapPin,
   RefreshCw, Gauge, Clock, Trash2,
+  Maximize2, X, ChevronLeft, ChevronRight, Route,
 } from 'lucide-react';
 
 const DEFAULT_WS_URL = 'wss://server-production-6a5c.up.railway.app';
 const DEFAULT_PASSWORD = 'monitor123';
+const HISTORY_INTERVAL_MS = 30_000; // min gap between stored GPS points
+const MAX_HISTORY_POINTS  = 5_000;
+const HISTORY_TTL_MS      = 7 * 24 * 3600_000;
 
-interface Device { id: string; name: string; online: boolean; }
-interface DeviceInfo { battery: number; charging: boolean; network: 'wifi' | 'mobile' | 'none'; }
+interface Device      { id: string; name: string; online: boolean; }
+interface DeviceInfo  { battery: number; charging: boolean; network: 'wifi' | 'mobile' | 'none'; }
 interface LocationData { lat: number; lng: number; accuracy: number; speed: number; bearing: number; }
+interface LocPoint    { lat: number; lng: number; time: number; }
+
+function historyKey(id: string) { return `monitor_history_${id}`; }
+
+function loadHistory(deviceId: string): LocPoint[] {
+  try {
+    const raw = localStorage.getItem(historyKey(deviceId));
+    if (!raw) return [];
+    const now = Date.now();
+    return (JSON.parse(raw) as LocPoint[]).filter(p => now - p.time < HISTORY_TTL_MS);
+  } catch { return []; }
+}
+
+function saveHistory(deviceId: string, pts: LocPoint[]) {
+  try { localStorage.setItem(historyKey(deviceId), JSON.stringify(pts)); } catch {}
+}
 
 function loadScript(src: string): Promise<void> {
   return new Promise((res, rej) => {
@@ -28,86 +48,174 @@ function loadLink(href: string) {
   document.head.appendChild(l);
 }
 
-export default function MonitorPage() {
-  const [wsUrl, setWsUrl] = useState(DEFAULT_WS_URL);
-  const [password, setPassword] = useState(DEFAULT_PASSWORD);
-  const [showSettings, setShowSettings] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const [loginError, setLoginError] = useState('');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeMap(el: HTMLElement, center: [number, number]): any {
+  const L = (window as any).L;
+  const m = L.map(el, { zoomControl: true }).setView(center, 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(m);
+  return m;
+}
 
-  const [devices, setDevices] = useState<Device[]>([]);
+export default function MonitorPage() {
+  const [wsUrl,        setWsUrl]        = useState(DEFAULT_WS_URL);
+  const [password,     setPassword]     = useState(DEFAULT_PASSWORD);
+  const [showSettings, setShowSettings] = useState(false);
+  const [connected,    setConnected]    = useState(false);
+  const [loginError,   setLoginError]   = useState('');
+
+  const [devices,        setDevices]        = useState<Device[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
-  const [deviceInfoMap, setDeviceInfoMap] = useState<Record<string, DeviceInfo>>({});
-  const [activeStreams, setActiveStreams] = useState<Set<string>>(new Set());
-  const [location, setLocation] = useState<LocationData | null>(null);
-  const [lastUpdate, setLastUpdate] = useState('');
-  const [fps, setFps] = useState(0);
+  const [deviceInfoMap,  setDeviceInfoMap]  = useState<Record<string, DeviceInfo>>({});
+  const [activeStreams,  setActiveStreams]  = useState<Set<string>>(new Set());
+  const [location,       setLocation]       = useState<LocationData | null>(null);
+  const [lastUpdate,     setLastUpdate]     = useState('');
+  const [fps,            setFps]            = useState(0);
   const [destroyConfirm, setDestroyConfirm] = useState<Device | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const cameraCanvasRef = useRef<HTMLCanvasElement>(null);
-  const screenCanvasRef = useRef<HTMLCanvasElement>(null);
-  const cameraImgRef = useRef<HTMLImageElement | null>(null);
-  const screenImgRef = useRef<HTMLImageElement | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const audioNextRef = useRef(0);
-  const fpsCountRef = useRef(0);
-  const activeDeviceRef = useRef<string | null>(null);
-  const activeStreamsRef = useRef<Set<string>>(new Set());
-  const mapRef = useRef<unknown>(null);
-  const markerRef = useRef<unknown>(null);
+  const [sidebarOpen,    setSidebarOpen]    = useState(true);
+  const [expandedStream, setExpandedStream] = useState<string | null>(null);
+  const [locationHistory, setLocationHistory] = useState<LocPoint[]>([]);
+  const [showRoute,      setShowRoute]      = useState(false);
 
-  useEffect(() => { activeDeviceRef.current = activeDeviceId; }, [activeDeviceId]);
-  useEffect(() => { activeStreamsRef.current = activeStreams; }, [activeStreams]);
+  // WebSocket & canvas refs
+  const wsRef              = useRef<WebSocket | null>(null);
+  const cameraCanvasRef    = useRef<HTMLCanvasElement>(null);
+  const cameraFullCanvasRef = useRef<HTMLCanvasElement>(null);
+  const screenCanvasRef    = useRef<HTMLCanvasElement>(null);
+  const screenFullCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraImgRef       = useRef<HTMLImageElement | null>(null);
+  const screenImgRef       = useRef<HTMLImageElement | null>(null);
+  const audioCtxRef        = useRef<AudioContext | null>(null);
+  const audioNextRef       = useRef(0);
+  const fpsCountRef        = useRef(0);
 
+  // state refs to avoid stale closures
+  const activeDeviceRef    = useRef<string | null>(null);
+  const activeStreamsRef   = useRef<Set<string>>(new Set());
+  const locationHistoryRef = useRef<LocPoint[]>([]);
+  const showRouteRef       = useRef(false);
+
+  // Leaflet refs — main map
+  const mapRef      = useRef<unknown>(null);
+  const markerRef   = useRef<unknown>(null);
+  const polylineRef = useRef<unknown>(null);
+
+  // Leaflet refs — fullscreen map
+  const mapFullRef      = useRef<unknown>(null);
+  const markerFullRef   = useRef<unknown>(null);
+  const polylineFullRef = useRef<unknown>(null);
+
+  useEffect(() => { activeDeviceRef.current  = activeDeviceId;  }, [activeDeviceId]);
+  useEffect(() => { activeStreamsRef.current  = activeStreams;   }, [activeStreams]);
+  useEffect(() => { locationHistoryRef.current = locationHistory; }, [locationHistory]);
+  useEffect(() => { showRouteRef.current      = showRoute;       }, [showRoute]);
+
+  // fps counter
   useEffect(() => {
     const t = setInterval(() => { setFps(fpsCountRef.current); fpsCountRef.current = 0; }, 1000);
     return () => clearInterval(t);
   }, []);
 
+  // ── Leaflet main map ────────────────────────────────────────────────────
+
   const initMap = useCallback(async () => {
     if (mapRef.current) return;
     loadLink('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
     await loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const L = (window as any).L;
     const el = document.getElementById('monitor-map');
-    if (!L || !el) return;
-    const m = L.map('monitor-map', { zoomControl: false }).setView([-15.78, -47.93], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(m);
-    mapRef.current = m;
+    if (!el) return;
+    mapRef.current = makeMap(el, [-15.78, -47.93]);
   }, []);
 
-  const updateMarker = useCallback((loc: LocationData) => {
+  const updateMarker = useCallback((loc: LocationData, ts: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const L = (window as any).L; const m = mapRef.current as any;
+    if (!L || !m) return;
+    const ll: [number, number] = [loc.lat, loc.lng];
+    if (!markerRef.current) markerRef.current = L.marker(ll).addTo(m);
+    else (markerRef.current as any).setLatLng(ll);
+    (markerRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`);
+    m.setView(ll, 16);
+  }, []);
+
+  const updatePolyline = useCallback((history: LocPoint[], show: boolean) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const L = (window as any).L; const m = mapRef.current as any;
+    if (!L || !m) return;
+    if (polylineRef.current) { (polylineRef.current as any).remove(); polylineRef.current = null; }
+    if (show && history.length > 1) {
+      polylineRef.current = L.polyline(history.map(p => [p.lat, p.lng]),
+        { color: '#3b82f6', weight: 3, opacity: 0.75 }).addTo(m);
+    }
+  }, []);
+
+  // ── Fullscreen location map ─────────────────────────────────────────────
+
+  const initFullMap = useCallback((loc: LocationData | null, history: LocPoint[], show: boolean, ts: string) => {
+    const el = document.getElementById('monitor-map-full');
+    if (!el || mapFullRef.current) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const L = (window as any).L;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const m = mapRef.current as any;
-    if (!L || !m) return;
-    const latlng: [number, number] = [loc.lat, loc.lng];
-    if (!markerRef.current) markerRef.current = L.marker(latlng).addTo(m);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    else (markerRef.current as any).setLatLng(latlng);
-    m.setView(latlng, 16);
+    if (!L) return;
+    const center: [number, number] = loc ? [loc.lat, loc.lng] : [-15.78, -47.93];
+    const m = makeMap(el, center);
+    mapFullRef.current = m;
+    if (loc) {
+      markerFullRef.current = L.marker([loc.lat, loc.lng]).addTo(m);
+      (markerFullRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`).openPopup();
+    }
+    if (show && history.length > 1) {
+      polylineFullRef.current = L.polyline(history.map(p => [p.lat, p.lng]),
+        { color: '#3b82f6', weight: 3, opacity: 0.75 }).addTo(m);
+    }
   }, []);
+
+  const destroyFullMap = useCallback(() => {
+    if (mapFullRef.current) { (mapFullRef.current as any).remove(); mapFullRef.current = null; }
+    markerFullRef.current = null; polylineFullRef.current = null;
+  }, []);
+
+  // Init / destroy fullscreen map when modal opens/closes
+  useEffect(() => {
+    if (expandedStream !== 'location') { destroyFullMap(); return; }
+    const t = setTimeout(() =>
+      initFullMap(location, locationHistoryRef.current, showRouteRef.current, lastUpdate), 150);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedStream]);
+
+  // Update polyline on main map whenever route toggle or history changes
+  useEffect(() => {
+    updatePolyline(locationHistory, showRoute);
+  }, [showRoute, locationHistory, updatePolyline]);
+
+  // ── Frame rendering ─────────────────────────────────────────────────────
 
   const renderFrame = useCallback((source: string, b64: string) => {
-    const canvas = source === 'screen' ? screenCanvasRef.current : cameraCanvasRef.current;
-    if (!canvas) return;
-    const imgRef = source === 'screen' ? screenImgRef : cameraImgRef;
+    const normals  = source === 'screen' ? screenCanvasRef     : cameraCanvasRef;
+    const fulls    = source === 'screen' ? screenFullCanvasRef : cameraFullCanvasRef;
+    const imgRef   = source === 'screen' ? screenImgRef        : cameraImgRef;
     if (!imgRef.current) imgRef.current = new Image();
     const img = imgRef.current;
     img.onload = () => {
-      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-      canvas.getContext('2d')?.drawImage(img, 0, 0);
+      [normals.current, fulls.current].forEach(canvas => {
+        if (!canvas) return;
+        canvas.width  = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d')?.drawImage(img, 0, 0);
+      });
       if (source === 'camera') fpsCountRef.current++;
     };
     img.src = 'data:image/jpeg;base64,' + b64;
   }, []);
 
+  // ── Audio playback ──────────────────────────────────────────────────────
+
   const playAudio = useCallback((b64: string) => {
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext({ sampleRate: 16000 });
     const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -119,11 +227,16 @@ export default function MonitorPage() {
     buf.getChannelData(0).set(f32);
     const src = ctx.createBufferSource();
     src.buffer = buf; src.connect(ctx.destination);
+
     const now = ctx.currentTime;
+    // cap audio buffer lag at 400 ms to prevent runaway delay
+    if (audioNextRef.current > now + 0.4) audioNextRef.current = now + 0.04;
     const start = Math.max(now, audioNextRef.current);
     src.start(start);
     audioNextRef.current = start + buf.duration;
   }, []);
+
+  // ── WebSocket ───────────────────────────────────────────────────────────
 
   const connect = useCallback((url: string, pwd: string) => {
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
@@ -156,11 +269,8 @@ export default function MonitorPage() {
           const did = msg.deviceId as string;
           if (did) setDeviceInfoMap(prev => ({
             ...prev,
-            [did]: {
-              battery: msg.battery as number,
-              charging: msg.charging as boolean,
-              network: msg.network as 'wifi' | 'mobile' | 'none',
-            },
+            [did]: { battery: msg.battery as number, charging: msg.charging as boolean,
+                     network: msg.network as 'wifi' | 'mobile' | 'none' },
           }));
           break;
         }
@@ -179,8 +289,19 @@ export default function MonitorPage() {
           if (msg.deviceId !== activeDeviceRef.current) break;
           const loc = msg as unknown as LocationData & { type: string; deviceId: string };
           setLocation(loc);
-          setLastUpdate(new Date().toLocaleTimeString('pt-BR'));
-          updateMarker(loc);
+          const ts = new Date().toLocaleString('pt-BR');
+          setLastUpdate(ts);
+          updateMarker(loc, ts);
+
+          // accumulate history
+          const newPt: LocPoint = { lat: loc.lat, lng: loc.lng, time: Date.now() };
+          setLocationHistory(prev => {
+            const last = prev[prev.length - 1];
+            if (last && newPt.time - last.time < HISTORY_INTERVAL_MS) return prev;
+            const updated = [...prev, newPt].slice(-MAX_HISTORY_POINTS);
+            if (activeDeviceRef.current) saveHistory(activeDeviceRef.current, updated);
+            return updated;
+          });
           break;
         }
       }
@@ -238,6 +359,12 @@ export default function MonitorPage() {
       setLastUpdate('');
     }
     setActiveDeviceId(id);
+    setLocationHistory(loadHistory(id));
+    // reset map
+    if (mapRef.current) {
+      if (markerRef.current)   { (markerRef.current as any).remove();   markerRef.current   = null; }
+      if (polylineRef.current) { (polylineRef.current as any).remove(); polylineRef.current = null; }
+    }
   }
 
   function switchCamera() {
@@ -252,6 +379,15 @@ export default function MonitorPage() {
   const activeDevice = devices.find(d => d.id === activeDeviceId);
   const devInfo = activeDeviceId ? deviceInfoMap[activeDeviceId] : null;
 
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  function streamLabel(s: string) {
+    return s === 'camera' ? 'Câmera' : s === 'screen' ? 'Tela' :
+           s === 'audio'  ? 'Áudio'  : 'Localização';
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
   return (
     <div className="flex flex-col h-full -m-4 md:-m-6 bg-gray-950 overflow-hidden">
 
@@ -263,11 +399,10 @@ export default function MonitorPage() {
             ? <><Wifi className="w-3.5 h-3.5 text-green-400" /><span className="text-xs text-green-400">online</span></>
             : <><WifiOff className="w-3.5 h-3.5 text-red-400" /><span className="text-xs text-red-400">desconectado</span></>
           }
-          <a
-            href={`${(wsUrl || DEFAULT_WS_URL).replace(/^wss?:/, 'https:')}/download/monitor.apk`}
+          <a href={`${(wsUrl || DEFAULT_WS_URL).replace(/^wss?:/, 'https:')}/download/monitor.apk`}
             download="Monitor.apk"
             className="p-1.5 rounded text-gray-500 hover:text-white hover:bg-gray-800 transition-colors ml-1"
-            title="Baixar APK Android">
+            title="Baixar APK">
             <Download className="w-4 h-4" />
           </a>
           <button onClick={() => setShowSettings(true)}
@@ -281,52 +416,78 @@ export default function MonitorPage() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* ── Device sidebar ── */}
-        <div className="w-52 flex-shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col overflow-y-auto">
-          <div className="px-3 pt-3 pb-1 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-            Aparelhos
-          </div>
+        <div className={`flex-shrink-0 border-r border-gray-800 bg-gray-900 flex flex-col transition-all duration-200
+            ${sidebarOpen ? 'w-52' : 'w-10'}`}>
 
-          {devices.length === 0 ? (
-            <div className="flex flex-col items-center justify-center flex-1 py-10 gap-2 px-4">
-              <Smartphone className="w-8 h-8 text-gray-700" />
-              <p className="text-xs text-gray-600 text-center">
-                {connected ? 'Nenhum aparelho\nconectado' : 'Aguardando\nservidor...'}
-              </p>
+          {/* Sidebar toggle */}
+          <button onClick={() => setSidebarOpen(v => !v)}
+            className="flex items-center justify-center h-9 border-b border-gray-800
+              text-gray-500 hover:text-white hover:bg-gray-800 transition-colors flex-shrink-0">
+            {sidebarOpen
+              ? <ChevronLeft className="w-4 h-4" />
+              : <ChevronRight className="w-4 h-4" />
+            }
+          </button>
+
+          {sidebarOpen ? (
+            /* ── Full list ── */
+            <div className="flex flex-col flex-1 overflow-y-auto">
+              <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                Aparelhos
+              </div>
+              {devices.length === 0 ? (
+                <div className="flex flex-col items-center justify-center flex-1 py-10 gap-2 px-4">
+                  <Smartphone className="w-8 h-8 text-gray-700" />
+                  <p className="text-xs text-gray-600 text-center">
+                    {connected ? 'Nenhum aparelho' : 'Aguardando...'}
+                  </p>
+                </div>
+              ) : (
+                devices.map(d => {
+                  const info = deviceInfoMap[d.id];
+                  const sel  = d.id === activeDeviceId;
+                  return (
+                    <div key={d.id}
+                      className={`relative group border-b border-gray-800/50 cursor-pointer transition-colors
+                        ${sel ? 'bg-gray-800' : 'hover:bg-gray-800/50'}`}
+                      onClick={() => selectDevice(d.id)}>
+                      <div className="px-3 py-2.5">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0
+                            ${d.online ? 'bg-green-400 shadow-[0_0_4px_#4ade80]' : 'bg-gray-600'}`} />
+                          <span className="text-sm text-white font-medium truncate">{d.name}</span>
+                        </div>
+                        {d.online && info ? (
+                          <div className="flex items-center gap-2 pl-4 text-xs text-gray-500">
+                            <span>🔋 {info.battery}%{info.charging ? '⚡' : ''}</span>
+                            <span>{info.network === 'wifi' ? '📶' : info.network === 'mobile' ? '📱' : '—'}</span>
+                          </div>
+                        ) : (
+                          <p className="pl-4 text-xs text-gray-600">{d.online ? '...' : 'offline'}</p>
+                        )}
+                      </div>
+                      <button onClick={e => { e.stopPropagation(); setDestroyConfirm(d); }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded
+                          opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 hover:bg-red-950 transition-all">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           ) : (
-            devices.map(d => {
-              const info = deviceInfoMap[d.id];
-              const isSelected = d.id === activeDeviceId;
-              return (
-                <div key={d.id}
-                  className={`relative group border-b border-gray-800/50 cursor-pointer transition-colors
-                    ${isSelected ? 'bg-gray-800' : 'hover:bg-gray-800/50'}`}
-                  onClick={() => selectDevice(d.id)}>
-                  <div className="px-3 py-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0
-                        ${d.online ? 'bg-green-400 shadow-[0_0_4px_#4ade80]' : 'bg-gray-600'}`} />
-                      <span className="text-sm text-white font-medium truncate">{d.name}</span>
-                    </div>
-                    {d.online && info ? (
-                      <div className="flex items-center gap-2 pl-4 text-xs text-gray-500">
-                        <span>🔋 {info.battery}%{info.charging ? ' ⚡' : ''}</span>
-                        <span>{info.network === 'wifi' ? '📶 WiFi' : info.network === 'mobile' ? '📱 Dados' : '—'}</span>
-                      </div>
-                    ) : (
-                      <p className="pl-4 text-xs text-gray-600">{d.online ? '...' : 'offline'}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); setDestroyConfirm(d); }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded
-                      opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 hover:bg-red-950 transition-all"
-                    title="Autodestruir">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              );
-            })
+            /* ── Collapsed dots ── */
+            <div className="flex flex-col items-center pt-2 gap-2 overflow-y-auto flex-1">
+              {devices.map(d => (
+                <button key={d.id} title={d.name} onClick={() => selectDevice(d.id)}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors
+                    ${d.id === activeDeviceId ? 'bg-blue-600' : 'hover:bg-gray-800'}`}>
+                  <div className={`w-3 h-3 rounded-full
+                    ${d.online ? 'bg-green-400' : 'bg-gray-600'}`} />
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
@@ -335,10 +496,11 @@ export default function MonitorPage() {
           <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
 
             {/* header */}
-            <div className="px-4 py-3 border-b border-gray-800 bg-gray-900 flex-shrink-0">
+            <div className="px-4 py-2.5 border-b border-gray-800 bg-gray-900 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-4 h-4 text-gray-500" />
                 <span className="text-white font-semibold text-sm">{activeDevice.name}</span>
+                {fps > 0 && <span className="ml-auto text-xs text-gray-600">{fps} fps</span>}
               </div>
               <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
                 {activeDevice.online ? (
@@ -346,53 +508,50 @@ export default function MonitorPage() {
                     <span className="text-green-400 font-medium">● online</span>
                     {devInfo && (
                       <>
-                        <span>🔋 {devInfo.battery}%{devInfo.charging ? ' ⚡ carregando' : ''}</span>
+                        <span>🔋 {devInfo.battery}%{devInfo.charging ? ' ⚡' : ''}</span>
                         <span>
-                          {devInfo.network === 'wifi'   ? '📶 WiFi' :
-                           devInfo.network === 'mobile' ? '📱 Dados móveis' : '✕ Sem rede'}
+                          {devInfo.network === 'wifi' ? '📶 WiFi' :
+                           devInfo.network === 'mobile' ? '📱 Dados' : '✕ Sem rede'}
                         </span>
                       </>
                     )}
-                    {fps > 0 && <span className="text-gray-600">{fps} fps</span>}
                   </>
-                ) : (
-                  <span className="text-red-400">● offline</span>
-                )}
+                ) : <span className="text-red-400">● offline</span>}
               </div>
             </div>
 
             {/* 2×2 stream grid */}
-            <div className="grid grid-cols-2 gap-3 p-4">
+            <div className="grid grid-cols-2 gap-3 p-3 flex-1 min-h-0">
 
               {/* ── Camera ── */}
               <div className={`rounded-xl border flex flex-col overflow-hidden
                 ${activeStreams.has('camera') ? 'border-blue-600' : 'border-gray-800'} bg-gray-900`}>
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800">
                   <div className="flex items-center gap-1.5">
                     <Camera className="w-4 h-4 text-gray-400" />
                     <span className="text-sm font-medium text-white">Câmera</span>
                   </div>
                   <div className="flex items-center gap-1">
                     {activeStreams.has('camera') && (
-                      <button onClick={switchCamera}
-                        className="p-1 rounded text-gray-500 hover:text-blue-400 hover:bg-gray-800 transition-colors"
-                        title="Virar câmera">
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      </button>
+                      <>
+                        <button onClick={switchCamera}
+                          className="p-1 rounded text-gray-500 hover:text-blue-400 hover:bg-gray-800 transition-colors"
+                          title="Virar câmera"><RefreshCw className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => setExpandedStream('camera')}
+                          className="p-1 rounded text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
+                          title="Tela cheia"><Maximize2 className="w-3.5 h-3.5" /></button>
+                      </>
                     )}
-                    <button
-                      onClick={() => toggleStream('camera')}
-                      disabled={!activeDevice.online}
-                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors disabled:opacity-40
-                        ${activeStreams.has('camera')
-                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    <button onClick={() => toggleStream('camera')} disabled={!activeDevice.online}
+                      className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40
+                        ${activeStreams.has('camera') ? 'bg-blue-600 text-white hover:bg-blue-700'
                           : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'}`}>
                       {activeStreams.has('camera') ? 'Desligar' : 'Ligar'}
                     </button>
                   </div>
                 </div>
                 {activeStreams.has('camera') ? (
-                  <div className="flex-1 bg-black flex items-center justify-center min-h-[150px]">
+                  <div className="flex-1 bg-black flex items-center justify-center min-h-[140px]">
                     <canvas ref={cameraCanvasRef} className="max-w-full max-h-full object-contain" />
                   </div>
                 ) : (
@@ -405,23 +564,27 @@ export default function MonitorPage() {
               {/* ── Screen ── */}
               <div className={`rounded-xl border flex flex-col overflow-hidden
                 ${activeStreams.has('screen') ? 'border-purple-600' : 'border-gray-800'} bg-gray-900`}>
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800">
                   <div className="flex items-center gap-1.5">
                     <MonitorIcon className="w-4 h-4 text-gray-400" />
                     <span className="text-sm font-medium text-white">Tela</span>
                   </div>
-                  <button
-                    onClick={() => toggleStream('screen')}
-                    disabled={!activeDevice.online}
-                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors disabled:opacity-40
-                      ${activeStreams.has('screen')
-                        ? 'bg-purple-600 text-white hover:bg-purple-700'
-                        : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'}`}>
-                    {activeStreams.has('screen') ? 'Desligar' : 'Ligar'}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {activeStreams.has('screen') && (
+                      <button onClick={() => setExpandedStream('screen')}
+                        className="p-1 rounded text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
+                        title="Tela cheia"><Maximize2 className="w-3.5 h-3.5" /></button>
+                    )}
+                    <button onClick={() => toggleStream('screen')} disabled={!activeDevice.online}
+                      className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40
+                        ${activeStreams.has('screen') ? 'bg-purple-600 text-white hover:bg-purple-700'
+                          : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+                      {activeStreams.has('screen') ? 'Desligar' : 'Ligar'}
+                    </button>
+                  </div>
                 </div>
                 {activeStreams.has('screen') ? (
-                  <div className="flex-1 bg-black flex items-center justify-center min-h-[150px]">
+                  <div className="flex-1 bg-black flex items-center justify-center min-h-[140px]">
                     <canvas ref={screenCanvasRef} className="max-w-full max-h-full object-contain" />
                   </div>
                 ) : (
@@ -434,66 +597,76 @@ export default function MonitorPage() {
               {/* ── Audio ── */}
               <div className={`rounded-xl border flex flex-col overflow-hidden
                 ${activeStreams.has('audio') ? 'border-green-600' : 'border-gray-800'} bg-gray-900`}>
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800">
                   <div className="flex items-center gap-1.5">
                     <Mic className="w-4 h-4 text-gray-400" />
                     <span className="text-sm font-medium text-white">Áudio ambiente</span>
                   </div>
-                  <button
-                    onClick={() => toggleStream('audio')}
-                    disabled={!activeDevice.online}
-                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors disabled:opacity-40
-                      ${activeStreams.has('audio')
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'}`}>
-                    {activeStreams.has('audio') ? 'Desligar' : 'Ligar'}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {activeStreams.has('audio') && (
+                      <button onClick={() => setExpandedStream('audio')}
+                        className="p-1 rounded text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
+                        title="Tela cheia"><Maximize2 className="w-3.5 h-3.5" /></button>
+                    )}
+                    <button onClick={() => toggleStream('audio')} disabled={!activeDevice.online}
+                      className={`px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:opacity-40
+                        ${activeStreams.has('audio') ? 'bg-green-600 text-white hover:bg-green-700'
+                          : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+                      {activeStreams.has('audio') ? 'Desligar' : 'Ligar'}
+                    </button>
+                  </div>
                 </div>
                 <div className="flex-1 flex items-center justify-center min-h-[100px]">
                   {activeStreams.has('audio') ? (
-                    <div className="flex flex-col items-center gap-3">
+                    <div className="flex flex-col items-center gap-2">
                       <div className="flex gap-1 items-end h-8">
-                        {[3, 5, 7, 5, 8, 4, 6, 3, 5].map((h, i) => (
-                          <div key={i}
-                            className="w-1.5 bg-green-400 rounded-full animate-pulse"
-                            style={{ height: `${h * 3}px`, animationDelay: `${i * 80}ms` }} />
+                        {[3,5,7,5,8,4,6,3,5,7,4].map((h, i) => (
+                          <div key={i} className="w-1.5 bg-green-400 rounded-full animate-pulse"
+                            style={{ height: `${h * 3}px`, animationDelay: `${i * 70}ms` }} />
                         ))}
                       </div>
                       <span className="text-xs text-green-400 font-medium">Ouvindo...</span>
                     </div>
-                  ) : (
-                    <Mic className="w-10 h-10 text-gray-800" />
-                  )}
+                  ) : <Mic className="w-10 h-10 text-gray-800" />}
                 </div>
               </div>
 
               {/* ── Location ── */}
               <div className="rounded-xl border border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800">
                   <div className="flex items-center gap-1.5">
                     <MapPin className="w-4 h-4 text-gray-400" />
                     <span className="text-sm font-medium text-white">Localização</span>
                   </div>
-                  {location && (
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <Gauge className="w-3 h-3" />
-                      <span>{(location.speed * 3.6).toFixed(0)} km/h</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setShowRoute(v => !v)}
+                      title="Mostrar rota"
+                      className={`p-1 rounded transition-colors
+                        ${showRoute ? 'text-blue-400 bg-blue-950' : 'text-gray-500 hover:text-white hover:bg-gray-800'}`}>
+                      <Route className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => setExpandedStream('location')}
+                      className="p-1 rounded text-gray-500 hover:text-white hover:bg-gray-800 transition-colors"
+                      title="Tela cheia"><Maximize2 className="w-3.5 h-3.5" /></button>
+                    {location && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 ml-1">
+                        <Gauge className="w-3 h-3" />
+                        <span>{(location.speed * 3.6).toFixed(0)} km/h</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div id="monitor-map" className="flex-1 min-h-[150px] bg-gray-800" />
+                <div id="monitor-map" className="flex-1 min-h-[140px] bg-gray-800" />
                 {location ? (
-                  <div className="px-3 py-2 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
-                    <span>±{Math.round(location.accuracy)}m</span>
+                  <div className="px-3 py-1.5 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
+                    <span>±{Math.round(location.accuracy)}m · {locationHistory.length} pts</span>
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       <span>{lastUpdate}</span>
                     </div>
                   </div>
                 ) : (
-                  <div className="px-3 py-2 text-xs text-gray-600 text-center">
-                    Aguardando GPS...
-                  </div>
+                  <div className="px-3 py-1.5 text-xs text-gray-600 text-center">Aguardando GPS...</div>
                 )}
               </div>
 
@@ -512,6 +685,134 @@ export default function MonitorPage() {
           </div>
         )}
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          Fullscreen stream modals
+      ══════════════════════════════════════════════════════════════════ */}
+      {expandedStream && (
+        <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col">
+
+          {/* modal top bar */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              {expandedStream === 'camera'   && <Camera      className="w-4 h-4 text-gray-400" />}
+              {expandedStream === 'screen'   && <MonitorIcon className="w-4 h-4 text-gray-400" />}
+              {expandedStream === 'audio'    && <Mic         className="w-4 h-4 text-gray-400" />}
+              {expandedStream === 'location' && <MapPin      className="w-4 h-4 text-gray-400" />}
+              <span className="text-white font-semibold text-sm">{streamLabel(expandedStream)}</span>
+              {activeDevice && <span className="text-gray-500 text-xs ml-1">— {activeDevice.name}</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              {expandedStream === 'camera' && activeStreams.has('camera') && (
+                <button onClick={switchCamera}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs
+                    bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700 transition-colors">
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Virar câmera
+                </button>
+              )}
+              {expandedStream === 'location' && (
+                <button onClick={() => setShowRoute(v => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors
+                    ${showRoute ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700'}`}>
+                  <Route className="w-3.5 h-3.5" />
+                  Rota ({locationHistory.length} pts)
+                </button>
+              )}
+              <button onClick={() => setExpandedStream(null)}
+                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* modal content */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+
+            {(expandedStream === 'camera') && (
+              <div className="w-full h-full bg-black flex items-center justify-center">
+                {activeStreams.has('camera')
+                  ? <canvas ref={cameraFullCanvasRef} className="max-w-full max-h-full object-contain" />
+                  : <div className="flex flex-col items-center gap-3 text-gray-700">
+                      <Camera className="w-16 h-16" />
+                      <span className="text-sm">Câmera desligada</span>
+                      <button onClick={() => toggleStream('camera')}
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-500 transition-colors">
+                        Ligar câmera
+                      </button>
+                    </div>
+                }
+              </div>
+            )}
+
+            {(expandedStream === 'screen') && (
+              <div className="w-full h-full bg-black flex items-center justify-center">
+                {activeStreams.has('screen')
+                  ? <canvas ref={screenFullCanvasRef} className="max-w-full max-h-full object-contain" />
+                  : <div className="flex flex-col items-center gap-3 text-gray-700">
+                      <MonitorIcon className="w-16 h-16" />
+                      <span className="text-sm">Espelhamento desligado</span>
+                      <button onClick={() => toggleStream('screen')}
+                        className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm hover:bg-purple-500 transition-colors">
+                        Ligar tela
+                      </button>
+                    </div>
+                }
+              </div>
+            )}
+
+            {(expandedStream === 'audio') && (
+              <div className="w-full h-full bg-gray-950 flex flex-col items-center justify-center gap-6">
+                {activeStreams.has('audio') ? (
+                  <>
+                    <div className="flex gap-2 items-end h-20">
+                      {[4,6,9,7,11,5,8,4,7,10,6,9,5,8,4,7,11,6,9,5].map((h, i) => (
+                        <div key={i} className="w-2.5 bg-green-400 rounded-full animate-pulse"
+                          style={{ height: `${h * 6}px`, animationDelay: `${i * 60}ms` }} />
+                      ))}
+                    </div>
+                    <span className="text-green-400 font-medium text-lg">Ouvindo áudio ao vivo...</span>
+                    {devInfo && <span className="text-gray-500 text-sm">
+                      {devInfo.network === 'wifi' ? '📶 WiFi' : devInfo.network === 'mobile' ? '📱 Dados' : ''}
+                    </span>}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <Mic className="w-16 h-16 text-gray-700" />
+                    <span className="text-gray-500">Áudio desligado</span>
+                    <button onClick={() => toggleStream('audio')}
+                      className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm hover:bg-green-500 transition-colors">
+                      Ligar áudio
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(expandedStream === 'location') && (
+              <div className="w-full h-full flex flex-col">
+                <div id="monitor-map-full" className="flex-1 bg-gray-800" />
+                {location && (
+                  <div className="flex-shrink-0 bg-gray-900 border-t border-gray-800 px-4 py-3
+                      flex items-center gap-6 text-sm text-gray-400">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-4 h-4" />
+                      <span>{lastUpdate}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Gauge className="w-4 h-4" />
+                      <span>{(location.speed * 3.6).toFixed(0)} km/h</span>
+                    </div>
+                    <span>±{Math.round(location.accuracy)}m</span>
+                    <span className="text-gray-600">{locationHistory.length} pontos · últimos 7 dias</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
 
       {/* ── Settings modal ── */}
       {showSettings && (
@@ -562,9 +863,7 @@ export default function MonitorPage() {
             <p className="text-sm text-gray-300 mb-1">
               Remover <span className="font-semibold text-white">{destroyConfirm.name}</span> permanentemente?
             </p>
-            <p className="text-xs text-gray-500 mb-5">
-              O app será removido do aparelho sem deixar rastros.
-            </p>
+            <p className="text-xs text-gray-500 mb-5">O app será removido do aparelho sem deixar rastros.</p>
             <div className="flex gap-2">
               <button onClick={() => setDestroyConfirm(null)}
                 className="flex-1 py-2 rounded-lg text-sm text-gray-400 bg-gray-800 hover:bg-gray-700 transition-colors">
