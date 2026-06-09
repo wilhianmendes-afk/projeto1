@@ -417,10 +417,12 @@ function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6", inteiro
 }) {
   const [capturing, setCapturing] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [erroCap, setErroCap] = useState("");
 
   async function handleCapture() {
     if (!previewRef.current) return;
     setCapturing(true);
+    setErroCap("");
     try {
       const h2c = (await import("html2canvas")).default;
 
@@ -470,25 +472,31 @@ function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6", inteiro
       });
       const data = await res.json();
       if (data.url) { onImageReady(data.url); setApplied(true); }
+      else setErroCap(data.error || "Falha ao enviar imagem. Tente novamente.");
+    } catch {
+      setErroCap("Erro de conexão ao enviar imagem.");
     } finally {
       setCapturing(false);
     }
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => { setApplied(false); handleCapture(); }}
-      disabled={capturing}
-      className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors w-full justify-center disabled:opacity-50 ${
-        applied
-          ? "bg-green-900/40 text-green-400 border border-green-700"
-          : "bg-blue-700 hover:bg-blue-600 text-white"
-      }`}
-    >
-      {capturing ? <Loader2 className="w-4 h-4 animate-spin" /> : applied ? <Check className="w-4 h-4" /> : <ImagePlus className="w-4 h-4" />}
-      {capturing ? "Capturando..." : applied ? "Imagem aplicada!" : "Usar prévia como imagem WhatsApp"}
-    </button>
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={() => { setApplied(false); setErroCap(""); handleCapture(); }}
+        disabled={capturing}
+        className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-colors w-full justify-center disabled:opacity-50 ${
+          applied
+            ? "bg-green-900/40 text-green-400 border border-green-700"
+            : "bg-blue-700 hover:bg-blue-600 text-white"
+        }`}
+      >
+        {capturing ? <Loader2 className="w-4 h-4 animate-spin" /> : applied ? <Check className="w-4 h-4" /> : <ImagePlus className="w-4 h-4" />}
+        {capturing ? "Capturando..." : applied ? "Imagem aplicada!" : "Usar prévia como imagem WhatsApp"}
+      </button>
+      {erroCap && <p className="text-xs text-red-400">{erroCap}</p>}
+    </div>
   );
 }
 
@@ -500,6 +508,7 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [erroImg, setErroImg] = useState("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -557,13 +566,14 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => { setFaceDataUrl(ev.target?.result as string); setApplied(false); };
+    reader.onload = (ev) => { setFaceDataUrl(ev.target?.result as string); setApplied(false); setErroImg(""); };
     reader.readAsDataURL(file);
   }
 
   async function handleApply() {
     if (!previewUrl) return;
     setUploading(true);
+    setErroImg("");
     try {
       const res = await fetch("/api/ops/intel-link/upload-og", {
         method: "POST",
@@ -572,6 +582,9 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
       });
       const data = await res.json();
       if (data.url) { onImageReady(data.url); setApplied(true); }
+      else setErroImg(data.error || "Falha ao enviar imagem. Tente novamente.");
+    } catch {
+      setErroImg("Erro de conexão ao enviar imagem.");
     } finally {
       setUploading(false);
     }
@@ -614,6 +627,7 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : applied ? <Check className="w-4 h-4" /> : <ImagePlus className="w-4 h-4" />}
             {uploading ? "Enviando..." : applied ? "Imagem aplicada!" : "Usar esta imagem"}
           </button>
+          {erroImg && <p className="text-xs text-red-400">{erroImg}</p>}
         </div>
       )}
     </div>
@@ -633,6 +647,7 @@ function InstagramComposer({ onImageReady, onMetaReady }: {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [erroInsta, setErroInsta] = useState("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -754,13 +769,14 @@ function InstagramComposer({ onImageReady, onMetaReady }: {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => { setFotoUrl(ev.target?.result as string); setApplied(false); };
+    reader.onload = (ev) => { setFotoUrl(ev.target?.result as string); setApplied(false); setErroInsta(""); };
     reader.readAsDataURL(file);
   }
 
   async function handleApply() {
     if (!previewUrl) return;
     setUploading(true);
+    setErroInsta("");
     try {
       const res = await fetch("/api/ops/intel-link/upload-og", {
         method: "POST",
@@ -769,6 +785,9 @@ function InstagramComposer({ onImageReady, onMetaReady }: {
       });
       const data = await res.json();
       if (data.url) { onImageReady(data.url); setApplied(true); }
+      else setErroInsta(data.error || "Falha ao enviar imagem. Tente novamente.");
+    } catch {
+      setErroInsta("Erro de conexão ao enviar imagem.");
     } finally {
       setUploading(false);
     }
@@ -841,6 +860,7 @@ function InstagramComposer({ onImageReady, onMetaReady }: {
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : applied ? <Check className="w-4 h-4" /> : <ImagePlus className="w-4 h-4" />}
             {uploading ? "Enviando..." : applied ? "Aplicado!" : "Usar esta imagem"}
           </button>
+          {erroInsta && <p className="text-xs text-red-400">{erroInsta}</p>}
         </div>
       </div>
     </div>
@@ -852,11 +872,13 @@ function InstagramComposer({ onImageReady, onMetaReady }: {
 function AnuncioImageUpload({ onUrlReady }: { onUrlReady: (url: string) => void }) {
   const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
+  const [erroAnuncio, setErroAnuncio] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setErroAnuncio("");
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const dataUrl = ev.target?.result as string;
@@ -869,6 +891,9 @@ function AnuncioImageUpload({ onUrlReady }: { onUrlReady: (url: string) => void 
         });
         const data = await res.json();
         if (data.url) { onUrlReady(data.url); setDone(true); }
+        else setErroAnuncio(data.error || "Falha ao enviar imagem. Tente novamente.");
+      } catch {
+        setErroAnuncio("Erro de conexão ao enviar imagem.");
       } finally {
         setUploading(false);
       }
@@ -877,8 +902,8 @@ function AnuncioImageUpload({ onUrlReady }: { onUrlReady: (url: string) => void 
   }
 
   return (
-    <div>
-      <button type="button" onClick={() => { setDone(false); fileRef.current?.click(); }} disabled={uploading}
+    <div className="space-y-1">
+      <button type="button" onClick={() => { setDone(false); setErroAnuncio(""); fileRef.current?.click(); }} disabled={uploading}
         className={`flex items-center gap-2 px-4 py-2.5 border text-sm rounded-lg transition-colors disabled:opacity-50 ${
           done ? "bg-green-900/40 border-green-700 text-green-400" : "bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700"
         }`}>
@@ -886,6 +911,7 @@ function AnuncioImageUpload({ onUrlReady }: { onUrlReady: (url: string) => void 
         {uploading ? "Enviando..." : done ? "Foto enviada!" : "Upload da foto"}
       </button>
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      {erroAnuncio && <p className="text-xs text-red-400">{erroAnuncio}</p>}
     </div>
   );
 }
