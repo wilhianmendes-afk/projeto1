@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Wifi, WifiOff, Settings, Download, Smartphone,
   Camera, Monitor as MonitorIcon, Mic, MapPin,
@@ -10,7 +10,10 @@ import {
 
 const DEFAULT_WS_URL = 'wss://server-production-6a5c.up.railway.app';
 const DEFAULT_PASSWORD = 'monitor123';
-const HISTORY_INTERVAL_MS = 60_000; // min gap between locally-buffered GPS points (1 min)
+const HISTORY_INTERVAL_MS = 20_000; // min gap between locally-buffered GPS points (matches server)
+const STOP_RADIUS_M = 40;           // consecutive points within this radius = same stop
+const STOP_MIN_MS   = 5 * 60_000;   // stationary for at least 5 min counts as a stop
+const MAX_DOTS      = 1500;         // cap on individual point markers per map
 
 const HISTORY_RANGES = [
   { label: '24h',     hours: 24  },
@@ -25,7 +28,8 @@ const HISTORY_RANGES = [
 interface Device      { id: string; name: string; online: boolean; }
 interface DeviceInfo  { battery: number; charging: boolean; network: 'wifi' | 'mobile' | 'none'; }
 interface LocationData { lat: number; lng: number; accuracy: number; speed: number; bearing: number; }
-interface LocPoint    { lat: number; lng: number; time: number; }
+interface LocPoint    { lat: number; lng: number; time: number; speed?: number; }
+interface Stop        { lat: number; lng: number; start: number; end: number; }
 
 function httpBase(wsUrl: string) {
   return (wsUrl || DEFAULT_WS_URL).replace(/^ws/, 'http');
@@ -35,9 +39,88 @@ async function fetchHistory(wsUrl: string, deviceId: string, hours: number): Pro
   try {
     const res = await fetch(`${httpBase(wsUrl)}/api/history/${deviceId}?hours=${hours}`);
     if (!res.ok) return [];
-    const data = await res.json() as { lat: number; lng: number; t: number }[];
-    return data.map(p => ({ lat: p.lat, lng: p.lng, time: p.t }));
+    const data = await res.json() as { lat: number; lng: number; t: number; s?: number }[];
+    return data.map(p => ({ lat: p.lat, lng: p.lng, time: p.t, speed: p.s }));
   } catch { return []; }
+}
+
+function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const s = Math.sin(dLat / 2) ** 2
+    + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+// Groups consecutive points that stay within STOP_RADIUS_M of the running
+// centroid; clusters lasting >= STOP_MIN_MS become stops.
+function detectStops(pts: LocPoint[]): Stop[] {
+  const stops: Stop[] = [];
+  let i = 0;
+  while (i < pts.length) {
+    let lat = pts[i].lat, lng = pts[i].lng, n = 1, j = i;
+    while (j + 1 < pts.length && haversineM({ lat, lng }, pts[j + 1]) <= STOP_RADIUS_M) {
+      j++; n++;
+      lat += (pts[j].lat - lat) / n;
+      lng += (pts[j].lng - lng) / n;
+    }
+    if (pts[j].time - pts[i].time >= STOP_MIN_MS)
+      stops.push({ lat, lng, start: pts[i].time, end: pts[j].time });
+    i = j + 1;
+  }
+  return stops;
+}
+
+function fmtDateTime(t: number) {
+  return new Date(t).toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function fmtDur(ms: number) {
+  const min = Math.round(ms / 60_000);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)}h ${min % 60}min`;
+}
+
+// Polyline + per-point dots + start marker + stop markers, as one layer group
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildRouteLayer(history: LocPoint[], stops: Stop[]): any {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const L = (window as any).L;
+  const group = L.layerGroup();
+
+  L.polyline(history.map(p => [p.lat, p.lng]),
+    { color: '#3b82f6', weight: 3, opacity: 0.75 }).addTo(group);
+
+  const step = Math.max(1, Math.ceil(history.length / MAX_DOTS));
+  history.forEach((p, idx) => {
+    if (idx % step !== 0 && idx !== history.length - 1) return;
+    const kmh = p.speed != null ? ` · ${(p.speed * 3.6).toFixed(0)} km/h` : '';
+    L.circleMarker([p.lat, p.lng],
+      { radius: 3.5, weight: 1, color: '#1d4ed8', fillColor: '#60a5fa', fillOpacity: 0.9 })
+      .bindPopup(`<b>${fmtDateTime(p.time)}</b>${kmh}`)
+      .addTo(group);
+  });
+
+  if (history.length) {
+    const first = history[0];
+    L.circleMarker([first.lat, first.lng],
+      { radius: 6, weight: 2, color: '#15803d', fillColor: '#22c55e', fillOpacity: 1 })
+      .bindPopup(`<b>Início</b><br>${fmtDateTime(first.time)}`)
+      .addTo(group);
+  }
+
+  stops.forEach(s => {
+    L.circleMarker([s.lat, s.lng],
+      { radius: 9, weight: 2, color: '#b45309', fillColor: '#f59e0b', fillOpacity: 0.9 })
+      .bindPopup(
+        `<b>⏸ Parado ${fmtDur(s.end - s.start)}</b><br>` +
+        `Chegou: ${fmtDateTime(s.start)}<br>Saiu: ${fmtDateTime(s.end)}`)
+      .addTo(group);
+  });
+
+  return group;
 }
 
 function loadScript(src: string): Promise<void> {
@@ -57,7 +140,7 @@ function loadLink(href: string) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeMap(el: HTMLElement, center: [number, number]): any {
   const L = (window as any).L;
-  const m = L.map(el, { zoomControl: true }).setView(center, 15);
+  const m = L.map(el, { zoomControl: true, preferCanvas: true }).setView(center, 15);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(m);
   return m;
 }
@@ -103,14 +186,14 @@ export default function MonitorPage() {
   const showRouteRef       = useRef(false);
 
   // Leaflet refs — main map
-  const mapRef      = useRef<unknown>(null);
-  const markerRef   = useRef<unknown>(null);
-  const polylineRef = useRef<unknown>(null);
+  const mapRef        = useRef<unknown>(null);
+  const markerRef     = useRef<unknown>(null);
+  const routeLayerRef = useRef<unknown>(null);
 
   // Leaflet refs — fullscreen map
-  const mapFullRef      = useRef<unknown>(null);
-  const markerFullRef   = useRef<unknown>(null);
-  const polylineFullRef = useRef<unknown>(null);
+  const mapFullRef        = useRef<unknown>(null);
+  const markerFullRef     = useRef<unknown>(null);
+  const routeLayerFullRef = useRef<unknown>(null);
 
   useEffect(() => { activeDeviceRef.current  = activeDeviceId;  }, [activeDeviceId]);
   useEffect(() => { activeStreamsRef.current  = activeStreams;   }, [activeStreams]);
@@ -145,14 +228,13 @@ export default function MonitorPage() {
     m.setView(ll, 16);
   }, []);
 
-  const updatePolyline = useCallback((history: LocPoint[], show: boolean) => {
+  const updateRoute = useCallback((history: LocPoint[], show: boolean) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const L = (window as any).L; const m = mapRef.current as any;
     if (!L || !m) return;
-    if (polylineRef.current) { (polylineRef.current as any).remove(); polylineRef.current = null; }
+    if (routeLayerRef.current) { (routeLayerRef.current as any).remove(); routeLayerRef.current = null; }
     if (show && history.length > 1) {
-      polylineRef.current = L.polyline(history.map(p => [p.lat, p.lng]),
-        { color: '#3b82f6', weight: 3, opacity: 0.75 }).addTo(m);
+      routeLayerRef.current = buildRouteLayer(history, detectStops(history)).addTo(m);
     }
   }, []);
 
@@ -172,25 +254,23 @@ export default function MonitorPage() {
       (markerFullRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`).openPopup();
     }
     if (show && history.length > 1) {
-      polylineFullRef.current = L.polyline(history.map(p => [p.lat, p.lng]),
-        { color: '#3b82f6', weight: 3, opacity: 0.75 }).addTo(m);
+      routeLayerFullRef.current = buildRouteLayer(history, detectStops(history)).addTo(m);
     }
   }, []);
 
-  const updatePolylineFull = useCallback((history: LocPoint[], show: boolean) => {
+  const updateRouteFull = useCallback((history: LocPoint[], show: boolean) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const L = (window as any).L; const m = mapFullRef.current as any;
     if (!L || !m) return;
-    if (polylineFullRef.current) { (polylineFullRef.current as any).remove(); polylineFullRef.current = null; }
+    if (routeLayerFullRef.current) { (routeLayerFullRef.current as any).remove(); routeLayerFullRef.current = null; }
     if (show && history.length > 1) {
-      polylineFullRef.current = L.polyline(history.map(p => [p.lat, p.lng]),
-        { color: '#3b82f6', weight: 3, opacity: 0.75 }).addTo(m);
+      routeLayerFullRef.current = buildRouteLayer(history, detectStops(history)).addTo(m);
     }
   }, []);
 
   const destroyFullMap = useCallback(() => {
     if (mapFullRef.current) { (mapFullRef.current as any).remove(); mapFullRef.current = null; }
-    markerFullRef.current = null; polylineFullRef.current = null;
+    markerFullRef.current = null; routeLayerFullRef.current = null;
   }, []);
 
   // Init / destroy fullscreen map when modal opens/closes
@@ -202,15 +282,18 @@ export default function MonitorPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedStream]);
 
-  // Update polyline on main map whenever route toggle or history changes
+  // Update route layer on main map whenever route toggle or history changes
   useEffect(() => {
-    updatePolyline(locationHistory, showRoute);
-  }, [showRoute, locationHistory, updatePolyline]);
+    updateRoute(locationHistory, showRoute);
+  }, [showRoute, locationHistory, updateRoute]);
 
-  // Update polyline on fullscreen map whenever route toggle or history changes
+  // Update route layer on fullscreen map whenever route toggle or history changes
   useEffect(() => {
-    if (expandedStream === 'location') updatePolylineFull(locationHistory, showRoute);
-  }, [showRoute, locationHistory, expandedStream, updatePolylineFull]);
+    if (expandedStream === 'location') updateRouteFull(locationHistory, showRoute);
+  }, [showRoute, locationHistory, expandedStream, updateRouteFull]);
+
+  // Detected stops (>= 5 min within ~40m) — for the labels below the maps
+  const stops = useMemo(() => detectStops(locationHistory), [locationHistory]);
 
   // Fetch persisted history from server (covers gaps while page was closed)
   useEffect(() => {
@@ -328,7 +411,7 @@ export default function MonitorPage() {
 
           // accumulate history locally for live route updates
           // (the server also persists every point — see fetchHistory)
-          const newPt: LocPoint = { lat: loc.lat, lng: loc.lng, time: Date.now() };
+          const newPt: LocPoint = { lat: loc.lat, lng: loc.lng, time: Date.now(), speed: loc.speed };
           setLocationHistory(prev => {
             const last = prev[prev.length - 1];
             if (last && newPt.time - last.time < HISTORY_INTERVAL_MS) return prev;
@@ -394,8 +477,8 @@ export default function MonitorPage() {
     setLocationHistory([]);
     // reset map
     if (mapRef.current) {
-      if (markerRef.current)   { (markerRef.current as any).remove();   markerRef.current   = null; }
-      if (polylineRef.current) { (polylineRef.current as any).remove(); polylineRef.current = null; }
+      if (markerRef.current)     { (markerRef.current as any).remove();     markerRef.current     = null; }
+      if (routeLayerRef.current) { (routeLayerRef.current as any).remove(); routeLayerRef.current = null; }
     }
   }
 
@@ -699,7 +782,7 @@ export default function MonitorPage() {
                 <div id="monitor-map" className="flex-1 min-h-[140px] bg-gray-800" />
                 {location ? (
                   <div className="px-3 py-1.5 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
-                    <span>±{Math.round(location.accuracy)}m · {locationHistory.length} pts</span>
+                    <span>±{Math.round(location.accuracy)}m · {locationHistory.length} pts · {stops.length} paradas</span>
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       <span>{lastUpdate}</span>
@@ -855,7 +938,7 @@ export default function MonitorPage() {
                     </div>
                     <span>±{Math.round(location.accuracy)}m</span>
                     <span className="text-gray-600">
-                      {locationHistory.length} pontos · {HISTORY_RANGES.find(r => r.hours === historyHours)?.label}
+                      {locationHistory.length} pontos · {stops.length} paradas · {HISTORY_RANGES.find(r => r.hours === historyHours)?.label}
                     </span>
                   </div>
                 )}
