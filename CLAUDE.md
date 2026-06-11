@@ -39,7 +39,7 @@ Sistema de reconhecimento facial para inteligência policial.
 - **Frontend/API**: Next.js 14 (App Router) — deploy no **Netlify** (migrado da Vercel em 2026-06-02)
 - **Banco de dados**: Supabase (Postgres + pgvector + Storage + Auth)
 - **Face service**: FastAPI + InsightFace buffalo_l — deploy no Railway (Hobby $5/mês)
-- **URL produção**: https://intel-facial-42bpm.netlify.app
+- **URL produção**: https://paineldigital.netlify.app (site Netlify renomeado — domínio antigo intel-facial-42bpm.netlify.app é 404 desde ~2026-06-06)
 - **Face service**: https://projeto1-production-b575.up.railway.app
 
 ## Deploy (Netlify)

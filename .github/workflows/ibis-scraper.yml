@@ -35,7 +35,7 @@ jobs:
           IBIS_PASS:                ${{ secrets.IBIS_PASS }}
           SUPABASE_URL:             ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          IMPORT_URL:               https://intel-facial-42bpm.netlify.app/api/ibis/import
+          IMPORT_URL:               https://paineldigital.netlify.app/api/ibis/import
           IBIS_IMPORT_TOKEN:        ${{ secrets.IBIS_IMPORT_TOKEN }}
           PREFIXES_PER_RUN:         ${{ github.event.inputs.limit || '15' }}
         run: python scripts/ibis-scraper.py --limit "$PREFIXES_PER_RUN"

@@ -47,7 +47,7 @@ SUPABASE_URL = (os.environ.get("SUPABASE_URL")
                 or os.environ.get("NEXT_PUBLIC_SUPABASE_URL", ""))
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 IMPORT_URL   = os.environ.get("IMPORT_URL",
-               "https://intel-facial-42bpm.netlify.app/api/ibis/import")
+               "https://paineldigital.netlify.app/api/ibis/import")
 IMPORT_TOKEN = os.environ.get("IBIS_IMPORT_TOKEN", "")
 
 SLEEP_S      = 30  # segundos entre buscas — IBIS é infraestrutura gov frágil (OOM confirmado)
@@ -351,6 +351,10 @@ async def main(limit):
                         for off in range(0, len(payload), 15):
                             chunk = payload[off:off + 15]
                             r = importar(chunk)
+                            if r.get("error"):
+                                # import falhando NÃO pode marcar o prefixo como done —
+                                # os registros extraídos se perderiam até o próximo ciclo
+                                raise Exception(f"import falhou: {r['error']}")
                             imp += r.get("imported", 0)
                             skp += r.get("skipped", 0)
                         print(f"importados={imp} existiam={skp}")

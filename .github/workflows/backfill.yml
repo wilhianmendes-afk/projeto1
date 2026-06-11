@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Processar embeddings pendentes
         env:
-          BACKFILL_URL: https://intel-facial-42bpm.netlify.app/api/face/backfill
+          BACKFILL_URL: https://paineldigital.netlify.app/api/face/backfill
           BACKFILL_TOKEN: ${{ secrets.IBIS_IMPORT_TOKEN }}
         run: |
           remaining=1

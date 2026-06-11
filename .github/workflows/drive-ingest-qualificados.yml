@@ -21,7 +21,7 @@ jobs:
             -H "X-Import-Token: ${{ secrets.IBIS_IMPORT_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "{\"limit\": $LIMIT}" \
-            https://intel-facial-42bpm.netlify.app/api/drive/ingest-qualificados)
+            https://paineldigital.netlify.app/api/drive/ingest-qualificados)
           BODY=$(echo "$RESP" | head -n -1)
           CODE=$(echo "$RESP" | tail -n 1)
           echo "$BODY"
