@@ -56,7 +56,7 @@ async function listAllFiles(drive, folderId) {
     do {
       const { data } = await drive.files.list({
         q: `'${currentFolder}' in parents and trashed = false`,
-        fields: "nextPageToken, files(id, name, mimeType, md5Checksum, createdTime, size)",
+        fields: "nextPageToken, files(id, name, mimeType, md5Checksum, createdTime, size, parents)",
         pageSize: 1000,
         pageToken,
       });
@@ -109,7 +109,7 @@ async function main() {
     console.log(`     ✔ Mantendo: ${manter.createdTime?.slice(0, 10)} — ${manter.name}`);
     for (const r of remover) {
       console.log(`     ✖ Remover:  ${r.createdTime?.slice(0, 10)} — ${r.name} [${r.id}]`);
-      paraRemover.push({ id: r.id, name: r.name });
+      paraRemover.push({ id: r.id, name: r.name, parents: r.parents });
       totalParaRemover++;
     }
     console.log();
@@ -128,14 +128,22 @@ async function main() {
   console.log(`\n🗑️  Removendo ${paraRemover.length} arquivo(s)...\n`);
   let removidos = 0;
   let erros = 0;
-  for (const { id, name } of paraRemover) {
+  for (const { id, name, parents } of paraRemover) {
     try {
       await drive.files.delete({ fileId: id });
       console.log(`  ✔ Removido: ${name}`);
       removidos++;
     } catch (err) {
-      console.log(`  ✖ Erro ao remover ${name}: ${err.message}`);
-      erros++;
+      // arquivo enviado por outra conta: só o dono pode deletar, mas o dono da
+      // PASTA pode tirá-lo dela (removeParents) — some do Drive BQ do mesmo jeito
+      try {
+        await drive.files.update({ fileId: id, removeParents: (parents ?? []).join(",") });
+        console.log(`  ✔ Removido da pasta (dono é outra conta): ${name}`);
+        removidos++;
+      } catch (err2) {
+        console.log(`  ✖ Erro ao remover ${name}: ${err.message} / removeParents: ${err2.message}`);
+        erros++;
+      }
     }
   }
   console.log(`\n✅ Concluído: ${removidos} removido(s), ${erros} erro(s).`);
