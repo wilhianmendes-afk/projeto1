@@ -22,7 +22,9 @@ jobs:
           total_embedded=0
           total_skipped=0
           idle_rounds=0
-          max_idle=3
+          # precisa atravessar as páginas já indexadas (cursor sempre começa da página 1;
+          # ~100 arquivos/página, rodada ociosa custa ~2s) antes de alcançar o backlog
+          max_idle=80
 
           while [ "$rounds" -lt "$max_rounds" ]; do
             echo "{\"limit\":5,\"cursor\":$cursor}" > /tmp/req.json
