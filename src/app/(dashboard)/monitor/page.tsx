@@ -5,8 +5,13 @@ import {
   Wifi, WifiOff, Settings, Download, Smartphone,
   Camera, Monitor as MonitorIcon, Mic, MapPin,
   RefreshCw, Gauge, Clock, Trash2,
-  Maximize2, X, ChevronLeft, ChevronRight, Route,
+  Maximize2, X, ChevronLeft, ChevronRight, Route, Locate,
 } from 'lucide-react';
+
+const SPEED_DEADBAND_MS = 1; // GPS speed jitter while stationary — below this, show "Parado"
+function displaySpeedKmh(loc: LocationData) {
+  return loc.speed < SPEED_DEADBAND_MS ? 0 : loc.speed * 3.6;
+}
 
 const DEFAULT_WS_URL = 'wss://server-production-6a5c.up.railway.app';
 const DEFAULT_PASSWORD = 'monitor123';
@@ -184,21 +189,25 @@ export default function MonitorPage() {
   const activeStreamsRef   = useRef<Set<string>>(new Set());
   const locationHistoryRef = useRef<LocPoint[]>([]);
   const showRouteRef       = useRef(false);
+  const expandedStreamRef  = useRef<string | null>(null);
 
   // Leaflet refs — main map
   const mapRef        = useRef<unknown>(null);
   const markerRef     = useRef<unknown>(null);
+  const circleRef     = useRef<unknown>(null);
   const routeLayerRef = useRef<unknown>(null);
 
   // Leaflet refs — fullscreen map
   const mapFullRef        = useRef<unknown>(null);
   const markerFullRef     = useRef<unknown>(null);
+  const circleFullRef     = useRef<unknown>(null);
   const routeLayerFullRef = useRef<unknown>(null);
 
   useEffect(() => { activeDeviceRef.current  = activeDeviceId;  }, [activeDeviceId]);
   useEffect(() => { activeStreamsRef.current  = activeStreams;   }, [activeStreams]);
   useEffect(() => { locationHistoryRef.current = locationHistory; }, [locationHistory]);
   useEffect(() => { showRouteRef.current      = showRoute;       }, [showRoute]);
+  useEffect(() => { expandedStreamRef.current = expandedStream;  }, [expandedStream]);
 
   // fps counter
   useEffect(() => {
@@ -222,11 +231,49 @@ export default function MonitorPage() {
     const L = (window as any).L; const m = mapRef.current as any;
     if (!L || !m) return;
     const ll: [number, number] = [loc.lat, loc.lng];
-    if (!markerRef.current) markerRef.current = L.marker(ll).addTo(m);
-    else (markerRef.current as any).setLatLng(ll);
+    if (!markerRef.current) {
+      markerRef.current = L.marker(ll).addTo(m);
+      m.setView(ll, 16);
+    } else {
+      (markerRef.current as any).setLatLng(ll);
+    }
     (markerRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`);
-    m.setView(ll, 16);
+    if (!circleRef.current) {
+      circleRef.current = L.circle(ll, { radius: loc.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(m);
+    } else {
+      (circleRef.current as any).setLatLng(ll);
+      (circleRef.current as any).setRadius(loc.accuracy);
+    }
   }, []);
+
+  const updateMarkerFull = useCallback((loc: LocationData, ts: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const L = (window as any).L; const m = mapFullRef.current as any;
+    if (!L || !m) return;
+    const ll: [number, number] = [loc.lat, loc.lng];
+    if (!markerFullRef.current) markerFullRef.current = L.marker(ll).addTo(m);
+    else (markerFullRef.current as any).setLatLng(ll);
+    (markerFullRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`);
+    if (!circleFullRef.current) {
+      circleFullRef.current = L.circle(ll, { radius: loc.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(m);
+    } else {
+      (circleFullRef.current as any).setLatLng(ll);
+      (circleFullRef.current as any).setRadius(loc.accuracy);
+    }
+  }, []);
+
+  // Recenter buttons — jump straight back to the device's current location
+  const recenterMain = useCallback(() => {
+    const m = mapRef.current as any;
+    if (!m || !location) return;
+    m.setView([location.lat, location.lng], 17, { animate: true });
+  }, [location]);
+
+  const recenterFull = useCallback(() => {
+    const m = mapFullRef.current as any;
+    if (!m || !location) return;
+    m.setView([location.lat, location.lng], 17, { animate: true });
+  }, [location]);
 
   const updateRoute = useCallback((history: LocPoint[], show: boolean) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -252,6 +299,8 @@ export default function MonitorPage() {
     if (loc) {
       markerFullRef.current = L.marker([loc.lat, loc.lng]).addTo(m);
       (markerFullRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`).openPopup();
+      circleFullRef.current = L.circle([loc.lat, loc.lng],
+        { radius: loc.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(m);
     }
     if (show && history.length > 1) {
       routeLayerFullRef.current = buildRouteLayer(history, detectStops(history)).addTo(m);
@@ -270,7 +319,7 @@ export default function MonitorPage() {
 
   const destroyFullMap = useCallback(() => {
     if (mapFullRef.current) { (mapFullRef.current as any).remove(); mapFullRef.current = null; }
-    markerFullRef.current = null; routeLayerFullRef.current = null;
+    markerFullRef.current = null; circleFullRef.current = null; routeLayerFullRef.current = null;
   }, []);
 
   // Init / destroy fullscreen map when modal opens/closes
@@ -408,6 +457,7 @@ export default function MonitorPage() {
           const ts = new Date().toLocaleString('pt-BR');
           setLastUpdate(ts);
           updateMarker(loc, ts);
+          if (expandedStreamRef.current === 'location') updateMarkerFull(loc, ts);
 
           // accumulate history locally for live route updates
           // (the server also persists every point — see fetchHistory)
@@ -774,12 +824,22 @@ export default function MonitorPage() {
                     {location && (
                       <div className="flex items-center gap-1 text-xs text-gray-500 ml-1">
                         <Gauge className="w-3 h-3" />
-                        <span>{(location.speed * 3.6).toFixed(0)} km/h</span>
+                        <span>{displaySpeedKmh(location).toFixed(0)} km/h</span>
                       </div>
                     )}
                   </div>
                 </div>
-                <div id="monitor-map" className="flex-1 min-h-[140px] bg-gray-800" />
+                <div className="relative flex-1 min-h-[140px]">
+                  <div id="monitor-map" className="absolute inset-0 bg-gray-800" />
+                  {location && (
+                    <button onClick={recenterMain}
+                      title="Centralizar na localização atual"
+                      className="absolute bottom-2 right-2 z-[1000] p-2 rounded-lg bg-gray-900/90 border border-gray-700
+                        text-gray-300 hover:text-white hover:bg-gray-800 shadow-lg transition-colors">
+                      <Locate className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
                 {location ? (
                   <div className="px-3 py-1.5 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
                     <span>±{Math.round(location.accuracy)}m · {locationHistory.length} pts · {stops.length} paradas</span>
@@ -924,7 +984,17 @@ export default function MonitorPage() {
 
             {(expandedStream === 'location') && (
               <div className="w-full h-full flex flex-col">
-                <div id="monitor-map-full" className="flex-1 bg-gray-800" />
+                <div className="relative flex-1">
+                  <div id="monitor-map-full" className="absolute inset-0 bg-gray-800" />
+                  {location && (
+                    <button onClick={recenterFull}
+                      title="Centralizar na localização atual"
+                      className="absolute bottom-4 right-4 z-[1000] p-2.5 rounded-lg bg-gray-900/90 border border-gray-700
+                        text-gray-300 hover:text-white hover:bg-gray-800 shadow-lg transition-colors">
+                      <Locate className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
                 {location && (
                   <div className="flex-shrink-0 bg-gray-900 border-t border-gray-800 px-4 py-3
                       flex items-center gap-6 text-sm text-gray-400">
@@ -934,7 +1004,7 @@ export default function MonitorPage() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Gauge className="w-4 h-4" />
-                      <span>{(location.speed * 3.6).toFixed(0)} km/h</span>
+                      <span>{displaySpeedKmh(location).toFixed(0)} km/h</span>
                     </div>
                     <span>±{Math.round(location.accuracy)}m</span>
                     <span className="text-gray-600">
