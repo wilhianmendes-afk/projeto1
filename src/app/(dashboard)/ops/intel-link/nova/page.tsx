@@ -69,6 +69,10 @@ const PLATAFORMAS_ANUNCIO = [
   { id: "olx",          label: "OLX",           cor: "#6E0AD6", corTexto: "#fff", redirect: "https://www.olx.com.br" },
 ];
 
+function dominioDaUrl(url: string): string {
+  return url.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+}
+
 const PORTAL_CONFIGS = [
   { id: "g1",        label: "G1",        logoId: "g1",     bg: "#CC0000", textColor: "#fff", italic: true,  redirect: "https://g1.globo.com" },
   { id: "record",    label: "Record TV", logoId: "record", bg: "#003087", textColor: "#fff", italic: false, redirect: "https://www.recordtv.com.br" },
@@ -800,6 +804,12 @@ function InstagramComposer({ onImageReady, onMetaReady }: {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Campos */}
         <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">Endereço</label>
+            <p className="font-mono text-sm text-gray-400 bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2.5">
+              instagram.com
+            </p>
+          </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1.5">Conta Instagram</label>
             <input
@@ -1767,6 +1777,12 @@ export default function NovaInvestigacaoPage() {
               /* G1 / Record / SBT / Band */
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1.5">Endereço</label>
+                    <p className="font-mono text-sm text-gray-400 bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2.5">
+                      {dominioDaUrl(PORTAL_CONFIGS.find((p) => p.id === reportagemPortal)?.redirect ?? "https://g1.globo.com")}
+                    </p>
+                  </div>
                   <div>
                     <label className="block text-xs text-gray-400 mb-1.5">Título</label>
                     <input
