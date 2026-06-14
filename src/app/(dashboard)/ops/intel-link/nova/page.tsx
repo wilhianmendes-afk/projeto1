@@ -506,7 +506,7 @@ function CapturarPrevia({ previewRef, onImageReady, bgColor = "#f3f4f6", inteiro
 
 // ─── Compositor de Imagem ─────────────────────────────────────────────────────
 
-function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: string) => void; defaultLogoId?: string }) {
+function ImageComposer({ onImageReady, defaultLogoId, dominio }: { onImageReady: (url: string) => void; defaultLogoId?: string; dominio?: string }) {
   const selectedLogo = LOGOS.find((l) => l.id === defaultLogoId) ?? LOGOS[0];
   const [faceDataUrl, setFaceDataUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -532,6 +532,19 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
     // Logo na metade esquerda
     drawLogoOnCanvas(ctx, selectedLogo, 0, 0, W / 2, H);
 
+    // Domínio na base da foto (metade direita)
+    const drawDominio = () => {
+      if (!dominio) return;
+      const barH = H * 0.09;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(W / 2, H - barH, W / 2, barH);
+      ctx.fillStyle = "#fff";
+      ctx.font = `bold ${barH * 0.42}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(dominio, W * 3 / 4, H - barH / 2);
+    };
+
     // Foto na metade direita
     if (faceDataUrl) {
       const img = new Image();
@@ -548,6 +561,7 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
           sy = (img.height - sh) / 2;
         }
         ctx.drawImage(img, sx, sy, sw, sh, W / 2, 0, dstW, dstH);
+        drawDominio();
         setPreviewUrl(canvas.toDataURL("image/jpeg", 0.95));
       };
       img.src = faceDataUrl;
@@ -560,9 +574,10 @@ function ImageComposer({ onImageReady, defaultLogoId }: { onImageReady: (url: st
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Adicione uma foto", W * 3 / 4, H / 2);
+      drawDominio();
       setPreviewUrl(canvas.toDataURL("image/jpeg", 0.95));
     }
-  }, [selectedLogo, faceDataUrl]);
+  }, [selectedLogo, faceDataUrl, dominio]);
 
   useEffect(() => { compose(); }, [compose]);
 
@@ -688,21 +703,24 @@ function InstagramComposer({ onImageReady, onMetaReady }: {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, S, S);
 
-      // @conta — canto superior esquerdo
+      // instagram.com + @conta — canto superior esquerdo
       ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(0, 0, S, 80);
-      ctx.fillStyle = "white";
-      ctx.font = "bold 38px Arial";
+      ctx.fillRect(0, 0, S, 110);
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.font = "24px Arial";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.shadowColor = "rgba(0,0,0,0.8)";
       ctx.shadowBlur = 8;
-      ctx.fillText(conta || "@conta", 32, 40);
+      ctx.fillText("instagram.com", 32, 28);
+      ctx.fillStyle = "white";
+      ctx.font = "bold 38px Arial";
+      ctx.fillText(conta || "@conta", 32, 76);
       ctx.shadowBlur = 0;
 
       // Ícone do Instagram — canto superior direito
       const iconSize = 58;
-      drawInstagramIcon(ctx, S - iconSize - 18, 11, iconSize);
+      drawInstagramIcon(ctx, S - iconSize - 18, (110 - iconSize) / 2, iconSize);
 
       // Ícone de play (círculo + triângulo)
       const cx = S / 2, cy = S / 2;
@@ -1807,6 +1825,7 @@ export default function NovaInvestigacaoPage() {
                     <ImageComposer
                       key={reportagemPortal}
                       defaultLogoId={PORTAL_CONFIGS.find((p) => p.id === reportagemPortal)?.logoId ?? "g1"}
+                      dominio={dominioDaUrl(PORTAL_CONFIGS.find((p) => p.id === reportagemPortal)?.redirect ?? "https://g1.globo.com")}
                       onImageReady={(url) => setF("og_imagem_url", url)}
                     />
                   </div>
