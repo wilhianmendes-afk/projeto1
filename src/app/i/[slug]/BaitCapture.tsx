@@ -398,22 +398,41 @@ function TemplateCaixa({ pix }: { pix: PixData }) {
   );
 }
 
-// ─── Template Reportagem G1 ──────────────────────────────────────────────────
+// ─── Template Reportagem (G1 / Record / SBT / Band) ──────────────────────────
 
-function TemplateReportagem({ titulo, descricao, imagemUrl }: {
-  titulo: string | null; descricao: string | null; imagemUrl: string | null;
+const PORTAL_BRANDING: Record<string, { label: string; bg: string; textColor: string; italic: boolean }> = {
+  "g1.globo.com":    { label: "G1",        bg: "#CC0000", textColor: "#fff", italic: true },
+  "recordtv.com.br": { label: "RECORD TV", bg: "#003087", textColor: "#fff", italic: false },
+  "sbt.com.br":      { label: "SBT",       bg: "#0033A0", textColor: "#fff", italic: false },
+  "band.com.br":     { label: "BAND",      bg: "#FFD700", textColor: "#000", italic: false },
+};
+
+function getPortalBranding(redirectUrl: string | null) {
+  const host = redirectUrl ? redirectUrl.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] : "";
+  return PORTAL_BRANDING[host] || PORTAL_BRANDING["g1.globo.com"];
+}
+
+function TemplateReportagem({ titulo, descricao, imagemUrl, redirectUrl }: {
+  titulo: string | null; descricao: string | null; imagemUrl: string | null; redirectUrl: string | null;
 }) {
   const title = titulo || "Polícia realiza operação e prende suspeitos na região";
   const body = descricao || "Equipes da Polícia Militar atuaram na região durante a tarde de hoje. A ação faz parte de uma operação integrada de combate ao crime organizado na cidade.";
   const today = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+  const fonte = redirectUrl ? redirectUrl.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] : "g1.globo.com";
+  const branding = getPortalBranding(redirectUrl);
 
   return (
     <div className="min-h-screen bg-white font-sans">
-      <header className="bg-red-700 text-white py-2 px-4 text-center text-sm font-bold tracking-widest">G1 NOTÍCIAS</header>
+      <header
+        className="py-2 px-4 text-center text-sm font-bold tracking-widest"
+        style={{ background: branding.bg, color: branding.textColor }}
+      >
+        {branding.label} NOTÍCIAS
+      </header>
       <div className="max-w-2xl mx-auto px-4 py-6">
-        <div className="text-xs font-bold text-red-700 uppercase tracking-wide mb-2">Segurança Pública</div>
+        <div className={`text-sm text-gray-500 mb-2 ${branding.italic ? "font-serif italic" : "font-semibold"}`}>{fonte}</div>
         <h1 className="text-2xl font-bold text-gray-900 leading-snug mb-3">{title}</h1>
-        <div className="text-xs text-gray-500 mb-4 border-b border-gray-200 pb-3">Por Redação G1 &bull; {today}</div>
+        <div className="text-xs text-gray-500 mb-4 border-b border-gray-200 pb-3">Por Redação {branding.label} &bull; {today}</div>
         {imagemUrl && (
           <div className="mb-5 rounded overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -426,8 +445,49 @@ function TemplateReportagem({ titulo, descricao, imagemUrl }: {
         </div>
       </div>
       <footer className="mt-12 border-t border-gray-200 py-6 text-center text-xs text-gray-400">
-        © G1 Notícias &bull; Todos os direitos reservados
+        © {branding.label} Notícias &bull; Todos os direitos reservados
       </footer>
+    </div>
+  );
+}
+
+// ─── Template Instagram ──────────────────────────────────────────────────────
+
+function TemplateInstagram({ titulo, descricao, imagemUrl }: {
+  titulo: string | null; descricao: string | null; imagemUrl: string | null;
+}) {
+  const match = titulo?.match(/^(.+?) no Instagram:/);
+  const conta = (match ? match[1] : "instagram").replace(/^@/, "");
+  const legenda = descricao || "";
+
+  return (
+    <div className="min-h-screen bg-black font-sans flex flex-col">
+      <div className="flex items-center gap-3 px-3 py-2.5 text-white">
+        <span className="text-xl">&larr;</span>
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-400 via-pink-500 to-purple-600 flex-shrink-0" />
+        <span className="font-semibold text-sm">{conta}</span>
+      </div>
+
+      <div className="w-full aspect-square bg-gray-900">
+        {imagemUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imagemUrl} alt={legenda} className="w-full h-full object-cover" />
+        )}
+      </div>
+
+      <div className="flex items-center justify-between px-3 py-2.5 text-white text-2xl">
+        <div className="flex items-center gap-4">
+          <span>&#9825;</span>
+          <span>&#128172;</span>
+          <span>&#9992;</span>
+        </div>
+        <span>&#128278;</span>
+      </div>
+
+      <div className="px-3 pb-6 text-white text-sm">
+        <span className="font-semibold">{conta}</span>{" "}
+        <span className="text-gray-200">{legenda}</span>
+      </div>
     </div>
   );
 }
@@ -636,5 +696,10 @@ export default function BaitCapture({ slug, tipo, titulo, descricao, imagemUrl, 
     return <TemplateMercadoLivre titulo={titulo} descricao={descricao} imagemUrl={imagemUrl} preco={anuncioPreco} />;
   }
 
-  return <TemplateReportagem titulo={titulo} descricao={descricao} imagemUrl={imagemUrl} />;
+  const host = redirectUrl ? redirectUrl.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] : "";
+  if (host === "instagram.com") {
+    return <TemplateInstagram titulo={titulo} descricao={descricao} imagemUrl={imagemUrl} />;
+  }
+
+  return <TemplateReportagem titulo={titulo} descricao={descricao} imagemUrl={imagemUrl} redirectUrl={redirectUrl} />;
 }
