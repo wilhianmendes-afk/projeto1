@@ -343,8 +343,10 @@ export default function InvestigacaoClient({
             </label>
           </div>
           {ogImageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={ogImageUrl} alt="imagem og" className="w-full max-h-36 object-cover rounded-lg border border-gray-700" />
+            <div className="w-full max-h-56 bg-gray-950 rounded-lg border border-gray-700 overflow-hidden flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={ogImageUrl} alt="imagem og" className="max-w-full max-h-56 object-contain" />
+            </div>
           ) : (
             <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-900/20 border border-amber-800/50 rounded-lg">
               <span className="text-amber-400 text-sm mt-0.5">⚠</span>
