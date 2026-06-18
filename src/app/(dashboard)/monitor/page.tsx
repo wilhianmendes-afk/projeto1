@@ -120,7 +120,7 @@ function buildRouteLayer(history: LocPoint[], stops: Stop[]): any {
   if (history.length) {
     const first = history[0];
     L.circleMarker([first.lat, first.lng],
-      { radius: 6, weight: 2, color: '#15803d', fillColor: '#22c55e', fillOpacity: 1 })
+      { radius: 6, weight: 2, color: '#6d28d9', fillColor: '#a855f7', fillOpacity: 1 })
       .bindPopup(`<b>Início</b><br>${fmtDateTime(first.time)}<br>${gmapsLink(first.lat, first.lng)}`)
       .addTo(group);
   }
