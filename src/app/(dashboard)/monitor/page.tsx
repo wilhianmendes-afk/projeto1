@@ -19,6 +19,7 @@ const HISTORY_INTERVAL_MS = 20_000; // min gap between locally-buffered GPS poin
 const STOP_RADIUS_M = 40;           // consecutive points within this radius = same stop
 const STOP_MIN_MS   = 5 * 60_000;   // stationary for at least 5 min counts as a stop
 const MAX_DOTS      = 1500;         // cap on individual point markers per map
+const MAX_ARROWS    = 150;          // cap on direction-arrow markers per map
 
 const HISTORY_RANGES = [
   { label: '24h',     hours: 24  },
@@ -88,6 +89,23 @@ function fmtDur(ms: number) {
   return `${Math.floor(min / 60)}h ${min % 60}min`;
 }
 
+function gmapsUrl(lat: number, lng: number) {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+}
+
+function gmapsLink(lat: number, lng: number) {
+  return `<a href="${gmapsUrl(lat, lng)}" target="_blank" rel="noopener noreferrer" style="color:#60a5fa">Abrir no Google Maps</a>`;
+}
+
+// Compass bearing (0-360, 0 = north) from point a to point b
+function bearingDeg(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const rad = Math.PI / 180;
+  const y = Math.sin((b.lng - a.lng) * rad) * Math.cos(b.lat * rad);
+  const x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad)
+    - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lng - a.lng) * rad);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
 // Polyline + per-point dots + start marker + stop markers, as one layer group
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildRouteLayer(history: LocPoint[], stops: Stop[]): any {
@@ -104,15 +122,32 @@ function buildRouteLayer(history: LocPoint[], stops: Stop[]): any {
     const kmh = p.speed != null ? ` · ${(p.speed * 3.6).toFixed(0)} km/h` : '';
     L.circleMarker([p.lat, p.lng],
       { radius: 3.5, weight: 1, color: '#1d4ed8', fillColor: '#60a5fa', fillOpacity: 0.9 })
-      .bindPopup(`<b>${fmtDateTime(p.time)}</b>${kmh}`)
+      .bindPopup(`<b>${fmtDateTime(p.time)}</b>${kmh}<br>${gmapsLink(p.lat, p.lng)}`)
       .addTo(group);
   });
+
+  // direction arrows along the route — point toward where the device was heading
+  const arrowStep = Math.max(1, Math.ceil(history.length / MAX_ARROWS));
+  for (let i = 0; i + arrowStep < history.length; i += arrowStep) {
+    const a = history[i], b = history[i + arrowStep];
+    if (haversineM(a, b) < 5) continue; // skip near-stationary segments — noisy heading
+    const brng = bearingDeg(a, b);
+    L.marker([a.lat, a.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="transform:rotate(${brng - 90}deg);color:#1d4ed8;font-size:14px;line-height:14px;font-weight:bold;">&#10148;</div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+      }),
+      interactive: false,
+    }).addTo(group);
+  }
 
   if (history.length) {
     const first = history[0];
     L.circleMarker([first.lat, first.lng],
       { radius: 6, weight: 2, color: '#15803d', fillColor: '#22c55e', fillOpacity: 1 })
-      .bindPopup(`<b>Início</b><br>${fmtDateTime(first.time)}`)
+      .bindPopup(`<b>Início</b><br>${fmtDateTime(first.time)}<br>${gmapsLink(first.lat, first.lng)}`)
       .addTo(group);
   }
 
@@ -121,7 +156,7 @@ function buildRouteLayer(history: LocPoint[], stops: Stop[]): any {
       { radius: 9, weight: 2, color: '#b45309', fillColor: '#f59e0b', fillOpacity: 0.9 })
       .bindPopup(
         `<b>⏸ Parado ${fmtDur(s.end - s.start)}</b><br>` +
-        `Chegou: ${fmtDateTime(s.start)}<br>Saiu: ${fmtDateTime(s.end)}`)
+        `Chegou: ${fmtDateTime(s.start)}<br>Saiu: ${fmtDateTime(s.end)}<br>${gmapsLink(s.lat, s.lng)}`)
       .addTo(group);
   });
 
@@ -148,6 +183,19 @@ function makeMap(el: HTMLElement, center: [number, number]): any {
   const m = L.map(el, { zoomControl: true, preferCanvas: true }).setView(center, 15);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(m);
   return m;
+}
+
+// Green dot while the device is online, red dot showing the last known fix once it goes offline
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeLocationIcon(online: boolean): any {
+  const L = (window as any).L;
+  const color = online ? '#22c55e' : '#ef4444';
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.6);"></div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
 }
 
 export default function MonitorPage() {
@@ -207,6 +255,8 @@ export default function MonitorPage() {
   const circleFullRef     = useRef<unknown>(null);
   const routeLayerFullRef = useRef<unknown>(null);
 
+  const activeDevice = devices.find(d => d.id === activeDeviceId);
+
   useEffect(() => { activeDeviceRef.current  = activeDeviceId;  }, [activeDeviceId]);
   useEffect(() => { activeStreamsRef.current  = activeStreams;   }, [activeStreams]);
   useEffect(() => { locationHistoryRef.current = locationHistory; }, [locationHistory]);
@@ -231,39 +281,49 @@ export default function MonitorPage() {
     mapRef.current = makeMap(el, [-15.78, -47.93]);
   }, []);
 
-  const updateMarker = useCallback((loc: LocationData, ts: string) => {
+  const updateMarker = useCallback((loc: LocationData, ts: string, online: boolean) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const L = (window as any).L; const m = mapRef.current as any;
     if (!L || !m) return;
     const ll: [number, number] = [loc.lat, loc.lng];
+    const color = online ? '#3b82f6' : '#ef4444';
     if (!markerRef.current) {
-      markerRef.current = L.marker(ll).addTo(m);
+      markerRef.current = L.marker(ll, { icon: makeLocationIcon(online) }).addTo(m);
       if (!mapCenteredRef.current) { m.setView(ll, 16); mapCenteredRef.current = true; }
     } else {
       (markerRef.current as any).setLatLng(ll);
+      (markerRef.current as any).setIcon(makeLocationIcon(online));
     }
-    (markerRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`);
+    const label = online ? 'Localização atual' : 'Última localização';
+    (markerRef.current as any).bindPopup(`<b>${label}</b><br>${ts}<br>${gmapsLink(loc.lat, loc.lng)}`);
     if (!circleRef.current) {
-      circleRef.current = L.circle(ll, { radius: loc.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(m);
+      circleRef.current = L.circle(ll, { radius: loc.accuracy, color, weight: 1, fillOpacity: 0.1 }).addTo(m);
     } else {
       (circleRef.current as any).setLatLng(ll);
       (circleRef.current as any).setRadius(loc.accuracy);
+      (circleRef.current as any).setStyle({ color });
     }
   }, []);
 
-  const updateMarkerFull = useCallback((loc: LocationData, ts: string) => {
+  const updateMarkerFull = useCallback((loc: LocationData, ts: string, online: boolean) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const L = (window as any).L; const m = mapFullRef.current as any;
     if (!L || !m) return;
     const ll: [number, number] = [loc.lat, loc.lng];
-    if (!markerFullRef.current) markerFullRef.current = L.marker(ll).addTo(m);
-    else (markerFullRef.current as any).setLatLng(ll);
-    (markerFullRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`);
+    const color = online ? '#3b82f6' : '#ef4444';
+    if (!markerFullRef.current) markerFullRef.current = L.marker(ll, { icon: makeLocationIcon(online) }).addTo(m);
+    else {
+      (markerFullRef.current as any).setLatLng(ll);
+      (markerFullRef.current as any).setIcon(makeLocationIcon(online));
+    }
+    const label = online ? 'Localização atual' : 'Última localização';
+    (markerFullRef.current as any).bindPopup(`<b>${label}</b><br>${ts}<br>${gmapsLink(loc.lat, loc.lng)}`);
     if (!circleFullRef.current) {
-      circleFullRef.current = L.circle(ll, { radius: loc.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(m);
+      circleFullRef.current = L.circle(ll, { radius: loc.accuracy, color, weight: 1, fillOpacity: 0.1 }).addTo(m);
     } else {
       (circleFullRef.current as any).setLatLng(ll);
       (circleFullRef.current as any).setRadius(loc.accuracy);
+      (circleFullRef.current as any).setStyle({ color });
     }
   }, []);
 
@@ -296,7 +356,7 @@ export default function MonitorPage() {
 
   // ── Fullscreen location map ─────────────────────────────────────────────
 
-  const initFullMap = useCallback((loc: LocationData | null, history: LocPoint[], show: boolean, ts: string) => {
+  const initFullMap = useCallback((loc: LocationData | null, history: LocPoint[], show: boolean, ts: string, online: boolean) => {
     const el = document.getElementById('monitor-map-full');
     if (!el || mapFullRef.current) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -306,10 +366,12 @@ export default function MonitorPage() {
     const m = makeMap(el, center);
     mapFullRef.current = m;
     if (loc) {
-      markerFullRef.current = L.marker([loc.lat, loc.lng]).addTo(m);
-      (markerFullRef.current as any).bindPopup(`<b>Localização atual</b><br>${ts}`).openPopup();
+      markerFullRef.current = L.marker([loc.lat, loc.lng], { icon: makeLocationIcon(online) }).addTo(m);
+      const label = online ? 'Localização atual' : 'Última localização';
+      (markerFullRef.current as any)
+        .bindPopup(`<b>${label}</b><br>${ts}<br>${gmapsLink(loc.lat, loc.lng)}`).openPopup();
       circleFullRef.current = L.circle([loc.lat, loc.lng],
-        { radius: loc.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(m);
+        { radius: loc.accuracy, color: online ? '#3b82f6' : '#ef4444', weight: 1, fillOpacity: 0.1 }).addTo(m);
     }
     if (show && history.length > 1) {
       routeLayerFullRef.current = buildRouteLayer(history, detectStops(history)).addTo(m);
@@ -331,14 +393,38 @@ export default function MonitorPage() {
     markerFullRef.current = null; circleFullRef.current = null; routeLayerFullRef.current = null;
   }, []);
 
+  // Last known fix: live GPS while online, falls back to the last persisted
+  // history point (with its own timestamp) once the device drops offline.
+  const displayLoc = useMemo(() => {
+    if (location) return { loc: location, ts: lastUpdate };
+    if (locationHistory.length > 0) {
+      const p = locationHistory[locationHistory.length - 1];
+      const loc: LocationData = { lat: p.lat, lng: p.lng, accuracy: 0, speed: p.speed ?? 0, bearing: 0 };
+      return { loc, ts: new Date(p.time).toLocaleString('pt-BR') };
+    }
+    return null;
+  }, [location, lastUpdate, locationHistory]);
+
   // Init / destroy fullscreen map when modal opens/closes
   useEffect(() => {
     if (expandedStream !== 'location') { destroyFullMap(); return; }
     const t = setTimeout(() =>
-      initFullMap(location, locationHistoryRef.current, showRouteRef.current, lastUpdate), 150);
+      initFullMap(displayLoc?.loc ?? null, locationHistoryRef.current, showRouteRef.current,
+        displayLoc?.ts ?? '', !!activeDevice?.online), 150);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedStream]);
+
+  // Keep both map markers (and their red/green styling) in sync with the
+  // latest known fix and the device's online status — covers both live
+  // updates and the "went offline" transition without a new GPS ping.
+  useEffect(() => {
+    if (!displayLoc) return;
+    const online = !!activeDevice?.online;
+    updateMarker(displayLoc.loc, displayLoc.ts, online);
+    if (expandedStream === 'location') updateMarkerFull(displayLoc.loc, displayLoc.ts, online);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayLoc, activeDevice?.online, expandedStream]);
 
   // Update route layer on main map whenever route toggle or history changes
   useEffect(() => {
@@ -476,8 +562,7 @@ export default function MonitorPage() {
           setLocation(loc);
           const ts = new Date().toLocaleString('pt-BR');
           setLastUpdate(ts);
-          updateMarker(loc, ts);
-          if (expandedStreamRef.current === 'location') updateMarkerFull(loc, ts);
+          // marker styling/popup is handled by the displayLoc effect above
 
           // accumulate history locally for live route updates
           // (the server also persists every point — see fetchHistory)
@@ -502,7 +587,7 @@ export default function MonitorPage() {
     };
 
     ws.onerror = () => setLoginError('Não foi possível conectar.');
-  }, [initMap, updateMarker, renderFrame, playAudio]);
+  }, [initMap, renderFrame, playAudio]);
 
   useEffect(() => {
     const url = localStorage.getItem('monitor_ws_url') || DEFAULT_WS_URL;
@@ -575,7 +660,6 @@ export default function MonitorPage() {
     setRenamingDeviceId(null);
   }
 
-  const activeDevice = devices.find(d => d.id === activeDeviceId);
   const devInfo = activeDeviceId ? deviceInfoMap[activeDeviceId] : null;
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -892,12 +976,19 @@ export default function MonitorPage() {
                     </button>
                   )}
                 </div>
-                {location ? (
+                {displayLoc ? (
                   <div className="px-3 py-1.5 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
-                    <span>±{Math.round(location.accuracy)}m · {locationHistory.length} pts · {stops.length} paradas</span>
+                    <div className="flex items-center gap-1.5">
+                      {!activeDevice.online && <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Offline" />}
+                      <span className={!activeDevice.online ? 'text-red-400' : undefined}>
+                        {activeDevice.online
+                          ? `±${Math.round(location?.accuracy ?? 0)}m · ${locationHistory.length} pts · ${stops.length} paradas`
+                          : `Última localização · ${locationHistory.length} pts`}
+                      </span>
+                    </div>
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      <span>{lastUpdate}</span>
+                      <span>{displayLoc.ts}</span>
                     </div>
                   </div>
                 ) : (
@@ -1047,18 +1138,28 @@ export default function MonitorPage() {
                     </button>
                   )}
                 </div>
-                {location && (
+                {displayLoc && (
                   <div className="flex-shrink-0 bg-gray-900 border-t border-gray-800 px-4 py-3
                       flex items-center gap-6 text-sm text-gray-400">
+                    {!activeDevice?.online && (
+                      <div className="flex items-center gap-1.5 text-red-400 font-medium">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                        <span>Última localização</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-1.5">
                       <Clock className="w-4 h-4" />
-                      <span>{lastUpdate}</span>
+                      <span>{displayLoc.ts}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Gauge className="w-4 h-4" />
-                      <span>{displaySpeedKmh(location).toFixed(0)} km/h</span>
-                    </div>
-                    <span>±{Math.round(location.accuracy)}m</span>
+                    {activeDevice?.online && location && (
+                      <>
+                        <div className="flex items-center gap-1.5">
+                          <Gauge className="w-4 h-4" />
+                          <span>{displaySpeedKmh(location).toFixed(0)} km/h</span>
+                        </div>
+                        <span>±{Math.round(location.accuracy)}m</span>
+                      </>
+                    )}
                     <span className="text-gray-600">
                       {locationHistory.length} pontos · {stops.length} paradas · {HISTORY_RANGES.find(r => r.hours === historyHours)?.label}
                     </span>
