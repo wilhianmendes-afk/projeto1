@@ -19,7 +19,7 @@ const HISTORY_INTERVAL_MS = 20_000; // min gap between locally-buffered GPS poin
 const STOP_RADIUS_M = 40;           // consecutive points within this radius = same stop
 const STOP_MIN_MS   = 5 * 60_000;   // stationary for at least 5 min counts as a stop
 const MAX_DOTS      = 1500;         // cap on individual point markers per map
-const MAX_ARROWS    = 150;          // cap on direction-arrow markers per map
+const STATIONARY_JITTER_M = 12;     // GPS noise floor while parked — ignore drift under this + speed deadband
 
 const HISTORY_RANGES = [
   { label: '24h',     hours: 24  },
@@ -97,15 +97,6 @@ function gmapsLink(lat: number, lng: number) {
   return `<a href="${gmapsUrl(lat, lng)}" target="_blank" rel="noopener noreferrer" style="color:#60a5fa">Abrir no Google Maps</a>`;
 }
 
-// Compass bearing (0-360, 0 = north) from point a to point b
-function bearingDeg(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-  const rad = Math.PI / 180;
-  const y = Math.sin((b.lng - a.lng) * rad) * Math.cos(b.lat * rad);
-  const x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad)
-    - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lng - a.lng) * rad);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
-
 // Polyline + per-point dots + start marker + stop markers, as one layer group
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildRouteLayer(history: LocPoint[], stops: Stop[]): any {
@@ -125,23 +116,6 @@ function buildRouteLayer(history: LocPoint[], stops: Stop[]): any {
       .bindPopup(`<b>${fmtDateTime(p.time)}</b>${kmh}<br>${gmapsLink(p.lat, p.lng)}`)
       .addTo(group);
   });
-
-  // direction arrows along the route — point toward where the device was heading
-  const arrowStep = Math.max(1, Math.ceil(history.length / MAX_ARROWS));
-  for (let i = 0; i + arrowStep < history.length; i += arrowStep) {
-    const a = history[i], b = history[i + arrowStep];
-    if (haversineM(a, b) < 5) continue; // skip near-stationary segments — noisy heading
-    const brng = bearingDeg(a, b);
-    L.marker([a.lat, a.lng], {
-      icon: L.divIcon({
-        className: '',
-        html: `<div style="transform:rotate(${brng - 90}deg);color:#1d4ed8;font-size:14px;line-height:14px;font-weight:bold;">&#10148;</div>`,
-        iconSize: [14, 14],
-        iconAnchor: [7, 7],
-      }),
-      interactive: false,
-    }).addTo(group);
-  }
 
   if (history.length) {
     const first = history[0];
@@ -238,6 +212,7 @@ export default function MonitorPage() {
   const activeDeviceRef    = useRef<string | null>(null);
   const activeStreamsRef   = useRef<Set<string>>(new Set());
   const locationHistoryRef = useRef<LocPoint[]>([]);
+  const settledPosRef      = useRef<{ lat: number; lng: number } | null>(null);
   const showRouteRef       = useRef(false);
   const expandedStreamRef  = useRef<string | null>(null);
   const devicesRef         = useRef<Device[]>([]);
@@ -558,7 +533,21 @@ export default function MonitorPage() {
 
         case 'location': {
           if (msg.deviceId !== activeDeviceRef.current) break;
-          const loc = msg as unknown as LocationData & { type: string; deviceId: string };
+          const rawLoc = msg as unknown as LocationData & { type: string; deviceId: string };
+
+          // Snap to the last settled fix when the new one is within GPS noise
+          // range and the device isn't actually moving — stops the marker
+          // from drifting around while the phone sits still.
+          const settled = settledPosRef.current;
+          const jitterRadius = Math.max(rawLoc.accuracy, STATIONARY_JITTER_M);
+          const isJitter = !!settled
+            && rawLoc.speed < SPEED_DEADBAND_MS
+            && haversineM(settled, rawLoc) < jitterRadius;
+          const loc: LocationData = isJitter
+            ? { ...rawLoc, lat: settled!.lat, lng: settled!.lng }
+            : rawLoc;
+          if (!isJitter) settledPosRef.current = { lat: loc.lat, lng: loc.lng };
+
           setLocation(loc);
           const ts = new Date().toLocaleString('pt-BR');
           setLastUpdate(ts);
@@ -630,6 +619,7 @@ export default function MonitorPage() {
     }
     setActiveDeviceId(id);
     setLocationHistory([]);
+    settledPosRef.current = null;
     mapCenteredRef.current = false;
     // reset map
     if (mapRef.current) {
