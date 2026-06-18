@@ -5,7 +5,7 @@ import {
   Wifi, WifiOff, Settings, Download, Smartphone,
   Camera, Monitor as MonitorIcon, Mic, MapPin,
   RefreshCw, Gauge, Clock, Trash2,
-  Maximize2, X, ChevronLeft, ChevronRight, Route, Locate,
+  Maximize2, X, ChevronLeft, ChevronRight, Route, Locate, Pencil, Check,
 } from 'lucide-react';
 
 const SPEED_DEADBAND_MS = 1; // GPS speed jitter while stationary — below this, show "Parado"
@@ -165,6 +165,8 @@ export default function MonitorPage() {
   const [lastUpdate,     setLastUpdate]     = useState('');
   const [fps,            setFps]            = useState(0);
   const [destroyConfirm, setDestroyConfirm] = useState<Device | null>(null);
+  const [renamingDeviceId, setRenamingDeviceId] = useState<string | null>(null);
+  const [renameValue,    setRenameValue]    = useState('');
 
   const [sidebarOpen,    setSidebarOpen]    = useState(false);
   const [expandedStream, setExpandedStream] = useState<string | null>(null);
@@ -191,6 +193,7 @@ export default function MonitorPage() {
   const showRouteRef       = useRef(false);
   const expandedStreamRef  = useRef<string | null>(null);
   const devicesRef         = useRef<Device[]>([]);
+  const mapCenteredRef     = useRef(false);
 
   // Leaflet refs — main map
   const mapRef        = useRef<unknown>(null);
@@ -235,7 +238,7 @@ export default function MonitorPage() {
     const ll: [number, number] = [loc.lat, loc.lng];
     if (!markerRef.current) {
       markerRef.current = L.marker(ll).addTo(m);
-      m.setView(ll, 16);
+      if (!mapCenteredRef.current) { m.setView(ll, 16); mapCenteredRef.current = true; }
     } else {
       (markerRef.current as any).setLatLng(ll);
     }
@@ -264,17 +267,21 @@ export default function MonitorPage() {
     }
   }, []);
 
-  // Recenter buttons — jump straight back to the device's current location
+  // Recenter buttons — jump to live location or last known point when offline
   const recenterMain = useCallback(() => {
     const m = mapRef.current as any;
-    if (!m || !location) return;
-    m.setView([location.lat, location.lng], 17, { animate: true });
+    if (!m) return;
+    if (location) { m.setView([location.lat, location.lng], 17, { animate: true }); return; }
+    const hist = locationHistoryRef.current;
+    if (hist.length > 0) { const p = hist[hist.length - 1]; m.setView([p.lat, p.lng], 17, { animate: true }); }
   }, [location]);
 
   const recenterFull = useCallback(() => {
     const m = mapFullRef.current as any;
-    if (!m || !location) return;
-    m.setView([location.lat, location.lng], 17, { animate: true });
+    if (!m) return;
+    if (location) { m.setView([location.lat, location.lng], 17, { animate: true }); return; }
+    const hist = locationHistoryRef.current;
+    if (hist.length > 0) { const p = hist[hist.length - 1]; m.setView([p.lat, p.lng], 17, { animate: true }); }
   }, [location]);
 
   const updateRoute = useCallback((history: LocPoint[], show: boolean) => {
@@ -538,6 +545,7 @@ export default function MonitorPage() {
     }
     setActiveDeviceId(id);
     setLocationHistory([]);
+    mapCenteredRef.current = false;
     // reset map
     if (mapRef.current) {
       if (markerRef.current)     { (markerRef.current as any).remove();     markerRef.current     = null; }
@@ -558,6 +566,13 @@ export default function MonitorPage() {
     wsRef.current?.send(JSON.stringify({ type: 'cmd', action: 'remove_device', deviceId }));
     if (activeDeviceId === deviceId) setActiveDeviceId(null);
     setDestroyConfirm(null);
+  }
+
+  function submitRename(deviceId: string) {
+    const name = renameValue.trim();
+    if (!name) { setRenamingDeviceId(null); return; }
+    wsRef.current?.send(JSON.stringify({ type: 'cmd', action: 'rename_device', deviceId, name }));
+    setRenamingDeviceId(null);
   }
 
   const activeDevice = devices.find(d => d.id === activeDeviceId);
@@ -639,7 +654,19 @@ export default function MonitorPage() {
                         <div className="flex items-center gap-2 mb-0.5">
                           <div className={`w-2 h-2 rounded-full flex-shrink-0
                             ${d.online ? 'bg-green-400 shadow-[0_0_4px_#4ade80]' : 'bg-gray-600'}`} />
-                          <span className="text-sm text-white font-medium truncate">{d.name}</span>
+                          {renamingDeviceId === d.id ? (
+                            <form onSubmit={e => { e.preventDefault(); submitRename(d.id); }}
+                              className="flex items-center gap-1 flex-1" onClick={e => e.stopPropagation()}>
+                              <input autoFocus value={renameValue}
+                                onChange={e => setRenameValue(e.target.value)}
+                                onKeyDown={e => e.key === 'Escape' && setRenamingDeviceId(null)}
+                                className="flex-1 min-w-0 text-sm bg-gray-700 text-white px-1.5 py-0.5 rounded border border-gray-500 outline-none focus:border-blue-500" />
+                              <button type="submit" className="p-0.5 text-green-400 hover:text-green-300"><Check className="w-3.5 h-3.5" /></button>
+                              <button type="button" onClick={() => setRenamingDeviceId(null)} className="p-0.5 text-gray-500 hover:text-gray-300"><X className="w-3.5 h-3.5" /></button>
+                            </form>
+                          ) : (
+                            <span className="text-sm text-white font-medium truncate flex-1">{d.name}</span>
+                          )}
                         </div>
                         {d.online && info ? (
                           <div className="flex items-center gap-2 pl-4 text-xs text-gray-500">
@@ -650,11 +677,17 @@ export default function MonitorPage() {
                           <p className="pl-4 text-xs text-gray-600">{d.online ? '...' : 'offline'}</p>
                         )}
                       </div>
-                      <button onClick={e => { e.stopPropagation(); setDestroyConfirm(d); }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded
-                          opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 hover:bg-red-950 transition-all">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5
+                          opacity-0 group-hover:opacity-100 transition-all">
+                        <button onClick={e => { e.stopPropagation(); setRenameValue(d.name); setRenamingDeviceId(d.id); }}
+                          className="p-1 rounded text-gray-600 hover:text-blue-400 hover:bg-blue-950 transition-colors">
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); setDestroyConfirm(d); }}
+                          className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-950 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })
@@ -850,9 +883,9 @@ export default function MonitorPage() {
                 </div>
                 <div className="relative flex-1 min-h-[140px]">
                   <div id="monitor-map" className="absolute inset-0 bg-gray-800" />
-                  {location && (
+                  {(location || locationHistory.length > 0) && (
                     <button onClick={recenterMain}
-                      title="Centralizar na localização atual"
+                      title={location ? 'Centralizar na localização atual' : 'Centralizar na última localização conhecida'}
                       className="absolute bottom-2 right-2 z-[1000] p-2 rounded-lg bg-gray-900/90 border border-gray-700
                         text-gray-300 hover:text-white hover:bg-gray-800 shadow-lg transition-colors">
                       <Locate className="w-4 h-4" />
@@ -1005,9 +1038,9 @@ export default function MonitorPage() {
               <div className="w-full h-full flex flex-col">
                 <div className="relative flex-1">
                   <div id="monitor-map-full" className="absolute inset-0 bg-gray-800" />
-                  {location && (
+                  {(location || locationHistory.length > 0) && (
                     <button onClick={recenterFull}
-                      title="Centralizar na localização atual"
+                      title={location ? 'Centralizar na localização atual' : 'Centralizar na última localização conhecida'}
                       className="absolute bottom-4 right-4 z-[1000] p-2.5 rounded-lg bg-gray-900/90 border border-gray-700
                         text-gray-300 hover:text-white hover:bg-gray-800 shadow-lg transition-colors">
                       <Locate className="w-5 h-5" />
