@@ -75,5 +75,12 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Esquenta a função do /i/[slug] antes de devolver o link pro usuário — evita que
+  // o primeiro crawl do WhatsApp pegue cold start e fique cacheado sem preview.
+  try {
+    await fetch(`https://linkdigital.app.br/i/${slug}`, { cache: "no-store" });
+  } catch {}
+
   return NextResponse.json(data);
 }
