@@ -20,8 +20,8 @@ Sistema de reconhecimento facial para inteligência policial.
 - **MCP consumido pela PCGO**: `search_text` retorna matches do banco + Drive BQ; `search_face` retorna objeto `qualificado: {nome, cpf, vulgo, cidade, uf, foto_url}`
 - **Migration 010 aplicada**: `face_embeddings.source_id` é `text` (não uuid); `face_skipped.source_id` ainda é `uuid`
 - **RPC `get_pending_qualificados` corrigida**: usa `q.id::text` para comparar com `face_embeddings.source_id` (text) e `q.id` direto para `face_skipped.source_id` (uuid)
-- **Face service keep-alive**: workflow `face-keepalive.yml` pinga a cada 5min + auto-redeploy via Railway API (YAML corrigido em 2026-06-03 — bug Python multi-linha quebrava o parser e o cron nunca disparava)
-- **Railway Hobby ativo**: plano $5/mês — face service online
+- **Railway Hobby ativo**: plano $5/mês (crédito de uso — não é valor fixo; uso além do crédito é cobrado à parte)
+- **Railway — economia de custo (2026-09-15)**: `face-keepalive.yml` **removido** (pingava a cada 5min e bloqueava o sleep do Railway) e worker interno de backfill removido de `face-service/main.py` (fazia polling no Supabase a cada 60s pra sempre, também impedindo o sleep — já era redundante com `/api/face/backfill` via `backfill.yml`). `face-service/railway.json` agora tem `"sleepApplication": true` — o serviço dorme após ~10min sem tráfego e é acordado automaticamente pela próxima requisição (busca facial, `backfill.yml`, `drive-index-faces.yml`). Primeira requisição após dormir sofre cold-start (recarrega buffalo_l); `embedImage()` em `src/lib/face-service.ts` já tem retry para 502/503 pensado nesse cenário. Crash real continua coberto por `restartPolicyType: ON_FAILURE` nativo do Railway. **Atenção**: Config as Code (`railway.json`) é depreciado pelo Railway e deixa de ser lido em 2026-12-01 — `sleepApplication` precisará ser migrado para Infrastructure as Code ou configurado direto no painel antes disso.
 - **Perfil viewer (coruja)**: usuário somente leitura; Chat Dev oculto para viewer (`layout.tsx` verifica role)
 - **Busca facial**: resultados MEU DRIVE abrem ComparisonModal; badges alinhados; `top_results` agora usa proxy `/api/drive/photo/:id` para registros drive_bq (bug corrigido em 2026-06-03)
 - **Deduplicação Drive BQ**: `deduplicate-drive.yml` (todo domingo 03h UTC)
@@ -115,11 +115,9 @@ NEXT_TELEMETRY_DISABLED=1
 ## Variáveis de ambiente (Railway — face-service)
 ```
 MIN_DET_SCORE=0.6
-SUPABASE_URL=
-SUPABASE_SERVICE_KEY=
-WORKER_BATCH=10
-WORKER_SLEEP=60
 ```
+
+> `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `WORKER_BATCH`, `WORKER_SLEEP` não são mais usadas — eram do worker interno de backfill removido em 2026-09-15 (ver seção Railway acima). Podem ser removidas do Railway.
 
 ## Google Drive — autenticação dupla
 
@@ -291,7 +289,6 @@ face-service/
 | `backfill.yml` | **a cada 2h** + manual | Indexação embeddings de qualificados IBIS/Drive (era 15min — alterado em 2026-06-05) |
 | `drive-index-faces.yml` | **a cada 12h** + manual | Indexação rostos Drive BQ (batch=5; era 2h — alterado em 2026-06-05); para após 3 rodadas idle consecutivas (2026-06-05) |
 | `drive-ingest-qualificados.yml` | **DESABILITADO** + manual | Ingestão Drive BQ → tabela qualificados (OCR+dedup) |
-| `face-keepalive.yml` | a cada 5min | Keep-alive + auto-recovery Railway (chama Railway diretamente — não consome Netlify functions) |
 | `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ |
 | `ibis-scraper.yml` | desabilitado (ibis.app.br bloqueia IPs de datacenter) | — substituído pela tarefa local |
 

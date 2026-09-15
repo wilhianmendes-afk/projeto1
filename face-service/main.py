@@ -4,18 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from insightface.app import FaceAnalysis
 import numpy as np
 from PIL import Image, ImageOps
-import io, time, os, traceback, asyncio, json, logging
-import urllib.request, urllib.error
+import io, time, os, traceback, asyncio, logging
 from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("worker")
 
 MIN_DET_SCORE = float(os.getenv("MIN_DET_SCORE", "0.45"))
-SUPABASE_URL  = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY  = os.getenv("SUPABASE_SERVICE_KEY", "")
-WORKER_BATCH  = int(os.getenv("WORKER_BATCH", "10"))
-WORKER_SLEEP  = int(os.getenv("WORKER_SLEEP", "60"))
 
 # Carregado em background — não bloqueia o uvicorn na inicialização
 _fa = None
@@ -116,143 +111,15 @@ def process_image(raw: bytes, t0: float, min_score: float = MIN_DET_SCORE, fa: F
     }
 
 
-# ── worker helpers (stdlib urllib, sem dependências externas) ─────────────────
-
-def _sb_headers(extra: dict = {}) -> dict:
-    return {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        **extra,
-    }
-
-
-def _http_post(url: str, payload: dict, headers: dict) -> None:
-    data = json.dumps(payload).encode()
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=15):
-            pass
-    except urllib.error.HTTPError:
-        pass  # conflitos de upsert (409) são ignorados
-
-
-def _http_get(url: str, timeout: int = 10) -> bytes:
-    req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
-
-
-def _fetch_pending(batch: int) -> list:
-    url = f"{SUPABASE_URL}/rest/v1/rpc/get_pending_qualificados"
-    data = json.dumps({"batch_limit": batch}).encode()
-    req = urllib.request.Request(url, data=data, headers=_sb_headers(), method="POST")
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        result = json.loads(resp.read())
-        return result if isinstance(result, list) else []
-
-
-def _process_pessoa_sync(pessoa: dict, fa: FaceAnalysis) -> int:
-    extras = pessoa.get("fotos_extras") or []
-    urls = [u for u in [pessoa["foto_url"]] + (extras if isinstance(extras, list) else []) if u]
-    embedded = 0
-    service_error = False
-
-    for url in urls:
-        try:
-            raw = _http_get(url)
-        except Exception:
-            continue
-
-        try:
-            result = process_image(raw, time.time(), MIN_DET_SCORE, fa)
-            if result["count"] == 0 and result["total_detected"] > 0:
-                result = process_image(raw, time.time(), 0.35, fa)
-        except Exception:
-            service_error = True
-            continue
-
-        for face_index, face in enumerate(result["faces"]):
-            _http_post(
-                f"{SUPABASE_URL}/rest/v1/face_embeddings"
-                "?on_conflict=source,source_id,photo_url,face_index",
-                {
-                    "source":       "qualificados",
-                    "source_id":    pessoa["id"],
-                    "source_label": pessoa["nome"],
-                    "photo_url":    url,
-                    "embedding":    json.dumps(face["embedding"]),
-                    "bbox":         face["bbox"],
-                    "det_score":    face["det_score"],
-                    "face_index":   face_index,
-                },
-                _sb_headers({"Prefer": "resolution=ignore-duplicates"}),
-            )
-            embedded += 1
-
-    if embedded == 0 and not service_error:
-        _http_post(
-            f"{SUPABASE_URL}/rest/v1/face_skipped"
-            "?on_conflict=source,source_id",
-            {
-                "source":       "qualificados",
-                "source_id":    pessoa["id"],
-                "source_label": pessoa["nome"],
-                "reason":       "no_face_detected",
-            },
-            _sb_headers({"Prefer": "resolution=merge-duplicates"}),
-        )
-
-    return embedded
-
-
-async def backfill_worker():
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        log.info("Worker desabilitado: SUPABASE_URL ou SUPABASE_SERVICE_KEY ausente")
-        return
-
-    # Aguarda modelo estar pronto antes de iniciar o worker
-    log.info("Worker aguardando modelo...")
-    await _fa_ready.wait()
-    fa = _fa
-
-    log.info("Backfill worker iniciado (batch=%d, sleep=%ds)", WORKER_BATCH, WORKER_SLEEP)
-    loop = asyncio.get_running_loop()
-
-    while True:
-        try:
-            queue = await loop.run_in_executor(None, _fetch_pending, WORKER_BATCH)
-
-            if not queue:
-                log.info("Fila vazia — aguardando %ds", WORKER_SLEEP)
-                await asyncio.sleep(WORKER_SLEEP)
-                continue
-
-            log.info("Processando lote de %d", len(queue))
-            for pessoa in queue:
-                n = await loop.run_in_executor(None, _process_pessoa_sync, pessoa, fa)
-                log.info("  %s → %d face(s)", pessoa.get("nome", pessoa.get("id")), n)
-
-        except asyncio.CancelledError:
-            log.info("Worker encerrado")
-            return
-        except Exception as e:
-            log.error("Worker erro: %s — retry em 30s", e)
-            await asyncio.sleep(30)
-
-
 # ── app ───────────────────────────────────────────────────────────────────────
+# Backfill de embeddings roda fora deste serviço (GitHub Actions → /api/face/backfill),
+# não como worker interno: um loop 24/7 aqui geraria tráfego de saída constante ao
+# Supabase, o que impede o Railway de colocar o serviço para dormir (sleepApplication).
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     model_task = asyncio.create_task(_load_model_bg())
-    worker_task = asyncio.create_task(backfill_worker())
     yield
-    worker_task.cancel()
-    try:
-        await worker_task
-    except asyncio.CancelledError:
-        pass
     model_task.cancel()
 
 
