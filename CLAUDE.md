@@ -12,7 +12,7 @@ Sistema de reconhecimento facial para inteligência policial.
   - `listBQFolderPage` — lista **uma página de uma pasta por chamada** com cursor `DriveCursor`; usada por `index-faces` para evitar re-listar 16k arquivos a cada rodada
   - **NÃO usar `in ancestors` — retorna 400 Invalid Value na Drive API**
 - **Ingestão Drive BQ → qualificados**: endpoint `/api/drive/ingest-qualificados` + workflow `drive-ingest-qualificados.yml` (a cada 3h)
-- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 12h**); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas; **encerra antecipadamente após 3 rodadas consecutivas sem novos embeddings** (economiza créditos Netlify quando Drive já está indexado)
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 4h**); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas; **encerra antecipadamente após 80 rodadas consecutivas sem novos embeddings** (economiza créditos Netlify quando Drive já está indexado); só chama o Railway (`embedImage`) para arquivos ainda sem embedding — página já indexada não acorda o face service
 - **Dashboard**: cards IBIS (server, rápido) + Drive/Total (client async, cache 5min); página carrega imediatamente
 - **Página Indexação**: stats Supabase server-side; cobertura/pendentes calculados client-side após fetch `/api/drive/count`
 - **Cache compartilhado Drive count**: `src/lib/drive-count-cache.ts` — TTL 5min; reutilizado por `DriveCards` e `IndexacaoStats`
@@ -145,7 +145,7 @@ Fotos em `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_FOLDER_ID`) alimentam 
 
 ### Pipeline 1 — Ingestão como qualificados (`/api/drive/ingest-qualificados`)
 - Objetivo: criar fichas na tabela `qualificados` (fonte=`drive_bq`) para aparecer no `search_text` do MCP
-- Fluxo: lista Drive → OCR (extrai nome/CPF/vulgo/genitora/nascimento) → dedup (CPF ou nome+nascimento) → upload Storage → insert `qualificados` → limpa entradas `drive_bq` antigas → Railway worker gera embedding sob `source='qualificados'`
+- Fluxo: lista Drive → OCR (extrai nome/CPF/vulgo/genitora/nascimento) → dedup (CPF ou nome+nascimento) → upload Storage → insert `qualificados` → limpa entradas `drive_bq` antigas → `backfill.yml` (a cada 2h) gera embedding sob `source='qualificados'` via `/api/face/backfill`
 - Dedup: arquivos descartados ficam em `face_skipped(source='drive_bq_ingest', reason='duplicate_cpf'|'duplicate_nome'|'no_ocr')` — não reprocessados
 - Workflow `drive-ingest-qualificados.yml` a cada 3h
 
@@ -153,7 +153,7 @@ Fotos em `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_FOLDER_ID`) alimentam 
 - Objetivo: gerar embeddings de arquivos Drive que ainda não têm qualificado no banco
 - Fonte: `source = "drive_bq"` em `face_embeddings`; aparecem na busca facial com badge **"MEU DRIVE"**
 - Batch de **5 fotos por chamada** (Vercel 60s)
-- Workflow `drive-index-faces.yml` a cada 2h; python3 com `|| echo` — resiliente a timeout do curl
+- Workflow `drive-index-faces.yml` a cada 4h; python3 com `|| echo` — resiliente a timeout do curl
 
 ### Listagem de arquivos
 - **Implementação atual**: `listBQFolderFiles(folderId, fields)` em `src/lib/google-drive.ts` — BFS 2 níveis: lista raiz com `in parents`, depois subpastas, depois arquivos de cada subpasta
@@ -273,13 +273,13 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 
 ```
 face-service/
-├── main.py       # FastAPI + worker de backfill contínuo
+├── main.py       # FastAPI — só endpoints /health, /embed, /embed-raw
 ├── Dockerfile    # buffalo_l pré-baixado no build
-└── railway.json  # watchPatterns: face-service/**
+└── railway.json  # watchPatterns: face-service/**; sleepApplication: true
 ```
 
 - Chamadas Vercel → Railway usam `/embed-raw` (binário puro) — NÃO multipart
-- Worker de backfill roda no mesmo container via `lifespan`
+- Sem worker interno de backfill (removido em 2026-09-15) — geraria tráfego constante ao Supabase e impediria o sleep; backfill é feito de fora via `backfill.yml`/`drive-index-faces.yml`
 - NÃO usar httpx no requirements.txt — causa crash silencioso no Railway
 
 ## GitHub Actions — workflows
@@ -287,7 +287,7 @@ face-service/
 |---------|---------|--------|
 | `deploy.yml` | **manual (workflow_dispatch)** | Deploy no Netlify — alterado em 2026-06-05 para economizar créditos |
 | `backfill.yml` | **a cada 2h** + manual | Indexação embeddings de qualificados IBIS/Drive (era 15min — alterado em 2026-06-05) |
-| `drive-index-faces.yml` | **a cada 12h** + manual | Indexação rostos Drive BQ (batch=5; era 2h — alterado em 2026-06-05); para após 3 rodadas idle consecutivas (2026-06-05) |
+| `drive-index-faces.yml` | **a cada 4h** + manual | Indexação rostos Drive BQ (batch=5); para após 80 rodadas idle consecutivas; só acorda o Railway quando há arquivo sem embedding na página |
 | `drive-ingest-qualificados.yml` | **DESABILITADO** + manual | Ingestão Drive BQ → tabela qualificados (OCR+dedup) |
 | `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ |
 | `ibis-scraper.yml` | desabilitado (ibis.app.br bloqueia IPs de datacenter) | — substituído pela tarefa local |
