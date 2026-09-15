@@ -45,10 +45,7 @@ function getAdminClient() {
 function isAuthorized(req: NextRequest): boolean {
   // Aceita token de cron/automação
   const token = req.headers.get("x-backfill-token") ?? req.headers.get("authorization")?.replace("Bearer ", "");
-  if (token && token === process.env.IBIS_IMPORT_TOKEN) return true;
-  // Aceita chamada interna do Vercel Cron
-  if (req.headers.get("x-vercel-cron") === "1") return true;
-  return false;
+  return !!token && token === process.env.IBIS_IMPORT_TOKEN;
 }
 
 async function runBackfill(limit: number) {

@@ -19,8 +19,7 @@ function getAdminClient() {
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get("x-import-token");
-  const cronHeader = req.headers.get("x-vercel-cron");
-  if (token !== process.env.IBIS_IMPORT_TOKEN && !cronHeader) {
+  if (token !== process.env.IBIS_IMPORT_TOKEN) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 

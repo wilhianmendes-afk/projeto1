@@ -154,10 +154,8 @@ async function syncFolder(
 }
 
 export async function POST(req: NextRequest) {
-  // Autenticação: Vercel Cron ou token manual
   const auth = req.headers.get("authorization");
-  const isCron = req.headers.get("x-vercel-cron") === "1";
-  if (!isCron && auth !== `Bearer ${IBIS_TOKEN}`) {
+  if (auth !== `Bearer ${IBIS_TOKEN}`) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
