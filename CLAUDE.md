@@ -1,17 +1,10 @@
 # Intel Facial — 42º BPM
 Sistema de reconhecimento facial para inteligência policial.
 
-> ⚠️ **DEPLOY NETLIFY PENDENTE (2026-09-15)**: código já commitado e pushado em
-> `claude/check-github-access-v30TG`, mas o deploy é manual (`deploy.yml` via
-> workflow_dispatch) e ainda **não foi disparado**. Mudanças esperando ir pro ar:
-> - fix(security): remoção do bypass de auth via header `x-vercel-cron` (commit `b32d16a`)
-> - feat: remoção da integração de saída com o Banco do Bruno (commit `43b54d9`)
->
-> Pra deployar: GitHub → Actions → "Deploy to Netlify" → "Run workflow" (branch
-> `claude/check-github-access-v30TG`). O usuário pediu pra empilhar mais mudanças
-> antes de disparar — perguntar se ainda há algo pendente antes de rodar o deploy.
-> (Os commits de Railway/face-service — sleep + remoção do keepalive — **já estão
-> em produção**, o Railway faz deploy automático via `watchPatterns`.)
+> ✅ **Deploy Netlify realizado em 2026-09-15** (run `34997349425`, sucesso): foram pro ar
+> o fix(security) de remoção do bypass de auth via header `x-vercel-cron` (`b32d16a`),
+> a remoção da integração de saída com o Banco do Bruno (`43b54d9`) e o badge de status
+> de indexação facial no lightbox MEU DRIVE (`f125f82`).
 
 ## Estado atual (2026-06-05)
 
