@@ -2,7 +2,7 @@ name: Drive - Indexacao Facial BQ
 
 on:
   schedule:
-    - cron: "0 */4 * * *"    # a cada 4h enquanto há backlog (early-exit barateia runs ociosas)
+    - cron: "0 */12 * * *"   # a cada 12h — revertido do catch-up de 4h (2026-09-15, economia Railway)
   workflow_dispatch:         # disparo manual
 
 jobs:

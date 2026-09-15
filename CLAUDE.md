@@ -24,7 +24,7 @@ Sistema de reconhecimento facial para inteligência policial.
   - `listBQFolderPage` — lista **uma página de uma pasta por chamada** com cursor `DriveCursor`; usada por `index-faces` para evitar re-listar 16k arquivos a cada rodada
   - **NÃO usar `in ancestors` — retorna 400 Invalid Value na Drive API**
 - **Ingestão Drive BQ → qualificados**: endpoint `/api/drive/ingest-qualificados` + workflow `drive-ingest-qualificados.yml` (a cada 3h)
-- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 4h**); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas; **encerra antecipadamente após 80 rodadas consecutivas sem novos embeddings** (economiza créditos Netlify quando Drive já está indexado); só chama o Railway (`embedImage`) para arquivos ainda sem embedding — página já indexada não acorda o face service
+- **Indexação facial do Drive BQ**: endpoint `/api/drive/index-faces` + workflow `drive-index-faces.yml` (**a cada 12h** — reduzido de 4h em 2026-09-15 para economia adicional no Railway); usa cursor paginado — 100 arquivos por página, 5 embeddings por rodada, até 200 rodadas; **encerra antecipadamente após 80 rodadas consecutivas sem novos embeddings** (economiza créditos Netlify quando Drive já está indexado); só chama o Railway (`embedImage`) para arquivos ainda sem embedding — página já indexada não acorda o face service
 - **Dashboard**: cards IBIS (server, rápido) + Drive/Total (client async, cache 5min); página carrega imediatamente
 - **Página Indexação**: stats Supabase server-side; cobertura/pendentes calculados client-side após fetch `/api/drive/count`
 - **Cache compartilhado Drive count**: `src/lib/drive-count-cache.ts` — TTL 5min; reutilizado por `DriveCards` e `IndexacaoStats`
@@ -163,7 +163,7 @@ Fotos em `bancodequalificados@gmail.com` (pasta `DRIVE_BQ_FOLDER_ID`) alimentam 
 - Objetivo: gerar embeddings de arquivos Drive que ainda não têm qualificado no banco
 - Fonte: `source = "drive_bq"` em `face_embeddings`; aparecem na busca facial com badge **"MEU DRIVE"**
 - Batch de **5 fotos por chamada** (Vercel 60s)
-- Workflow `drive-index-faces.yml` a cada 4h; python3 com `|| echo` — resiliente a timeout do curl
+- Workflow `drive-index-faces.yml` a cada 12h; python3 com `|| echo` — resiliente a timeout do curl
 
 ### Listagem de arquivos
 - **Implementação atual**: `listBQFolderFiles(folderId, fields)` em `src/lib/google-drive.ts` — BFS 2 níveis: lista raiz com `in parents`, depois subpastas, depois arquivos de cada subpasta
@@ -289,12 +289,12 @@ face-service/
 |---------|---------|--------|
 | `deploy.yml` | **manual (workflow_dispatch)** | Deploy no Netlify — alterado em 2026-06-05 para economizar créditos |
 | `backfill.yml` | **a cada 2h** + manual | Indexação embeddings de qualificados IBIS/Drive (era 15min — alterado em 2026-06-05) |
-| `drive-index-faces.yml` | **a cada 4h** + manual | Indexação rostos Drive BQ (batch=5); para após 80 rodadas idle consecutivas; só acorda o Railway quando há arquivo sem embedding na página |
+| `drive-index-faces.yml` | **a cada 12h** + manual | Indexação rostos Drive BQ (batch=5); para após 80 rodadas idle consecutivas; só acorda o Railway quando há arquivo sem embedding na página; reduzido de 4h para 12h em 2026-09-15 (economia adicional a pedido do usuário) |
 | `drive-ingest-qualificados.yml` | **DESABILITADO** + manual | Ingestão Drive BQ → tabela qualificados (OCR+dedup) |
 | `deduplicate-drive.yml` | todo domingo 03h UTC + manual | Remove fotos byte-idênticas do Drive BQ |
 | `ibis-scraper.yml` | desabilitado (ibis.app.br bloqueia IPs de datacenter) | — substituído pela tarefa local |
 
-> **IBIS scraper local**: tarefa `"IBIS Scraper 42BPM"` no Agendador de Tarefas Windows (PC do usuário); `scripts/run-ibis-scraper.bat`; log em `scripts/ibis-scraper.log`; a cada 2h
+> **IBIS scraper local**: tarefa `"IBIS Scraper 42BPM"` no Agendador de Tarefas Windows (PC do usuário); `scripts/run-ibis-scraper.bat`; log em `scripts/ibis-scraper.log`; 1x/dia (11h) — reduzido de 2/2h em 2026-09-14 para economizar créditos Railway/Netlify
 
 ## MCP `/api/mcp/banco` — consumido por PCGO e Bruno
 
@@ -344,7 +344,7 @@ Varredura sistemática do IBIS — roda via Agendador de Tarefas Windows (PC loc
 - `scripts/ibis-scraper.py` — scraper de produção (headless, Playwright)
 - `scripts/run-ibis-scraper.bat` — wrapper com encoding UTF-8; log em `scripts/ibis-scraper.log`
 - `scripts/ibis-scraper-test.py` — script de diagnóstico (headless=False)
-- Tarefa Windows: `"IBIS Scraper 42BPM"` — a cada 2h, PC deve estar ligado e logado
+- Tarefa Windows: `"IBIS Scraper 42BPM"` — 1x/dia (11h), PC deve estar ligado e logado (reduzido de 2/2h em 2026-09-14)
 
 **Estrutura de colunas do IBIS** (pessoaConsulta.xhtml):
 ```
@@ -364,6 +364,6 @@ FOTO | RG|CPF | NOME | ALCUNHA | GENITORA | DN
 - OOM retorna `<partial-response><error>OutOfMemoryError</error></partial-response>` — prefixo marcado como `error` e scraper continua
 
 **Ciclo de atualização contínua:**
-- Ciclo completo (676 prefixos × 15 prefixos/rodada × 2h) ≈ 5 dias
+- Ciclo completo (676 prefixos × 15 prefixos/rodada × 1x/dia) ≈ 45 dias (era ~5 dias com 2/2h)
 - Ao finalizar, reseta automaticamente
 - Deduplicação por `fonte_id` no `/api/ibis/import`
