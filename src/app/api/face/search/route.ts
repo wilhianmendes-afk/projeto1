@@ -6,9 +6,6 @@ import { embedImage } from "@/lib/face-service";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const BRUNO_URL = process.env.BANCO_BRUNO_URL;
-const BRUNO_TOKEN = process.env.BANCO_BRUNO_TOKEN;
-
 function getAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -70,33 +67,16 @@ export async function POST(req: NextRequest) {
 
   const service = getAdminClient();
 
-  // Busca local + Bruno em paralelo
-  const base64Image = buffer.toString("base64");
+  const localSearch = await service.rpc("face_search", {
+    query_embedding: JSON.stringify(bestFace.embedding),
+    similarity_threshold: threshold,
+    match_count: limit,
+  });
 
-  const [localSearch, brunoSearch] = await Promise.allSettled([
-    service.rpc("face_search", {
-      query_embedding: JSON.stringify(bestFace.embedding),
-      similarity_threshold: threshold,
-      match_count: limit,
-    }),
-    BRUNO_URL && BRUNO_TOKEN
-      ? fetch(BRUNO_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${BRUNO_TOKEN}` },
-          body: JSON.stringify({
-            jsonrpc: "2.0", id: 1, method: "tools/call",
-            params: { name: "search_face", arguments: { image_base64: base64Image, threshold, limit } },
-          }),
-          signal: AbortSignal.timeout(15000),
-        }).then((r) => r.json())
-      : Promise.resolve(null),
-  ]);
-
-  // Processa resultado local
-  if (localSearch.status === "rejected" || localSearch.value?.error) {
+  if (localSearch.error) {
     return NextResponse.json({ error: "Erro na busca local" }, { status: 500 });
   }
-  const matches = localSearch.value?.data ?? [];
+  const matches = localSearch.data ?? [];
 
   // Separa matches por fonte: qualificados (lookup no banco) vs drive_bq / drive_abordados (proxy de foto)
   type RawMatch = { source: string; source_id: string; source_label?: string; photo_url: string; similarity: number; det_score: number; bbox: object };
@@ -118,20 +98,18 @@ export async function POST(req: NextRequest) {
   const localResults = [
     ...qualificadosMatches.map((m) => ({
       ...m,
-      from_bruno: false,
       from_drive: false,
       pessoa: pessoas[m.source_id] ?? null,
       confidence: confidence(m.similarity),
     })),
     ...driveMatches.map((m) => ({
       ...m,
-      from_bruno: false,
       from_drive: true,
       photo_url:  `/api/drive/photo/${m.source_id}`,
       pessoa: { nome: m.source_label ?? "Abordado" } as { nome: string },
       confidence: confidence(m.similarity),
     })),
-  ];
+  ].sort((a, b) => b.similarity - a.similarity);
 
   // Top 5 mais próximos sem threshold — para mostrar quando não há resultado
   let topResults: typeof localResults = [];
@@ -150,7 +128,6 @@ export async function POST(req: NextRequest) {
     }
     topResults = (topRaw ?? []).map((m: { source: string; source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object }) => ({
       ...m,
-      from_bruno: false,
       from_drive: m.source === "drive_bq" || m.source === "drive_abordados",
       photo_url: (m.source === "drive_bq" || m.source === "drive_abordados")
         ? `/api/drive/photo/${m.source_id}`
@@ -160,54 +137,8 @@ export async function POST(req: NextRequest) {
     }));
   }
 
-  // Processa resultado do Bruno
-  let brunoResults: unknown[] = [];
-  if (brunoSearch.status === "fulfilled" && brunoSearch.value) {
-    try {
-      const text = brunoSearch.value?.result?.content?.[0]?.text;
-      if (text) {
-        type BrunoFaceMatch = { source: string; source_id: string; photo_url: string; similarity: number; det_score: number; bbox: object; confidence: string };
-        const parsed = JSON.parse(text) as { results?: BrunoFaceMatch[] };
-        const rawMatches = parsed.results ?? [];
-
-        // Busca dados da pessoa para cada match do banco_qualificados em paralelo
-        const enriched = await Promise.all(
-          rawMatches.map(async (m) => {
-            let pessoa: { nome: string; vulgo?: string; cpf?: string; cidade?: string; nascimento?: string; genitora?: string } | null = null;
-            if (m.source === "banco_qualificados" && BRUNO_URL && BRUNO_TOKEN) {
-              try {
-                const r = await fetch(BRUNO_URL, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${BRUNO_TOKEN}` },
-                  body: JSON.stringify({
-                    jsonrpc: "2.0", id: 1, method: "tools/call",
-                    params: { name: "get_qualificado", arguments: { id: m.source_id } },
-                  }),
-                  signal: AbortSignal.timeout(8000),
-                });
-                const d = await r.json();
-                const t = d?.result?.content?.[0]?.text;
-                if (t) {
-                  const q = JSON.parse(t);
-                  pessoa = { nome: q.nome, vulgo: q.vulgo, cpf: q.cpf, cidade: q.cidade, nascimento: q.dn, genitora: q.genitora };
-                }
-              } catch { /* silently ignore */ }
-            }
-            return { ...m, from_bruno: true, bruno_id: m.source_id, pessoa };
-          })
-        );
-        brunoResults = enriched;
-      }
-    } catch { /* silently ignore */ }
-  }
-
-  // Mescla e ordena por similaridade
-  const allResults = [...localResults, ...brunoResults].sort(
-    (a, b) => (b as { similarity: number }).similarity - (a as { similarity: number }).similarity
-  );
-
   return NextResponse.json({
-    results: allResults,
+    results: localResults,
     top_results: topResults,
     query_det_score: bestFace.det_score,
     query_bbox: bestFace.bbox,

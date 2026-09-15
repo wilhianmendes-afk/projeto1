@@ -29,9 +29,9 @@ Sistema de reconhecimento facial para inteligência policial.
 - **Proxy de fotos do Drive**: `/api/drive/photo/[id]` tenta service account, depois OAuth2 BQ
 - **OAuth2 refresh token**: **PERMANENTE** — app Google Cloud `banco-qualificados` publicado em produção em 2026-06-05 (era Testing; tokens expiravam a cada 7 dias). Se precisar renovar manualmente: `node scripts/google-oauth-setup.js <CLIENT_ID> <CLIENT_SECRET>` e atualizar `GOOGLE_OAUTH_REFRESH_TOKEN` no Netlify via `netlify env:set`
 - **Dashboard — erro de auth visível**: `DriveCards.tsx` exibe alerta vermelho "Token expirado" quando `/api/drive/count` retorna `error: "auth_expired"` — não mostra 0 silencioso. `fetchDriveCount()` retorna `{ count, error }` (não só `number`)
+- **Banco Bruno removido (2026-09-15)**: integração de saída (nosso sistema → Bruno) removida por completo — Bruno estava offline (404) havia tempo. Apagados `BancoParceiros.tsx`, `/api/banco-bruno/search`, `/api/banco-bruno/status`, `/qualificados/bruno/[id]`; removidas as chamadas a Bruno em `/api/face/search` e `QualificadosSearch.tsx` e os badges "BANCO DO BRUNO"/"DRIVE DO BRUNO" em `FaceSearch.tsx`/`ComparisonModal.tsx`. **Fica** a integração de entrada — `/api/mcp/banco` continua servindo Bruno/PCGO normalmente, é o Bruno chamando a gente, não depende do sistema dele estar no ar. `BANCO_BRUNO_URL`/`BANCO_BRUNO_TOKEN` não são mais usadas, podem ser removidas do Netlify.
 
 ### Pendente — Normal
-- **Banco Bruno indisponível**: MCP em `com-br.cloud/api/mcp/banco` retorna 404 — problema no servidor do Bruno
 - **IBIS scraper via GitHub Actions**: ibis.app.br bloqueia IPs de datacenter (Azure/AWS); scraper roda só via PC local (tarefa agendada)
 - **Backfill IBIS completo**: 14.132/14.480 indexados; 14 em face_skipped; fila vazia (remaining=0 em 2026-06-03)
 
@@ -98,8 +98,6 @@ FACE_SERVICE_URL=https://projeto1-production-b575.up.railway.app
 ANTHROPIC_API_KEY=           # Apenas Chat do Dev
 IBIS_IMPORT_TOKEN=           # protege /api/ibis/import, /api/face/backfill, /api/drive/index-faces, /api/drive/ingest-qualificados
 MCP_BANCO_TOKEN=             # token Bearer para /api/mcp/banco (usado pela PCGO)
-BANCO_BRUNO_URL=             # URL do MCP do Bruno — atualmente 404
-BANCO_BRUNO_TOKEN=           # Token Bearer do MCP do Bruno
 GOOGLE_SERVICE_ACCOUNT_KEY=  # JSON completo da Service Account (em uma linha)
 GOOGLE_OAUTH_CLIENT_ID=      # OAuth2 para bancodequalificados@gmail.com
 GOOGLE_OAUTH_CLIENT_SECRET=  # OAuth2 para bancodequalificados@gmail.com
@@ -229,7 +227,7 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 | `GET /api/qualificados/search?q=` | Busca server-side: nome, vulgo, genitora, cpf, observacoes |
 | `DELETE /api/qualificados/[id]` | Remove qualificado + embeddings + foto Storage |
 | `POST /api/qualificados/[id]/foto` | Upload foto manual, limpa embeddings anteriores |
-| `POST /api/face/search` | Busca facial — local + Banco Bruno em paralelo |
+| `POST /api/face/search` | Busca facial — banco local |
 | `GET/POST /api/face/backfill` | Gera embeddings dos registros pendentes |
 | `GET /api/drive/count` | Contagem de arquivos no Drive BQ (cache 5min HTTP) |
 | `GET /api/drive/own-search?q=` | Busca OCR no Drive BQ via OAuth2 |
@@ -237,8 +235,6 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 | `POST /api/drive/index-faces` | Indexa rostos do Drive BQ (fonte drive_bq); batch=5 |
 | `POST /api/drive/ingest-qualificados` | Ingere arquivos Drive como qualificados (OCR+dedup+Storage) |
 | `DELETE /api/drive/file/[id]` | Apaga arquivo do Drive BQ + remove embeddings |
-| `GET /api/banco-bruno/search?q=` | Proxy para busca textual no Banco Bruno |
-| `GET /api/banco-bruno/status` | Stats do Banco Bruno |
 | `POST /api/mcp/banco` | Servidor MCP — PCGO e Bruno acessam nosso banco aqui |
 | `GET/POST /api/dev-chat` | Chat do Dev — histórico e envio |
 | `PATCH /api/dev-chat/[id]/read` | Marca mensagem como lida |
@@ -246,7 +242,6 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 ## Dashboard (`/`)
 - **Card IBIS**: renderizado server-side (Supabase, ~50ms) — aparece instantaneamente
 - **Cards Drive + Total**: client-side via `DriveCards.tsx` → fetch `/api/drive/count`; cache 5min (HTTP + módulo)
-- **BancoParceiros**: stats do Banco Bruno (badge âmbar "BANCO BRUNO")
 - Cache compartilhado em `src/lib/drive-count-cache.ts`: navegando dashboard↔indexação não recalcula
 
 ## Página de Indexação (`/indexacao`)
@@ -258,16 +253,11 @@ get_pending_qualificados(batch_limit int) → TABLE(id, nome, foto_url, fotos_ex
 
 ## Busca de qualificados (`/qualificados`)
 - Sem botão "Novo" — cadastro somente via IBIS ou Drive
-- Busca local (Supabase) + Drive BQ (`own-search`) + Banco Bruno — em paralelo
+- Busca local (Supabase) + Drive BQ (`own-search`) — em paralelo
 - **MEU DRIVE**: badge verde — thumbnail + lightbox + botão Excluir (oculto para viewer)
-- **BANCO DO BRUNO**: badge âmbar — banco do parceiro
-- **DRIVE DO BRUNO**: badge azul — drive do parceiro
 
 ## Busca facial (`/busca`)
 - Resultados **MEU DRIVE** (`from_drive=true`): abrem `ComparisonModal` com fotos lado a lado
-- Resultados **BANCO DO BRUNO** (`from_bruno=true`, `source≠"drive"`): badge âmbar
-- Resultados **DRIVE DO BRUNO** (`from_bruno=true`, `source="drive"`): badge azul
-- `ComparisonModal`: sem botão "Ver no Banco Bruno" (rota não implementada)
 
 ## Face Service (Railway)
 
@@ -296,7 +286,7 @@ face-service/
 
 ## MCP `/api/mcp/banco` — consumido por PCGO e Bruno
 
-**Autenticação**: Bearer token via `MCP_BANCO_TOKEN` (env Vercel)
+**Autenticação**: Bearer token via `MCP_BANCO_TOKEN` (env Netlify)
 
 **Tools disponíveis:**
 | Tool | O que retorna |
@@ -308,11 +298,10 @@ face-service/
 
 **Drive no MCP**: usa `getBQDriveClient()` (OAuth2 BQ); sem `orderBy` e sem `mimeType contains` (limitações da API)
 
-## Integração Banco Bruno (bidirecional)
-- Bruno mantém banco próprio + Drive; sistema offline (404 no MCP dele)
-- Nosso sistema → Bruno: `/api/banco-bruno/search`, `/api/banco-bruno/status`, `/api/face/search`
-- Bruno → Nosso sistema: `/api/mcp/banco` (autenticado via `MCP_BANCO_TOKEN`)
-- Todas as chamadas fetch ao Bruno precisam de `cache: "no-store"`
+## Integração Banco Bruno
+- Bruno mantém banco próprio + Drive; sistema dele está offline há tempo (404 no MCP dele)
+- **Removida a integração de saída (2026-09-15)**: nosso sistema não faz mais chamadas pro Bruno — `/api/banco-bruno/*` apagados, `/api/face/search` e `QualificadosSearch.tsx` não buscam mais lá
+- Continua a integração de entrada: Bruno → Nosso sistema via `/api/mcp/banco` (autenticado via `MCP_BANCO_TOKEN`) — independe do sistema dele estar no ar, ele chama a gente quando quiser
 
 ## Componentes principais
 | Componente | Função |
@@ -323,10 +312,9 @@ face-service/
 | `SemFotoList.tsx` | Lista qualificados sem foto (oculto para viewer) |
 | `SemRostoList.tsx` | Lista qualificados sem rosto + botão Limpar (oculto para viewer) |
 | `FotoUpload.tsx` | Upload foto na página do qualificado (oculto para viewer) |
-| `FaceSearch.tsx` | Busca facial — badges MEU DRIVE / BANCO DO BRUNO / DRIVE DO BRUNO |
-| `ComparisonModal.tsx` | Modal lado a lado — suporta drive_bq, banco Bruno e drive Bruno |
-| `QualificadosSearch.tsx` | Busca local + Drive BQ + Bruno; botão Excluir oculto para viewer |
-| `BancoParceiros.tsx` | Stats do Banco Bruno |
+| `FaceSearch.tsx` | Busca facial — badge MEU DRIVE |
+| `ComparisonModal.tsx` | Modal lado a lado — suporta banco local e drive_bq |
+| `QualificadosSearch.tsx` | Busca local + Drive BQ; botão Excluir oculto para viewer |
 | `TotalQualificados.tsx` | Contador de registros na página de qualificados |
 | `DevChat.tsx` | Chat flutuante de desenvolvimento |
 

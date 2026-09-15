@@ -15,26 +15,6 @@ interface Qualificado {
   fonte?: string;
 }
 
-interface BrunoMatch {
-  id: string;
-  nome: string;
-  vulgo?: string | null;
-  cpf?: string | null;
-  genitora?: string | null;
-  dn?: string | null;
-  cidade?: string | null;
-  composite_url?: string | null;
-  foto_original_url?: string | null;
-  faccao?: string | null;
-  observacoes?: string | null;
-}
-
-interface BrunoDriveFile {
-  name: string;
-  web_view_url: string;
-  thumbnail_url?: string | null;
-}
-
 interface OwnDriveFile {
   id: string;
   name: string;
@@ -48,24 +28,18 @@ interface QualificadosSearchProps {
 }
 
 function CardLocal({ p }: { p: Qualificado }) {
-  const isDrive = p.fonte === "drive";
   return (
     <Link
       href={`/qualificados/${p.id}`}
       style={{
         display: "block",
         borderRadius: "12px",
-        border: isDrive ? "2px solid #1d4ed8" : "1px solid #374151",
+        border: "1px solid #374151",
         overflow: "visible",
         position: "relative",
         textDecoration: "none",
       }}
     >
-      {isDrive && (
-        <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#1d4ed8", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
-          DRIVE DO BRUNO
-        </div>
-      )}
       <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "12px 12px 0 0", overflow: "hidden" }}>
         {p.foto_url ? (
           <img src={p.foto_url} alt={p.nome} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }} />
@@ -82,80 +56,6 @@ function CardLocal({ p }: { p: Qualificado }) {
         {p.vulgo && <div style={{ textTransform: "uppercase" }}>ALC: {p.vulgo}</div>}
       </div>
     </Link>
-  );
-}
-
-function CardBruno({ m }: { m: BrunoMatch }) {
-  const fotoUrl = m.composite_url || m.foto_original_url;
-  return (
-    <Link
-      href={`/qualificados/bruno/${m.id}`}
-      style={{
-        display: "block",
-        borderRadius: "12px",
-        border: "2px solid #b45309",
-        overflow: "visible",
-        position: "relative",
-        textDecoration: "none",
-        cursor: "pointer",
-      }}
-    >
-      {/* Badge */}
-      <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#b45309", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
-        BANCO DO BRUNO
-      </div>
-
-      <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "10px 10px 0 0", overflow: "hidden" }}>
-        {fotoUrl ? (
-          <img src={fotoUrl} alt={m.nome} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }} />
-        ) : (
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: "2rem", fontWeight: "bold" }}>
-            {m.nome.charAt(0)}
-          </div>
-        )}
-      </div>
-      <div style={{ background: "#fef3c7", borderRadius: "0 0 10px 10px", padding: "4px 6px", color: "#1c1917", fontSize: "9px", lineHeight: "1.3", overflowWrap: "break-word", wordBreak: "break-word" }}>
-        <div style={{ fontWeight: "bold", textTransform: "uppercase" }}>{m.nome}</div>
-        {m.dn && <div>DN: {m.dn}</div>}
-        {m.genitora && <div style={{ textTransform: "uppercase" }}>MÃE: {m.genitora}</div>}
-        {m.vulgo && <div style={{ textTransform: "uppercase" }}>ALC: {m.vulgo}</div>}
-        {m.cpf && <div>CPF: {m.cpf}</div>}
-        {m.cidade && <div>{m.cidade}</div>}
-      </div>
-    </Link>
-  );
-}
-
-function CardDrive({ f, onClick }: { f: BrunoDriveFile; onClick: () => void }) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        display: "block",
-        borderRadius: "12px",
-        border: "2px solid #1d4ed8",
-        overflow: "visible",
-        position: "relative",
-        cursor: "pointer",
-      }}
-    >
-      <div style={{ position: "absolute", top: "-10px", left: "6px", background: "#1d4ed8", color: "white", fontSize: "8px", fontWeight: "bold", padding: "2px 6px", borderRadius: "4px", zIndex: 10, letterSpacing: "0.05em" }}>
-        DRIVE DO BRUNO
-      </div>
-      <div style={{ width: "100%", aspectRatio: "3/4", background: "#1f2937", borderRadius: "10px 10px 0 0", overflow: "hidden" }}>
-        {f.thumbnail_url ? (
-          <img src={f.thumbnail_url} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }} />
-        ) : (
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: "2rem" }}>
-            📄
-          </div>
-        )}
-      </div>
-      <div style={{ background: "#dbeafe", borderRadius: "0 0 10px 10px", padding: "4px 6px", color: "#1e3a8a", fontSize: "9px", lineHeight: "1.3" }}>
-        <div style={{ fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
-        <div style={{ opacity: 0.7 }}>Clique para ampliar</div>
-      </div>
-    </div>
   );
 }
 
@@ -260,47 +160,10 @@ function LightboxOwnDrive({ f, onClose, onDeleted, isViewer = false }: { f: OwnD
   );
 }
 
-function LightboxDrive({ f, onClose }: { f: BrunoDriveFile; onClose: () => void }) {
-  return (
-    <div
-      className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative max-w-2xl w-full flex flex-col"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between bg-gray-900 rounded-t-xl px-4 py-3">
-          <div>
-            <span className="text-xs font-bold bg-blue-700 text-white px-2 py-0.5 rounded mr-2">DRIVE 42º BPM</span>
-            <span className="text-white text-sm font-medium">{f.name}</span>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
-        </div>
-        <div className="bg-black rounded-b-xl overflow-hidden">
-          {f.thumbnail_url ? (
-            <img
-              src={f.thumbnail_url.replace("=s220", "=s1200")}
-              alt={f.name}
-              style={{ display: "block", width: "100%", maxHeight: "calc(90vh - 60px)", objectFit: "contain" }}
-            />
-          ) : (
-            <p className="text-gray-500 p-8 text-center">Sem preview disponível</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function QualificadosSearch({ initialData, totalCount, isViewer = false }: QualificadosSearchProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [localResults, setLocalResults] = useState<Qualificado[] | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
-  const [brunoResults, setBrunoResults] = useState<BrunoMatch[]>([]);
-  const [brunoDrive, setBrunoDrive] = useState<BrunoDriveFile[]>([]);
-  const [brunoLoading, setBrunoLoading] = useState(false);
-  const [lightbox, setLightbox] = useState<BrunoDriveFile | null>(null);
   const [ownDrive, setOwnDrive] = useState<OwnDriveFile[]>([]);
   const [ownDriveLoading, setOwnDriveLoading] = useState(false);
   const [ownDriveLightbox, setOwnDriveLightbox] = useState<OwnDriveFile | null>(null);
@@ -317,15 +180,12 @@ export default function QualificadosSearch({ initialData, totalCount, isViewer =
 
     if (term.length < 2) {
       setLocalResults(null);
-      setBrunoResults([]);
-      setBrunoDrive([]);
       setOwnDrive([]);
       return;
     }
 
     debounceRef.current = setTimeout(async () => {
       setLocalLoading(true);
-      setBrunoLoading(true);
       setOwnDriveLoading(true);
 
       // Busca local server-side (sem limite de 1000 do Supabase)
@@ -341,25 +201,13 @@ export default function QualificadosSearch({ initialData, totalCount, isViewer =
         .then((data: { files: OwnDriveFile[] }) => setOwnDrive(data.files ?? []))
         .catch(() => setOwnDrive([]))
         .finally(() => setOwnDriveLoading(false));
-
-      // Busca Bruno em paralelo
-      fetch(`/api/banco-bruno/search?q=${encodeURIComponent(term)}`)
-        .then(r => r.json())
-        .then((data: { matches: BrunoMatch[]; drive_files: BrunoDriveFile[] }) => {
-          const localCpfs = new Set(initialData.map((q) => q.cpf).filter(Boolean));
-          setBrunoResults((data.matches ?? []).filter(m => !m.cpf || !localCpfs.has(m.cpf)));
-          setBrunoDrive(data.drive_files ?? []);
-        })
-        .catch(() => { setBrunoResults([]); setBrunoDrive([]); })
-        .finally(() => setBrunoLoading(false));
     }, 400);
-  }, [searchTerm, initialData]);
+  }, [searchTerm]);
 
   const isSearching = searchTerm.trim().length >= 2;
 
   return (
     <div>
-      {lightbox && <LightboxDrive f={lightbox} onClose={() => setLightbox(null)} />}
       {ownDriveLightbox && (
         <LightboxOwnDrive
           f={ownDriveLightbox}
@@ -387,11 +235,6 @@ export default function QualificadosSearch({ initialData, totalCount, isViewer =
             : ownDrive.length > 0
               ? ` · ${ownDrive.length} no Drive`
               : ""}
-          {brunoLoading
-            ? " · buscando no Banco do Bruno..."
-            : (brunoResults.length > 0 || brunoDrive.length > 0)
-              ? ` · ${brunoResults.length + brunoDrive.length} no Banco do Bruno`
-              : ""}
         </p>
       ) : (
         <p className="text-gray-400 text-sm mb-4">{totalCount} registros</p>
@@ -405,15 +248,7 @@ export default function QualificadosSearch({ initialData, totalCount, isViewer =
           <CardOwnDrive key={`own-${f.id}`} f={f} onClick={() => setOwnDriveLightbox(f)} />
         ))}
 
-        {/* Resultados do banco do Bruno */}
-        {isSearching && brunoResults.map((m) => <CardBruno key={`bruno-${m.id}`} m={m} />)}
-
-        {/* Resultados do Drive do Bruno */}
-        {isSearching && brunoDrive.map((f, i) => (
-          <CardDrive key={`drive-${i}`} f={f} onClick={() => setLightbox(f)} />
-        ))}
-
-        {isSearching && !brunoLoading && !ownDriveLoading && filteredLocal.length === 0 && ownDrive.length === 0 && brunoResults.length === 0 && brunoDrive.length === 0 && (
+        {isSearching && !ownDriveLoading && filteredLocal.length === 0 && ownDrive.length === 0 && (
           <p className="col-span-full text-center text-gray-500 py-12">
             Nenhum registro encontrado.
           </p>

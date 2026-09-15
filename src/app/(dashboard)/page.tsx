@@ -1,6 +1,5 @@
 import { BookUser } from "lucide-react";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import BancoParceiros from "@/components/BancoParceiros";
 import DriveCards from "@/components/DriveCards";
 
 export const dynamic = "force-dynamic";
@@ -42,8 +41,6 @@ export default async function DashboardPage() {
 
         <DriveCards ibisCount={ibisCount} />
       </div>
-
-      <BancoParceiros />
     </div>
   );
 }
