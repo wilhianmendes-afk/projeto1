@@ -92,9 +92,56 @@ function CardOwnDrive({ f, onClick }: { f: OwnDriveFile; onClick: () => void }) 
   );
 }
 
+interface DriveFileStatus {
+  indexed: boolean;
+  facesCount: number;
+  skipped: boolean;
+  reason: string | null;
+}
+
+function EmbeddingStatusBadge({ status, loading }: { status: DriveFileStatus | null; loading: boolean }) {
+  if (loading) {
+    return <span className="text-xs text-gray-500">Verificando embedding facial...</span>;
+  }
+  if (!status) {
+    return <span className="text-xs text-gray-500">Não foi possível verificar</span>;
+  }
+  if (status.indexed) {
+    return (
+      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-green-950 border border-green-800 text-green-400">
+        ✓ Embedding facial gerado ({status.facesCount} rosto{status.facesCount !== 1 ? "s" : ""})
+      </span>
+    );
+  }
+  if (status.skipped) {
+    return (
+      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-yellow-950 border border-yellow-800 text-yellow-500">
+        ⚠ Sem rosto detectável{status.reason ? ` (${status.reason})` : ""}
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-400">
+      ○ Ainda não indexado — aguardando rodada do drive-index-faces
+    </span>
+  );
+}
+
 function LightboxOwnDrive({ f, onClose, onDeleted, isViewer = false }: { f: OwnDriveFile; onClose: () => void; onDeleted: (id: string) => void; isViewer?: boolean }) {
   const [deleting, setDeleting] = React.useState(false);
   const [confirm, setConfirm] = React.useState(false);
+  const [status, setStatus] = React.useState<DriveFileStatus | null>(null);
+  const [statusLoading, setStatusLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    setStatus(null);
+    setStatusLoading(true);
+    fetch(`/api/drive/file/${f.id}`)
+      .then((r) => r.json())
+      .then((data: DriveFileStatus) => setStatus(data))
+      .catch(() => setStatus(null))
+      .finally(() => setStatusLoading(false));
+  }, [f.id]);
 
   async function handleDelete() {
     if (!confirm) { setConfirm(true); return; }
@@ -115,10 +162,13 @@ function LightboxOwnDrive({ f, onClose, onDeleted, isViewer = false }: { f: OwnD
         className="relative max-w-2xl w-full flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between bg-gray-900 rounded-t-xl px-4 py-3">
+        <div className="flex items-center justify-between bg-gray-900 rounded-t-xl px-4 py-3 flex-wrap gap-2">
           <div>
             <span className="text-xs font-bold bg-green-700 text-white px-2 py-0.5 rounded mr-2">MEU DRIVE</span>
             <span className="text-white text-sm font-medium">{f.name}</span>
+            <div className="mt-1">
+              <EmbeddingStatusBadge status={status} loading={statusLoading} />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {!isViewer && (

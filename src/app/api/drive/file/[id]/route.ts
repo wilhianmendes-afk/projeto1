@@ -13,6 +13,31 @@ function getAdminClient() {
   );
 }
 
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+  const { id } = params;
+  if (!id) return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+
+  const db = getAdminClient();
+  const [{ data: embeddings }, { data: skipped }] = await Promise.all([
+    db.from("face_embeddings").select("face_index").eq("source", "drive_bq").eq("source_id", id),
+    db.from("face_skipped").select("reason").eq("source", "drive_bq").eq("source_id", id).maybeSingle(),
+  ]);
+
+  return NextResponse.json({
+    indexed: (embeddings?.length ?? 0) > 0,
+    facesCount: embeddings?.length ?? 0,
+    skipped: !!skipped,
+    reason: skipped?.reason ?? null,
+  });
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
